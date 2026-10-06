@@ -35,3 +35,8 @@ jobs:
         run: swift test
       - name: Build native app bundle
         run: ./script/build_and_run.sh --build-only
+      - name: Optimized correctness tests
+        env:
+          NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine
+          NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
+        run: swift test -c release

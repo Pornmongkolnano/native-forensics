@@ -12,6 +12,8 @@ APP_NAME="NativeForensics"
 BUNDLE_ID="io.github.pornmongkolnano.nativeforensics"
 APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+BUILD_CONFIGURATION="release"
+if [[ "$MODE" == "--debug" ]]; then BUILD_CONFIGURATION="debug"; fi
 
 # Stop only this checkout's app, never another copy or Autopsy.
 python3 - "$APP_BINARY" "$APP_NAME" <<'PY'
@@ -34,8 +36,8 @@ PY
 
 cd "$ROOT_DIR"
 python3 ./script/build_native_engine.py
-swift build --product "$APP_NAME"
-BUILD_DIR="$(swift build --show-bin-path)"
+swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
+BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
 mkdir -p "$ROOT_DIR/dist"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -56,8 +58,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>NativeForensics</string>
   <key>CFBundleDisplayName</key><string>Native Forensics</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2.2</string>
-  <key>CFBundleVersion</key><string>4</string>
+  <key>CFBundleShortVersionString</key><string>0.2.3</string>
+  <key>CFBundleVersion</key><string>5</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>

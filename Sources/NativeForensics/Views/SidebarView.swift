@@ -7,20 +7,31 @@ struct SidebarView: View {
         List(selection: $workspace.section) {
             Section("Workbench") {
                 ForEach(WorkspaceSection.allCases) { section in
-                    Label(section.title, systemImage: section.symbol)
-                        .tag(section)
+                    HStack(spacing: 9) {
+                        Image(systemName: section.symbol)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text(section.title)
+                    }
+                    .tag(section)
                 }
             }
 
             if let forensicCase = workspace.currentCase {
                 Section("Current Case") {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(forensicCase.manifest.name)
-                            .fontWeight(.medium)
-                            .lineLimit(1)
-                        Text("\(forensicCase.manifest.evidence.count) evidence records")
-                            .font(.caption)
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: "folder")
                             .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(forensicCase.manifest.name)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                                .help(forensicCase.manifest.name)
+                            Text("\(forensicCase.manifest.evidence.count.formatted()) evidence \(forensicCase.manifest.evidence.count == 1 ? "record" : "records")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .selectionDisabled()
                 }
@@ -29,8 +40,8 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 6) {
-                Image(systemName: "shield.lefthalf.filled")
-                Text("Evidence is read only")
+                Image(systemName: "lock.shield")
+                Text("Read-only evidence")
             }
             .font(.caption)
             .foregroundStyle(.secondary)

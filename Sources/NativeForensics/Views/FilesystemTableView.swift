@@ -1,72 +1,135 @@
+import AppKit
 import ForensicsCore
 import SwiftUI
 
 struct FilesystemTableView: View {
     @Bindable var workspace: WorkspaceStore
+    @State private var page = 0
+    private let pageSize = 100
+
+    private var lastPage: Int { max(0, (workspace.filesystemRows.count - 1) / pageSize) }
+    private var displayedPage: Int { min(max(0, page), lastPage) }
+    private var pageRange: Range<Int> {
+        let start = displayedPage * pageSize
+        return start..<min(start + pageSize, workspace.filesystemRows.count)
+    }
+    private var pageRows: ArraySlice<FilesystemEntry> { workspace.filesystemRows[pageRange] }
+    private var pageSummary: String {
+        if workspace.isFilteringFilesystem { return "Updating matches…" }
+        let count = workspace.filesystemRows.count
+        guard count > 0 else { return "0 entries" }
+        return "Entries \((pageRange.lowerBound + 1).formatted())–\(pageRange.upperBound.formatted()) of \(count.formatted())"
+    }
 
     private var displayTimezone: String {
         workspace.timestampDisplayTimezone == "UTC" ? "UTC" : workspace.selectedFilesystemResult?.options.timezone ?? "UTC"
     }
 
+    private var rowCount: String {
+        if workspace.isFilteringFilesystem { return "Filtering…" }
+        let total = workspace.selectedFilesystemResult?.files.count ?? 0
+        if workspace.filesystemSearchText.isEmpty {
+            return "\(total.formatted()) entries"
+        }
+        return "\(workspace.filesystemRows.count.formatted()) of \(total.formatted())"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
                 TextField("Find file path", text: $workspace.filesystemSearchText)
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 360)
-                    .onChange(of: workspace.filesystemSearchText) { _, _ in
-                        workspace.refreshFilesystemRows()
+                    .accessibilityLabel("Find file path")
+                    .onExitCommand { workspace.filesystemSearchText = "" }
+                if !workspace.filesystemSearchText.isEmpty {
+                    Button { workspace.filesystemSearchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
-                Spacer()
-                Picker("Display times", selection: $workspace.timestampDisplayTimezone) {
-                    Text("UTC").tag("UTC")
-                    Text("Evidence timezone").tag("evidence")
+                    .buttonStyle(.borderless)
+                    .help("Clear file search")
+                    .accessibilityLabel("Clear file search")
                 }
-                .frame(maxWidth: 260)
+                if workspace.isFilteringFilesystem {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Filtering file paths")
+                }
+                Text(rowCount)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Picker("Display times", selection: $workspace.timestampDisplayTimezone) {
+                    Text("Times: UTC").tag("UTC")
+                    Text("Times: Evidence").tag("evidence")
+                }
+                .labelsHidden()
+                .accessibilityLabel("Display times")
+                .frame(width: 138)
+                .help("Display timestamps in \(displayTimezone). Recorded seconds and nanoseconds remain unchanged.")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            Table(workspace.filesystemRows, selection: $workspace.selectedFileID) {
+            Table(pageRows, selection: $workspace.selectedFileID) {
                 TableColumn("Path") { file in
                     Label(file.path, systemImage: file.isDirectory ? "folder" : "doc")
                         .lineLimit(1)
+                        .truncationMode(.middle)
                         .help(file.path)
                 }
-                .width(min: 180, ideal: 350)
+                .width(min: 130, ideal: 290, max: 320)
 
-                TableColumn("Allocation") { file in
+                TableColumn("State") { file in
                     Text(file.isDeleted ? "Deleted" : "Allocated")
                         .font(.caption)
                         .foregroundStyle(file.isDeleted ? Color.orange : Color.secondary)
                 }
-                .width(min: 70, ideal: 85, max: 100)
+                .width(72)
 
                 TableColumn("Size") { file in
                     Text(EvidenceFormatting.bytes(file.size))
+                        .font(.caption)
                         .monospacedDigit()
+                        .help("\(file.size.formatted()) bytes")
                 }
-                .width(min: 70, ideal: 85, max: 110)
+                .width(76)
 
-                TableColumn("Modified (\(displayTimezone))") { file in
+                TableColumn("Modified") { file in
                     Text(FilesystemFormatting.timestamp(file.modifiedEpoch, in: displayTimezone))
                         .font(.caption)
                         .monospacedDigit()
+                        .help("\(displayTimezone) · \(FilesystemFormatting.rawTime(file.modifiedEpoch, nanoseconds: file.modifiedNanoseconds))")
                 }
-                .width(min: 145, ideal: 175)
+                .width(142)
             }
-            .disabled(workspace.isEngineRunning)
+            .disabled(workspace.isEngineRunning || workspace.isFilteringFilesystem)
             .contextMenu(forSelectionType: String.self) { selection in
-                if selection.count == 1, let id = selection.first {
+                if !workspace.isFilteringFilesystem,
+                   selection.count == 1, let id = selection.first,
+                   pageRows.contains(where: { $0.id == id }),
+                   let file = workspace.filesystemFilesByID[id] {
+                    Button("Show File Details") {
+                        workspace.selectedFileID = id
+                        workspace.showInspector = true
+                    }
+                    Button("Copy Full Path") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(file.path, forType: .string)
+                    }
+                    Divider()
                     Button("Extract File…") {
                         workspace.selectedFileID = id
                         workspace.chooseExtractionDestination()
                     }
-                    .disabled(workspace.isBusy || workspace.filesystemFilesByID[id]?.isDirectory != false)
+                    .disabled(workspace.isBusy || workspace.isFilteringFilesystem || file.isDirectory)
                 }
             }
             .overlay {
-                if workspace.filesystemRows.isEmpty {
+                if workspace.filesystemRows.isEmpty && !workspace.isFilteringFilesystem {
                     ContentUnavailableView {
                         Label(workspace.filesystemSearchText.isEmpty ? "No Entries Recorded" : "No Matching Paths", systemImage: "doc.text.magnifyingglass")
                     } description: {
@@ -74,6 +137,61 @@ struct FilesystemTableView: View {
                     }
                 }
             }
+
+            Divider()
+            HStack(spacing: 10) {
+                Text(pageSummary)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help("\(pageSummary). Search covers all saved entries; the table displays up to \(pageSize) entries per page.")
+                    .accessibilityLabel(pageSummary)
+                Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    Button { changePage(to: 0) } label: { Image(systemName: "backward.end") }
+                        .disabled(displayedPage == 0)
+                        .help("First page")
+                        .accessibilityLabel("First page")
+                    Button { changePage(to: displayedPage - 1) } label: {
+                        Label("Previous", systemImage: "chevron.left")
+                    }
+                    .disabled(displayedPage == 0)
+                    .help("Previous page of filesystem entries")
+                    .accessibilityLabel("Previous page")
+                    Button { changePage(to: displayedPage + 1) } label: {
+                        Label("Next", systemImage: "chevron.right")
+                    }
+                    .disabled(displayedPage == lastPage)
+                    .help("Next page of filesystem entries")
+                    .accessibilityLabel("Next page")
+                    Button { changePage(to: lastPage) } label: { Image(systemName: "forward.end") }
+                        .disabled(displayedPage == lastPage)
+                        .help("Last page")
+                        .accessibilityLabel("Last page")
+                }
+                .disabled(workspace.isBusy || workspace.isFilteringFilesystem)
+            }
+            .font(.caption)
+            .controlSize(.small)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
+        .onChange(of: workspace.filesystemSearchText) { _, _ in resetPage() }
+        .onChange(of: workspace.selectedEvidenceID) { _, _ in resetPage() }
+        .onChange(of: workspace.selectedFilesystemResult?.savedAt) { _, _ in resetPage() }
+        .onChange(of: workspace.filesystemRows.count) { _, _ in
+            if page != displayedPage { changePage(to: displayedPage) }
+        }
+        .onChange(of: page) { _, _ in workspace.selectedFileID = nil }
+    }
+
+    private func resetPage() {
+        page = 0
+        workspace.selectedFileID = nil
+    }
+
+    private func changePage(to newPage: Int) {
+        workspace.selectedFileID = nil
+        page = min(max(0, newPage), lastPage)
     }
 }

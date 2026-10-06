@@ -21,6 +21,8 @@
 - บันทึก listing ใน versioned JSON cache และ reopen เป็น historical result พร้อม warnings/partial status
 - Extract file ไปยังไฟล์ใหม่ ตรวจขนาดและ SHA-256 ของ output ก่อน publish โดยไม่เขียนทับไฟล์เดิม
 - จัดการ progress, cancellation, timeout, helper crash และ malformed protocol โดยไม่ใช้ exit 0 เพียงอย่างเดียวเป็น success
+- ค้นหา file paths แบบยกเลิก query เก่าได้ โดยคง Unicode matching เดิมและทำงานนอก main thread; ตารางแบ่งหน้า 100 แถวพร้อมค้นหาจากผลทั้งหมด
+- Analysis Options และ provenance พับได้; validation/partial warnings ยังมองเห็น และ inspector แสดงไฟล์ที่เลือกก่อนรายละเอียด image/hash scopes
 
 Engine ส่งข้อมูลผ่าน [versioned NDJSON](docs/ENGINE-PROTOCOL.md) กำหนด frame ไม่เกิน 1 MiB, listing ไม่เกิน 50,000 records และ response/cache ไม่เกิน 64 MiB Limits แสดงเป็น partial/failure states; ขนาดเหล่านี้เป็น data limits ไม่ใช่ข้อรับรอง peak RAM ของ process
 
@@ -49,7 +51,7 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-`build_and_run.sh` เรียก native helper build ให้อัตโนมัติ แล้วสร้าง `dist/NativeForensics.app` ใช้ script โดยไม่มี argument สำหรับรันตามปกติ หรือ `--build-only`, `--debug`, `--logs`, `--telemetry` ตามงาน Codex Run action ใช้ script เดียวกัน
+`build_and_run.sh` เรียก native helper build ให้อัตโนมัติ แล้วสร้าง `dist/NativeForensics.app` แบบ optimized release สำหรับการใช้ปกติ/`--verify`/`--build-only` ใช้ `--debug` สำหรับ debug build และ LLDB หรือ `--logs`, `--telemetry` ตามงาน Codex Run action ใช้ script เดียวกัน
 
 Independent native synthetic suite อยู่ที่ `python3 Tests/NativeEngine/run_tests.py` ส่วน real-helper Swift integration tests เป็น opt-in ตาม `NFTSK_ENGINE_HELPER` และ `NFTSK_SYNTHETIC_FIXTURES`; การผ่าน pure Swift/mock protocol tests ไม่แทน native format coverage
 

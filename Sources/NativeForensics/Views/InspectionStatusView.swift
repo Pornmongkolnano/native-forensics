@@ -4,59 +4,69 @@ struct InspectionStatusView: View {
     let workspace: WorkspaceStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if workspace.isEngineRunning {
-                HStack {
-                    Text(workspace.engineOperationLabel).lineLimit(1)
-                    Spacer()
-                    Button("Cancel", action: workspace.cancelEngineJob)
-                        .controlSize(.small)
-                }
-                if let progress = workspace.verificationProgress {
-                    ProgressView(value: progress.fraction)
-                    Text("Source verification: \(EvidenceFormatting.bytes(progress.bytesRead)) of \(EvidenceFormatting.bytes(progress.totalBytes))")
-                        .font(.caption)
-                        .monospacedDigit()
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape.2")
                         .foregroundStyle(.secondary)
-                } else if let progress = workspace.engineProgress {
-                    if let total = progress.total, total > 0 {
-                        ProgressView(value: min(1, max(0, Double(progress.completed) / Double(total))))
+                    Text(workspace.engineOperationLabel)
+                        .lineLimit(1)
+                        .help(workspace.engineOperationLabel)
+                    Spacer(minLength: 8)
+                    Button("Cancel", action: workspace.cancelEngineJob)
+                        .help("Cancel this job (⌘.)")
+                }
+                HStack(spacing: 12) {
+                    if let progress = workspace.verificationProgress {
+                        ProgressView(value: progress.fraction)
+                            .frame(maxWidth: 180)
+                        Text("Source verification: \(EvidenceFormatting.bytes(progress.bytesRead)) of \(EvidenceFormatting.bytes(progress.totalBytes))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    } else if let progress = workspace.engineProgress {
+                        if let fraction = progress.fraction {
+                            ProgressView(value: fraction)
+                                .frame(maxWidth: 180)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text("\(progress.stage): \(progress.completed.formatted())\(progress.total.map { " of \($0.formatted())" } ?? "") \(progress.unit)")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     } else {
                         ProgressView().controlSize(.small)
                     }
-                    Text("\(progress.stage): \(progress.completed)\(progress.total.map { " of \($0)" } ?? "") \(progress.unit)")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                } else {
-                    ProgressView().controlSize(.small)
+                    Spacer(minLength: 0)
                 }
             } else if workspace.isInspecting {
-                HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "externaldrive")
+                        .foregroundStyle(.secondary)
                     Text("Inspecting \(workspace.inspectionFilename ?? "image")")
                         .lineLimit(1)
-                    Spacer()
+                    Spacer(minLength: 8)
                     Button("Cancel", action: workspace.cancelInspection)
-                        .controlSize(.small)
+                        .help("Cancel inspection (⌘.)")
                 }
-                if let progress = workspace.progress {
-                    ProgressView(value: progress.fraction)
-                    HStack {
+                HStack(spacing: 12) {
+                    if let progress = workspace.progress {
+                        ProgressView(value: progress.fraction)
+                            .frame(maxWidth: 180)
                         Text("\(EvidenceFormatting.bytes(progress.bytesRead)) of \(EvidenceFormatting.bytes(progress.totalBytes))")
-                        Spacer()
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
                         Text(progress.fraction, format: .percent.precision(.fractionLength(0)))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ProgressView().controlSize(.small)
+                        Spacer(minLength: 0)
                     }
-                    .monospacedDigit()
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    ProgressView().controlSize(.small)
                 }
+                .monospacedDigit()
             } else if workspace.isLoadingFilesystem {
-                HStack {
+                HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Loading saved filesystem result…")
-                        .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -65,14 +75,16 @@ struct InspectionStatusView: View {
                     Image(systemName: "info.circle")
                         .foregroundStyle(.secondary)
                     Text(workspace.statusMessage)
-                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .help(workspace.statusMessage)
                     Spacer(minLength: 0)
                 }
             }
         }
+        .font(.caption)
+        .controlSize(.small)
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 9)
     }
 }
