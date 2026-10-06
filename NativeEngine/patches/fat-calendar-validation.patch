@@ -1,0 +1,72 @@
+--- a/tsk/fs/fatfs_utils.c
++++ b/tsk/fs/fatfs_utils.c
+@@ -136,43 +136,42 @@
+ time_t
+ fatfs_dos_2_unix_time(uint16_t date, uint16_t time, uint8_t timetens)
+ {
++    static const int month_lengths[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+     struct tm tm1;
+     time_t ret;
++    int year, month, day, hour, minute, second, leap;
+ 
+     if (date == 0)
+         return 0;
+ 
++    year = ((date & FATFS_YEAR_MASK) >> FATFS_YEAR_SHIFT) + 1980;
++    month = (date & FATFS_MON_MASK) >> FATFS_MON_SHIFT;
++    day = (date & FATFS_DAY_MASK) >> FATFS_DAY_SHIFT;
++    hour = (time & FATFS_HOUR_MASK) >> FATFS_HOUR_SHIFT;
++    minute = (time & FATFS_MIN_MASK) >> FATFS_MIN_SHIFT;
++    second = ((time & FATFS_SEC_MASK) >> FATFS_SEC_SHIFT) * 2;
++    leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
++
++    /* mktime normalizes impossible dates and times. Reject corrupt disk
++     * fields before conversion rather than inventing a different instant.
++     * Zero remains the absent/invalid FAT timestamp sentinel. */
++    if (month < 1 || month > 12 || day < 1 ||
++        hour > 23 || minute > 59 || second > 59 || timetens > 199)
++        return 0;
++    if (day > month_lengths[month - 1] + (month == 2 && leap))
++        return 0;
++
+     memset(&tm1, 0, sizeof(struct tm));
+-
+-    tm1.tm_sec = ((time & FATFS_SEC_MASK) >> FATFS_SEC_SHIFT) * 2;
+-    if ((tm1.tm_sec < 0) || (tm1.tm_sec > 60))
+-        tm1.tm_sec = 0;
+-
+-    /* The ctimetens value has a range of 0 to 199 */
+-    if (timetens >= 100)
+-        tm1.tm_sec++;
+-
+-    tm1.tm_min = ((time & FATFS_MIN_MASK) >> FATFS_MIN_SHIFT);
+-    if ((tm1.tm_min < 0) || (tm1.tm_min > 59))
+-        tm1.tm_min = 0;
+-
+-    tm1.tm_hour = ((time & FATFS_HOUR_MASK) >> FATFS_HOUR_SHIFT);
+-    if ((tm1.tm_hour < 0) || (tm1.tm_hour > 23))
+-        tm1.tm_hour = 0;
+-
+-    tm1.tm_mday = ((date & FATFS_DAY_MASK) >> FATFS_DAY_SHIFT);
+-    if ((tm1.tm_mday < 1) || (tm1.tm_mday > 31))
+-        tm1.tm_mday = 0;
+-
+-    tm1.tm_mon = ((date & FATFS_MON_MASK) >> FATFS_MON_SHIFT) - 1;
+-    if ((tm1.tm_mon < 0) || (tm1.tm_mon > 11))
+-        tm1.tm_mon = 0;
++    tm1.tm_sec = second + timetens / 100;
++    tm1.tm_min = minute;
++    tm1.tm_hour = hour;
++    tm1.tm_mday = day;
++    tm1.tm_mon = month - 1;
+ 
+     /* Preserve the legacy 2037 limit only when time_t is 32-bit.
+      * On 64-bit hosts, DOS/FAT dates cover 1980 through 2107. */
+-    tm1.tm_year = ((date & FATFS_YEAR_MASK) >> FATFS_YEAR_SHIFT) + 80;
+-    if ((tm1.tm_year < 0) ||
+-        ((sizeof(time_t) <= 4) && (tm1.tm_year > 137)))
++    tm1.tm_year = year - 1900;
++    if ((sizeof(time_t) <= 4) && (tm1.tm_year > 137))
+         tm1.tm_year = 0;
+ 
+     /* set the daylight savings variable to -1 so that mktime() figures

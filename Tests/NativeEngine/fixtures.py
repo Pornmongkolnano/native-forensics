@@ -519,6 +519,117 @@ def missing_time_fat(path: Path) -> dict:
     return manifest
 
 
+def _fat_calendar_matrix(path: Path, bits: int, cases: list[tuple[str, dict]]) -> dict:
+    """Real allocated FAT entries with an independent civil-time oracle.
+
+    Keep the existing payloads, directory geometry and deleted-file control.
+    Additional entries fit the single FAT32 root cluster and have their own
+    explicitly allocated clusters. Only generated image bytes are modified.
+    """
+    if not 1 <= len(cases) <= 10:
+        raise ValueError("matrix entries must fit the FAT32 root cluster")
+    manifest = fat_image(path, bits, 512)
+    zones = ["UTC", "Asia/Bangkok", "America/Los_Angeles"]
+    with path.open("r+b") as stream:
+        boot = stream.read(512)
+        reserved = struct.unpack_from("<H", boot, 14)[0]
+        root_entries = struct.unpack_from("<H", boot, 17)[0]
+        fat_sectors = struct.unpack_from("<H", boot, 22)[0] if bits == 16 else struct.unpack_from("<I", boot, 36)[0]
+        root_sector = reserved + 2 * fat_sectors
+        heap_sector = root_sector + math.ceil(root_entries * 32 / 512)
+        for index, (name, spec) in enumerate(cases):
+            cluster = 128 + index
+            payload = ("Deterministic classic FAT calendar case: " + name + "\n").encode()
+            base, extension = name.split(".")
+            short_name = base.encode().ljust(8, b" ") + extension.encode().ljust(3, b" ")
+            year, month, day, hour, minute, second = spec["civil"]
+            date = 0 if year == 0 else ((year - 1980) << 9) | (month << 5) | day
+            dos_time = (hour << 11) | (minute << 5) | (second // 2)
+            row = bytearray(_fat_entry(short_name, cluster, len(payload), date=date))
+            row[13] = spec["incrementHundredths"]
+            struct.pack_into("<H", row, 14, dos_time)
+            struct.pack_into("<H", row, 22, dos_time)
+            _put(stream, root_sector * 512 + (5 + index) * 32, row)
+            for copy in range(2):
+                _put(stream, (reserved + copy * fat_sectors) * 512 + cluster * (bits // 8),
+                     struct.pack("<H" if bits == 16 else "<I", 0xFFFF if bits == 16 else 0x0FFFFFFF))
+            _put(stream, (heap_sector + cluster - 2) * 512, payload)
+            expected_by_zone = {}
+            for timezone in zones:
+                expected = {}
+                for field in ("created", "modified", "accessed"):
+                    valid = spec["dateValid"]
+                    if field != "accessed":
+                        valid = valid and spec["timeValid"]
+                    if field == "created":
+                        valid = valid and spec["incrementHundredths"] <= 199
+                    if not valid:
+                        continue
+                    civil = spec["civil"][:3] + ([0, 0, 0] if field == "accessed" else spec["civil"][3:])
+                    instant = datetime.datetime(*civil, tzinfo=ZoneInfo(timezone))
+                    increment = spec["incrementHundredths"] if field == "created" else 0
+                    expected[field + "Epoch"] = int(instant.timestamp()) + increment // 100
+                    expected[field + "Nanoseconds"] = (increment % 100) * 10000000
+                expected_by_zone[timezone] = expected
+            manifest["files"].append({"path": name, "size": len(payload), "isDeleted": False,
+                "payloadHex": payload.hex(), "sha256": hashlib.sha256(payload).hexdigest(),
+                "timestampsByTimezone": expected_by_zone, "timestampEncoding": spec})
+    # Original entries also need the explicit oracle for Los Angeles; the
+    # historical single-epoch convenience expectation only supports UTC/BKK.
+    for file in manifest["files"][:5]:
+        file["timestampsByTimezone"] = {}
+        for timezone in zones:
+            local = datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=ZoneInfo(timezone))
+            midnight = local.replace(hour=0, minute=0, second=0)
+            file["timestampsByTimezone"][timezone] = {
+                "createdEpoch": int(local.timestamp()), "modifiedEpoch": int(local.timestamp()),
+                "accessedEpoch": int(midnight.timestamp()), "createdNanoseconds": 0,
+                "modifiedNanoseconds": 0, "accessedNanoseconds": 0,
+            }
+    manifest["logicalSha256"] = digest(path)
+    manifest["timestampMatrix"] = {"requestTimezones": zones,
+        "invalidTimestampsAreAbsent": True,
+        "oracle": "Independent Python Gregorian datetime and zoneinfo; no TSK conversions"}
+    return manifest
+
+
+def fat_calendar_matrix(path: Path, bits: int, kind: str) -> dict:
+    def spec(civil, *, date_valid=True, time_valid=True, increment=0):
+        return {"civil": list(civil), "dateValid": date_valid,
+                "timeValid": time_valid, "incrementHundredths": increment}
+
+    matrices = {
+        "invalid-date": [
+            ("FEB29.TXT", spec((2023, 2, 29, 12, 0, 0), date_valid=False)),
+            ("CENTURY.TXT", spec((2100, 2, 29, 12, 0, 0), date_valid=False)),
+            ("FEB30.TXT", spec((2024, 2, 30, 12, 0, 0), date_valid=False)),
+            ("APR31.TXT", spec((2024, 4, 31, 12, 0, 0), date_valid=False)),
+            ("MONTH0.TXT", spec((2024, 0, 15, 12, 0, 0), date_valid=False)),
+            ("MONTH13.TXT", spec((2024, 13, 15, 12, 0, 0), date_valid=False)),
+            ("DAY0.TXT", spec((2024, 1, 0, 12, 0, 0), date_valid=False)),
+            ("ABSENT.TXT", spec((0, 0, 0, 0, 0, 0), date_valid=False)),
+        ],
+        "invalid-time": [
+            ("HOUR24.TXT", spec((2024, 1, 15, 24, 0, 0), time_valid=False)),
+            ("HOUR31.TXT", spec((2024, 1, 15, 31, 0, 0), time_valid=False)),
+            ("MIN60.TXT", spec((2024, 1, 15, 12, 60, 0), time_valid=False)),
+            ("MIN63.TXT", spec((2024, 1, 15, 12, 63, 0), time_valid=False)),
+            ("SEC60.TXT", spec((2024, 1, 15, 12, 0, 60), time_valid=False)),
+            ("SEC62.TXT", spec((2024, 1, 15, 12, 0, 62), time_valid=False)),
+            ("TENS200.TXT", spec((2024, 1, 15, 12, 0, 0), increment=200)),
+            ("TENS255.TXT", spec((2024, 1, 15, 12, 0, 0), increment=255)),
+        ],
+        "valid": [
+            ("MINYEAR.TXT", spec((1980, 1, 1, 0, 0, 0))),
+            ("LEAP2000.TXT", spec((2000, 2, 29, 12, 0, 0))),
+            ("LEAP2024.TXT", spec((2024, 2, 29, 23, 59, 58), increment=199)),
+            ("POST2038.TXT", spec((2038, 1, 19, 3, 14, 8))),
+            ("MAXYEAR.TXT", spec((2107, 12, 31, 23, 59, 58), increment=199)),
+        ],
+    }
+    return _fat_calendar_matrix(path, bits, matrices[kind])
+
+
 def wrap_image(path: Path, source: Path, scheme: str) -> dict:
     sector, offset = 512, 2048 * 512
     payload_sectors = source.stat().st_size // sector
@@ -624,6 +735,10 @@ def _add_regressions(output: Path, manifest: dict) -> dict:
         ("exfat-matrix-invalid.raw", exfat_invalid_matrix),
         ("exfat-matrix-leap-increment.raw", exfat_leap_increment_matrix),
     ]
+    for bits in (16, 32):
+        for kind in ("invalid-date", "invalid-time", "valid"):
+            factories.append((f"fat{bits}-calendar-{kind}.raw",
+                              lambda path, bits=bits, kind=kind: fat_calendar_matrix(path, bits, kind)))
     for name, factory in factories:
         if name not in existing:
             manifest["images"].append(factory(output / name))

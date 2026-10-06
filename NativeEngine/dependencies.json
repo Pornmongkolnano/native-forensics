@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "engineVersion": "0.1.1-tsk4.15.0",
+  "engineVersion": "0.1.2-tsk4.15.0",
   "protocolVersion": 1,
   "minimumMacOS": "14.0",
   "buildJobsMaximum": 4,
@@ -29,6 +29,11 @@
           "path": "NativeEngine/patches/fat-64-bit-year-range.patch",
           "sha256": "8f2133775cab18df63fb5bb7c33748c2ccf965e915c6914180d0b9af45d5d747",
           "reason": "TSK assumes a 32-bit Unix timestamp and maps DOS/FAT years after 2037 to 1900; macOS has a 64-bit time_t, so retain the actual 1980-2107 year range while preserving the legacy 32-bit fallback"
+        },
+        {
+          "path": "NativeEngine/patches/fat-calendar-validation.patch",
+          "sha256": "2fad80375a16a01345b0afc44967de3f1f89754016c859969997383831245c2f",
+          "reason": "Reject impossible classic FAT Gregorian date/time fields and creation increments before mktime instead of normalizing corrupt disk metadata; retain absent-date omission, selected evidence timezone, and valid 1980-2107 dates on 64-bit time_t."
         },
         {
           "path": "NativeEngine/patches/ewf-explicit-segments.patch",
