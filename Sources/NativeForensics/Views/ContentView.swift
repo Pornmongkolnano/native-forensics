@@ -30,7 +30,7 @@ struct ContentView: View {
                     if workspace.section == .filesystem {
                         FilesystemInspectorView(workspace: workspace)
                     } else {
-                        EvidenceInspectorView(evidence: workspace.selectedEvidence)
+                        EvidenceInspectorView(workspace: workspace)
                     }
                 }
                 .inspectorColumnWidth(min: 270, ideal: 310, max: 420)

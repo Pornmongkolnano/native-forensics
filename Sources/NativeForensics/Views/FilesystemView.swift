@@ -28,7 +28,7 @@ struct FilesystemView: View {
                 ContentUnavailableView {
                     Label("Filesystem Not Analyzed", systemImage: "list.bullet.rectangle")
                 } description: {
-                    Text("Choose the image format, sector size and evidence timezone, then analyze this image. Source bytes are verified before and after analysis.")
+                    Text("Choose the image format, sector size, evidence timezone and listing limit, then analyze this image. Source bytes are verified before and after analysis.")
                         .frame(maxWidth: 470)
                 } actions: {
                     Button("Analyze Filesystem", action: workspace.analyzeSelectedImage)
@@ -102,6 +102,27 @@ private struct FilesystemControlsView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Listing limit")
+                TextField("Maximum entries", text: $workspace.engineMaxFilesText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 90)
+                    .accessibilityLabel("Maximum filesystem entries")
+                    .help("Maximum number of entries to include in a filesystem listing, from 1 to 50,000.")
+                Text("1–50,000 entries")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .disabled(workspace.isBusy || workspace.isLoadingFilesystem)
+            if let message = workspace.engineMaxFilesValidationMessage {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Text("Reaching the listing limit saves a partial result. Increase the limit and reanalyze to include more entries.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("Evidence timezone interprets timestamps that lack a UTC offset. Display timezone changes only how recorded times are shown. Reanalyze to apply changed options.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -123,7 +144,7 @@ private struct FilesystemResultSummaryView: View {
                     .monospacedDigit()
             }
             .font(.caption)
-            Text("Saved analysis · \(result.image.imageType.uppercased()) · \(result.image.sectorSize)-byte sectors · evidence timezone \(result.options.timezone)")
+            Text("Saved analysis · \(result.image.imageType.uppercased()) · \(result.image.sectorSize)-byte sectors · evidence timezone \(result.options.timezone) · listing limit \(result.options.maxFiles.formatted())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Historical result. Source hashes are checked again before extraction; reanalyze to refresh the listing.")

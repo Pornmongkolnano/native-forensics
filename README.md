@@ -16,7 +16,7 @@
 - แสดงขนาดไฟล์, image-container และ filesystem signature hint
 - บันทึก source reference และผล hash ลงเคส โดยไม่แก้ไข image
 - วิเคราะห์ RAW/EWF ผ่าน helper process: filesystem ที่ byte offset zero หรือ MBR/GPT partitions, file listing, allocated/deleted metadata และ timestamps
-- เลือก image format, 512/4096-byte sector size และ IANA evidence timezone; เปลี่ยน display timezone โดยไม่เปลี่ยนค่าที่บันทึก
+- เลือก image format, 512/4096-byte sector size, IANA evidence timezone และ listing limit 1–50,000; เปลี่ยน display timezone โดยไม่เปลี่ยนค่าที่บันทึก
 - เลือก additional image segments และตรวจ/เรียงลำดับเอง ไม่มีการค้น sibling files เพิ่มโดยอัตโนมัติ
 - บันทึก listing ใน versioned JSON cache และ reopen เป็น historical result พร้อม warnings/partial status
 - Extract file ไปยังไฟล์ใหม่ ตรวจขนาดและ SHA-256 ของ output ก่อน publish โดยไม่เขียนทับไฟล์เดิม

@@ -15,6 +15,18 @@ extension WorkspaceStore {
     var canAnalyzeFilesystem: Bool {
         selectedEvidence != nil && currentCase != nil && !isBusy && !isLoadingFilesystem
             && TimeZone(identifier: evidenceTimezone) != nil
+            && validatedEngineMaxFiles != nil
+    }
+
+    var validatedEngineMaxFiles: Int? {
+        let text = engineMaxFilesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),
+              let value = Int(text), (1...50_000).contains(value) else { return nil }
+        return value
+    }
+
+    var engineMaxFilesValidationMessage: String? {
+        validatedEngineMaxFiles == nil ? "Enter a whole number from 1 to 50,000 for the listing limit." : nil
     }
 
     var canExtractFilesystemFile: Bool {
@@ -23,7 +35,8 @@ extension WorkspaceStore {
     }
 
     var engineOptions: EngineOptions {
-        EngineOptions(imageType: engineImageType, sectorSize: engineSectorSize, timezone: evidenceTimezone)
+        EngineOptions(imageType: engineImageType, sectorSize: engineSectorSize,
+                      timezone: evidenceTimezone, maxFiles: engineMaxFiles)
     }
 
     /// Keep filtering outside view rendering. Result sets are bounded by the engine.
@@ -275,6 +288,8 @@ extension WorkspaceStore {
     private func applyFilesystemOptions(_ result: EnumerationResult) {
         engineImageType = result.options.imageType
         engineSectorSize = result.options.sectorSize
+        engineMaxFiles = result.options.maxFiles
+        engineMaxFilesText = String(result.options.maxFiles)
         evidenceTimezone = result.options.timezone
         additionalImageSegments = result.sourcePaths.dropFirst().map { URL(fileURLWithPath: $0) }
     }

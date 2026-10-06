@@ -52,6 +52,14 @@ final class WorkspaceStore {
     var filesystemSearchText = ""
     var engineImageType = "auto"
     var engineSectorSize = 0
+    var engineMaxFiles = 50_000
+    var engineMaxFilesText = "50000" {
+        didSet {
+            if let value = validatedEngineMaxFiles {
+                engineMaxFiles = value
+            }
+        }
+    }
     var additionalImageSegments: [URL] = []
     var evidenceTimezone = "Asia/Bangkok"
     var timestampDisplayTimezone = "UTC"

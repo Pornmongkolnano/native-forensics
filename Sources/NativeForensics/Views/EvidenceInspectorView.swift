@@ -3,11 +3,11 @@ import ForensicsCore
 import SwiftUI
 
 struct EvidenceInspectorView: View {
-    let evidence: EvidenceRecord?
+    @Bindable var workspace: WorkspaceStore
 
     var body: some View {
         Group {
-            if let evidence {
+            if let evidence = workspace.selectedEvidence {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         Label("Evidence Inspector", systemImage: "info.circle")
