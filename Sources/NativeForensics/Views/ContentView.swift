@@ -74,6 +74,12 @@ struct ContentView: View {
                 }
                 .help("Extract the selected file to a new destination (⇧⌘E)")
                 .disabled(!workspace.canExtractFilesystemFile)
+
+                Button(action: workspace.openAssistant) {
+                    Label("Analyze with Codex", systemImage: "sparkles")
+                }
+                .help("Review selected file context and ask Codex (⌥⌘A)")
+                .disabled(!workspace.canOpenAssistant)
             }
 
             ToolbarItem(placement: .automatic) {
@@ -83,6 +89,13 @@ struct ContentView: View {
                 .help("Toggle evidence inspector (⌥⌘I)")
                 .disabled(workspace.currentCase == nil)
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { workspace.assistant.isPresented },
+            set: { if !$0 { workspace.assistant.close() } }
+        )) {
+            AssistantAnalysisView(store: workspace.assistant)
+                .interactiveDismissDisabled(workspace.assistant.isWorking)
         }
         .alert("Unable to Complete Action", isPresented: Binding(
             get: { workspace.errorMessage != nil },

@@ -21,10 +21,13 @@ struct NativeForensicsApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static weak var current: AppDelegate?
     private var terminationTask: Task<Void, Never>?
+    private var requestedTerminationTask: Task<Void, Never>?
     private var terminationSignal: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.current = self
         NSApp.setActivationPolicy(.regular)
         if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: iconURL) {
@@ -35,11 +38,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // graceful signal through the same cancellation/drain path as Quit.
         Darwin.signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler {
-            Task { @MainActor in NSApp.terminate(nil) }
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in self?.requestGracefulTermination() }
         }
         source.resume()
         terminationSignal = source
+    }
+
+    func requestGracefulTermination() {
+        guard requestedTerminationTask == nil else { return }
+        let lifecycle = WorkspaceLifecycle.shared
+        lifecycle.prepareForTermination()
+        CasePanelService.cancelActivePanels()
+        requestedTerminationTask = Task { [weak self] in
+            await lifecycle.shutdownAll()
+            // Allow SwiftUI's dismissed sheet transition to finish before the
+            // AppKit request; never force-kill an in-flight publication.
+            for _ in 0..<250 {
+                if NSApp.modalWindow == nil && !NSApp.windows.contains(where: { $0.attachedSheet != nil }) { break }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            NSApp.terminate(nil)
+            self?.requestedTerminationTask = nil
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

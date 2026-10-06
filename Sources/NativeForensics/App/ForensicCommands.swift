@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private struct WorkspaceFocusedValueKey: FocusedValueKey {
@@ -16,6 +17,13 @@ struct ForensicCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .appTermination) {
+            Button("Quit Native Forensics") {
+                if let delegate = AppDelegate.current { delegate.requestGracefulTermination() }
+                else { NSApp.terminate(nil) }
+            }
+            .keyboardShortcut("q")
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Case…") {
                 if let workspace { workspace.createCase() }
@@ -47,7 +55,11 @@ struct ForensicCommands: Commands {
 
             Button("Cancel Current Job") { workspace?.cancelCurrentJob() }
                 .keyboardShortcut(".", modifiers: .command)
-                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true)
+                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true && workspace?.assistant.isWorking != true)
+
+            Button("Analyze with Codex…") { workspace?.openAssistant() }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+                .disabled(workspace?.canOpenAssistant != true)
         }
 
         CommandGroup(after: .sidebar) {

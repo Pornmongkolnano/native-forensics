@@ -379,6 +379,7 @@ extension WorkspaceStore {
     }
 
     func cancelCurrentJob() {
+        assistant.cancel()
         if isFilteringFilesystem {
             filesystemSearchText = ""
             filesystemCategory = .all

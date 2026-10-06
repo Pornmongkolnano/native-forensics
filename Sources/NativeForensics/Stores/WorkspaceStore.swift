@@ -94,15 +94,16 @@ final class WorkspaceStore {
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
     @ObservationIgnored let engineHelperURL: URL
+    let assistant = AssistantAnalysisStore()
 
     init(helperURL: URL? = nil) {
         engineHelperURL = helperURL ?? Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/NFTSKEngine")
     }
 
-    var isBusy: Bool { isClosing || isPresentingPanel || isInspecting || isEngineRunning }
+    var isBusy: Bool { isClosing || isPresentingPanel || isInspecting || isEngineRunning || assistant.isPresented || assistant.hasActiveWork }
     var hasActiveWork: Bool {
-        inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
+        inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil || assistant.hasActiveWork
     }
     var canInspectImage: Bool { currentCase != nil && !isBusy }
 
@@ -229,13 +230,14 @@ final class WorkspaceStore {
     /// another operation while the window/app is closing.
     func prepareForClosing() {
         isClosing = true
+        assistant.prepareForTermination()
     }
 
     /// Awaiting the owning tasks also drains their detached workers and native
     /// helper cleanup. Cancellation alone does not make an in-flight write stop.
     func beginShutdown() -> [Task<Void, Never>] {
         prepareForClosing()
-        let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask].compactMap { $0 }
+        let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask, assistant.beginShutdown()].compactMap { $0 }
         cancelCurrentJob()
         return pending
     }

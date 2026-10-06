@@ -78,6 +78,11 @@ struct FilesystemInspectorView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(!workspace.canExtractFilesystemFile)
+                            Button(action: workspace.openAssistant) {
+                                Label("Analyze with Codex…", systemImage: "sparkles")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .disabled(!workspace.canOpenAssistant)
                         } else {
                             Text("Select a file to inspect its metadata, timestamps and extraction options.")
                                 .font(.callout)
