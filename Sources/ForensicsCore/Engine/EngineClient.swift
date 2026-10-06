@@ -418,11 +418,23 @@ private struct EngineStream {
                   let sector = frame.sectorSize, let actualPaths = frame.imagePaths else {
                 throw EngineError.protocolViolation("Missing or repeated image metadata, including its ordered source paths.")
             }
-            let image = EngineImageMetadata(imageType: type, logicalSize: size, sectorSize: sector, logicalSha256: frame.logicalSha256, imagePaths: frame.imagePaths)
-            try EngineValidation.image(image)
-            if actualPaths != outcome.sources.map(\.path) {
+            let expectedPaths = outcome.sources.map(\.path)
+            guard actualPaths.count == expectedPaths.count,
+                  actualPaths.allSatisfy({ $0.hasPrefix("/") && EngineValidation.text($0) }) else {
                 throw EngineError.protocolViolation("The engine read images outside the verified ordered source scope.")
             }
+            // Darwin realpath exposes /private/var while Foundation deliberately
+            // presents the same source as /var. Normalize only this live frame
+            // through the same URL rules used for the pinned inputs. Keep the
+            // ordered Foundation paths/hash keys stable in saved results.
+            let normalizedPaths: [String]
+            do { normalizedPaths = try actualPaths.map { try FileAccess.localURL(URL(fileURLWithPath: $0)).path } }
+            catch { throw EngineError.protocolViolation("The engine supplied an invalid source path.") }
+            guard normalizedPaths == expectedPaths else {
+                throw EngineError.protocolViolation("The engine read images outside the verified ordered source scope.")
+            }
+            let image = EngineImageMetadata(imageType: type, logicalSize: size, sectorSize: sector, logicalSha256: frame.logicalSha256, imagePaths: expectedPaths)
+            try EngineValidation.image(image)
             outcome.image = image
         case "volume":
             guard operation != "extract", let volume = frame.volume,
