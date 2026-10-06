@@ -22,6 +22,8 @@ jobs:
           persist-credentials: false
       - name: Toolchain
         run: swift --version
+      - name: Benchmark harness safety regressions
+        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine
       - name: Build pinned native engine
         run: python3 script/build_native_engine.py
       - name: Native filesystem regressions
