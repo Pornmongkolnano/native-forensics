@@ -2,7 +2,9 @@
 
 สถานะ: Accepted สำหรับทิศทางการพัฒนา วันที่ 6 ตุลาคม 2026
 
-NativeForensics จะสร้างส่วนติดต่อ macOS ใหม่ด้วย SwiftUI และ AppKit และใช้ The Sleuth Kit 4.15.0 จากสายที่ตรวจสอบร่วมกับ Autopsy เป็นฐาน filesystem engine ในระยะถัดไป รวมการแก้ exFAT UTC offset ที่ผ่าน regression ในการประเมินเดิม ส่วน Strata เป็นแหล่งศึกษาโครงสร้างและประสบการณ์ใช้งาน การตัดสินใจนี้ไม่ใช่การ fork แอป Java/NetBeans ทั้งชุด และยังไม่ได้นำ engine ใดมารวมใน Phase 0
+NativeForensics เลือกสร้างส่วนติดต่อ macOS ใหม่ด้วย SwiftUI และ AppKit และใช้ The Sleuth Kit 4.15.0 จากสายที่ตรวจสอบร่วมกับ Autopsy เป็นฐาน filesystem engine รวมการแก้ exFAT UTC offset ที่ผ่าน regression ในการประเมินเดิม ส่วน Strata เป็นแหล่งศึกษาโครงสร้างและประสบการณ์ใช้งาน การตัดสินใจนี้ไม่ใช่การ fork แอป Java/NetBeans ทั้งชุด
+
+สถานะ implementation ปัจจุบัน: Phase 0 ยังคงเป็น case/selected-file inspection ส่วน Phase 1 มี direct C++ TSK helper สำหรับ RAW/EWF พร้อม Swift client, JSON cache และ listing/extraction UI ชุดแรกแล้ว Phase 1 ยัง IN PROGRESS ตาม [roadmap](../ROADMAP.md); ความถูกต้องของ helper build ใหม่และ coverage ใช้ผลใน [Validation](../VALIDATION.md)
 
 ## เหตุผลและหลักฐาน
 
@@ -26,12 +28,12 @@ Autopsy source ที่ตรวจมี Swing/NetBeans dependencies ในก
 
 - เขียน desktop UI, case model, job orchestration และ protocol เป็นโค้ดของโครงการนี้
 - Phase 0 ใช้ Foundation และ CryptoKit เพื่ออ่านและ hash selected file bytes เท่านั้น
-- Phase 1 เพิ่ม native helper ที่ build จาก pinned TSK 4.15.0 พร้อม patch และ regression corpus ไม่มี Java/NetBeans runtime
-- เก็บ [exFAT patch artifact](../../patches/sleuthkit/exfat-utc-offset.patch) ไว้เพื่อทำ reproducible build ใน Phase 1; SHA-256 คือ `fe17dab7a4f83f774eb9b4992801033131e66bf9579e91bc0e5aa5a5309613cf` Phase 0 ไม่โหลด TSK หรือ patch นี้
+- Phase 1 มี native helper ที่ build จาก pinned TSK 4.15.0 และ static libewf 20240506 ตาม [dependency specification](../../NativeEngine/dependencies.json) ไม่มี Java/NetBeans runtime
+- เก็บ [exFAT patch artifact](../../patches/sleuthkit/exfat-utc-offset.patch) ไว้เพื่อทำ reproducible build ใน Phase 1; SHA-256 คือ `fe17dab7a4f83f774eb9b4992801033131e66bf9579e91bc0e5aa5a5309613cf` Phase 0 inspection ไม่โหลด TSK; Phase 1 helper apply patch นี้พร้อม EWF compatibility patch
 - ใช้ Autopsy ที่ปรับแล้วเป็น differential reference ร่วมกับ expected fixture outputs และ metadata บนดิสก์ การตรงกับโปรแกรมหนึ่งเพียงอย่างเดียวไม่พิสูจน์ความถูกต้อง
 - ศึกษา Strata โดยไม่คัดลอก source หรือ binary เข้าฐานนี้ หากจะใช้ส่วนใดภายหลังต้องบันทึก exact revision และตรวจ license ของส่วนนั้นก่อน
 
-การเลือก audited lineage ไม่ได้ทำให้ helper ที่จะเขียนได้รับผลรับรองจาก build เดิมโดยอัตโนมัติ Compiler, build flags, format libraries, bindings และ runtime paths ต้องตรวจใหม่ทั้งหมด การแก้ exFAT เดิมครอบคลุม valid per-entry offsets; malformed dates, unknown offsets และ DST ambiguities ยังต้องเพิ่ม corpus
+การเลือก audited lineage ไม่ได้ทำให้ helper build ใหม่ได้รับผลรับรองจาก build เดิมโดยอัตโนมัติ Compiler, build flags, format libraries, bindings และ runtime paths ต้องตรวจใหม่ทั้งหมด การแก้ exFAT เดิมครอบคลุม valid per-entry offsets; malformed dates, unknown offsets และ DST ambiguities ยังต้องเพิ่ม corpus TSK adapter ปัจจุบันไม่มี UDF และปิด APFS/encrypted filesystem ตาม capability boundaries
 
 ## ทางเลือกที่เลื่อนออกไป
 
