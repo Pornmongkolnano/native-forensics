@@ -35,7 +35,9 @@ struct EvidenceRow: Identifiable {
 final class WorkspaceStore {
     var currentCase: ForensicCase?
     var section: WorkspaceSection? = .evidence
-    var selectedEvidenceID: UUID?
+    var selectedEvidenceID: UUID? {
+        didSet { if oldValue != selectedEvidenceID { refreshFilesystemSelection() } }
+    }
     var searchText = ""
     var showInspector = true
     var isPresentingPanel = false
@@ -49,7 +51,10 @@ final class WorkspaceStore {
     var filesystemRows: [FilesystemEntry] = []
     var filesystemFilesByID: [String: FilesystemEntry] = [:]
     var selectedFileID: String?
-    var filesystemSearchText = ""
+    var filesystemSearchText = "" {
+        didSet { if oldValue != filesystemSearchText { refreshFilesystemRows() } }
+    }
+    var isFilteringFilesystem = false
     var engineImageType = "auto"
     var engineSectorSize = 0
     var engineMaxFiles = 50_000
@@ -77,6 +82,9 @@ final class WorkspaceStore {
     @ObservationIgnored var filesystemLoadID: UUID?
     @ObservationIgnored var filesystemSelectionID: UUID?
     @ObservationIgnored var filesystemSelectionCaseID: UUID?
+    @ObservationIgnored var filesystemSearchIndex = FilesystemSearchIndex(files: [])
+    @ObservationIgnored var filesystemSearchTask: Task<Void, Never>?
+    @ObservationIgnored var filesystemSearchID: UUID?
 
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
@@ -189,6 +197,8 @@ final class WorkspaceStore {
     }
 
     private func load(_ forensicCase: ForensicCase) {
+        cancelFilesystemSearch()
+        filesystemSearchIndex = FilesystemSearchIndex(files: [])
         filesystemSelectionID = nil
         filesystemSelectionCaseID = nil
         filesystemResults = [:]

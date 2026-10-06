@@ -31,7 +31,7 @@ extension WorkspaceStore {
 
     var canExtractFilesystemFile: Bool {
         guard let file = selectedFilesystemFile else { return false }
-        return !isBusy && !file.isDirectory && selectedEvidence != nil
+        return !isBusy && !isFilteringFilesystem && !file.isDirectory && selectedEvidence != nil
     }
 
     var engineOptions: EngineOptions {
@@ -39,17 +39,63 @@ extension WorkspaceStore {
                       timezone: evidenceTimezone, maxFiles: engineMaxFiles)
     }
 
-    /// Keep filtering outside view rendering. Result sets are bounded by the engine.
+    /// Debounce typing and keep Foundation's Unicode matching off the UI actor.
+    /// Generation + source-selection guards prevent an old query being published.
     func refreshFilesystemRows() {
-        let files = selectedFilesystemResult?.files ?? []
-        if filesystemSearchText.isEmpty {
-            filesystemRows = Array(files.prefix(50_000))
-        } else {
-            let query = filesystemSearchText
-            filesystemRows = Array(files.lazy.filter {
-                $0.path.localizedCaseInsensitiveContains(query)
-            }.prefix(50_000))
+        cancelFilesystemSearch()
+        let index = filesystemSearchIndex
+        let query = filesystemSearchText
+        guard !query.isEmpty else {
+            filesystemRows = (try? index.rows(matching: "")) ?? []
+            return
         }
+        let searchID = UUID()
+        let evidenceID = selectedEvidenceID
+        let caseID = currentCase?.manifest.id
+        let caseURL = currentCase?.bundleURL
+        filesystemSearchID = searchID
+        isFilteringFilesystem = true
+        filesystemSearchTask = Task { [weak self] in
+            defer {
+                if let self, self.filesystemSearchID == searchID {
+                    self.isFilteringFilesystem = false
+                    self.filesystemSearchID = nil
+                    self.filesystemSearchTask = nil
+                }
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+                try Task.checkCancellation()
+                let worker = Task.detached(priority: .userInitiated) {
+                    try index.rows(matching: query)
+                }
+                let rows = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                try Task.checkCancellation()
+                guard let self, self.filesystemSearchID == searchID,
+                      self.selectedEvidenceID == evidenceID,
+                      self.currentCase?.manifest.id == caseID,
+                      self.currentCase?.bundleURL == caseURL,
+                      self.filesystemSearchText == query else { return }
+                self.filesystemRows = rows
+                if let selected = self.selectedFileID, !rows.contains(where: { $0.id == selected }) {
+                    self.selectedFileID = nil
+                }
+            } catch {
+                // Superseded queries are cancelled; the matching generation's
+                // defer releases its activity state without publishing old rows.
+            }
+        }
+    }
+
+    func cancelFilesystemSearch() {
+        filesystemSearchID = nil
+        filesystemSearchTask?.cancel()
+        filesystemSearchTask = nil
+        isFilteringFilesystem = false
     }
 
     func refreshFilesystemSelection() {
@@ -58,6 +104,8 @@ extension WorkspaceStore {
         filesystemSelectionID = selectedEvidenceID
         filesystemSelectionCaseID = selectedCaseID
         cancelFilesystemLoad()
+        cancelFilesystemSearch()
+        filesystemSearchIndex = FilesystemSearchIndex(files: [])
         selectedFileID = nil
         extractionReceipt = nil
         extractionReceiptIsVerified = false
@@ -273,6 +321,11 @@ extension WorkspaceStore {
     }
 
     func cancelCurrentJob() {
+        if isFilteringFilesystem {
+            filesystemSearchText = ""
+        } else {
+            cancelFilesystemSearch()
+        }
         cancelFilesystemLoad()
         if isEngineRunning { cancelEngineJob() }
         else { cancelInspection() }
@@ -300,10 +353,15 @@ extension WorkspaceStore {
     }
 
     private func rebuildFilesystemIndex() {
-        filesystemFilesByID = Dictionary(
-            (selectedFilesystemResult?.files ?? []).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        cancelFilesystemSearch()
+        let files = selectedFilesystemResult?.files ?? []
+        filesystemSearchIndex = FilesystemSearchIndex(files: files)
+        var byID: [String: FilesystemEntry] = [:]
+        byID.reserveCapacity(files.count)
+        for file in files where byID[file.id] == nil {
+            byID[file.id] = file
+        }
+        filesystemFilesByID = byID
     }
 
     private func extract(file: FilesystemEntry, evidence: EvidenceRecord, to destination: URL, options: EngineOptions, sourcePaths: [URL], sourceHashes: [String: String]) {

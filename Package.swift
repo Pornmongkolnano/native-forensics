@@ -11,6 +11,8 @@ let package = Package(
     targets: [
         .target(name: "ForensicsCore"),
         .executableTarget(name: "NativeForensics", dependencies: ["ForensicsCore"]),
-        .testTarget(name: "ForensicsCoreTests", dependencies: ["ForensicsCore"])
+        .executableTarget(name: "FilesystemSearchBenchmark", dependencies: ["ForensicsCore"]),
+        .testTarget(name: "ForensicsCoreTests", dependencies: ["ForensicsCore"]),
+        .testTarget(name: "NativeForensicsTests", dependencies: ["NativeForensics", "ForensicsCore"])
     ]
 )

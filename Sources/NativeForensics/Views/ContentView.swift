@@ -72,9 +72,6 @@ struct ContentView: View {
                 .help("Toggle evidence inspector (⌥⌘I)")
             }
         }
-        .onChange(of: workspace.selectedEvidenceID) { _, _ in
-            workspace.refreshFilesystemSelection()
-        }
         .alert("Unable to Complete Action", isPresented: Binding(
             get: { workspace.errorMessage != nil },
             set: { if !$0 { workspace.errorMessage = nil } }
