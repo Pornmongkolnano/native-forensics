@@ -66,6 +66,15 @@ class PipelineComparisonTests(unittest.TestCase):
         self.assertEqual(len(result["differences"]), 1)
         self.assertEqual(result["differences"][0]["autopsyMinusNativeSeconds"], -25200)
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS libproc receipt")
+    def test_error_free_sampler_with_no_processes_does_not_claim_full_coverage(self):
+        sampler = benchmark.OwnedGroupSampler(2147483647)
+        receipt = sampler.receipt()  # No process was started or sampled.
+        self.assertTrue(receipt["noSamplerErrors"])
+        self.assertIsNone(receipt["sampledAggregatePeakRSSBytes"])
+        self.assertNotIn("resourceCoverageComplete", receipt)
+        self.assertTrue(receipt["observedProcessCoverage"].startswith("Unproven"))
+
 
 if __name__ == "__main__":
     unittest.main()

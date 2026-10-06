@@ -4,6 +4,8 @@
 
 ## ชุดงานที่ต้องใช้
 
+ผลเทียบ NativeForensics 0.2.3 กับ Autopsy 4.23.1 Mac-adapted ใน fresh-session import อยู่ใน [รายงานเปรียบเทียบ](AUTOPSY-COMPARISON.md) และ [ข้อมูลทุก attempt](benchmarks/2026-10-06-m2-autopsy-pipeline.json) แยก successful-import timings, JVM crash, timestamp mismatch และ NTFS capability gap; ไม่ใช้เป็นข้ออ้าง GUI/steady-state engine performance หรือ pristine stock parity
+
 | Workload | สิ่งที่เทียบ | Expected output |
 |---|---|---|
 | Selected file SHA-256 | streaming hash ของ bytes เดียวกัน | digest/size/hash scope |

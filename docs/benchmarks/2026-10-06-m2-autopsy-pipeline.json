@@ -1,0 +1,4981 @@
+{
+  "schemaVersion": 1,
+  "experimentDate": "2026-10-06",
+  "status": "completed",
+  "reportKind": "Synthetic fresh-process import workflow; completed-import conditional statistics",
+  "sourceRevision": "8b24bd5a8f6543f7315d3d4e659f1a56282e2fda",
+  "seed": 20261006,
+  "recoverySeed": 20261007,
+  "applications": {
+    "native": {
+      "name": "NativeForensics",
+      "version": "0.2.3",
+      "buildConfiguration": "release",
+      "engine": "0.1.1-tsk4.15.0"
+    },
+    "autopsy": {
+      "name": "Autopsy",
+      "version": "4.23.1",
+      "referenceVariant": "installed-adapted",
+      "engine": "TSK 4.15.0",
+      "java": "17.0.20.1",
+      "pristineVendorStock": false
+    }
+  },
+  "scope": "Fresh-process create-case/import-filesystem/persist workflow with warm OS file caches. No GUI and no ingest modules.",
+  "method": {
+    "primary": "Popen start through application process exit, including bootstrap and persistence; owned Solr cleanup is afterwards",
+    "native": "Release application core, selected-file SHA-256 + before/after source checks + logical SHA-256 + helper enumeration + JSON cache",
+    "autopsy": "Full NetBeans CLI, fresh user/cache/case and private Solr, image import into SQLite, adapted macOS ARM64 runtime",
+    "sampling": "5 ms libproc exact owned process group, observes Native CLI/helper or Autopsy JVM/Solr. RSS sampled and CPU lower bound; unavailable per-process readings are retained as coverage gaps, not zero consumption.",
+    "validation": "Exact paths, sizes, allocation, stream identity where declared, image timezone UTC and byte-exact known exports outside timing. Raw timestamp differences are reported separately; no complete metadata parity claim.",
+    "cache": "Hashes before each run warm OS caches; Autopsy NetBeans user/module cache is fresh each run; no disk cache flush",
+    "excluded": [
+      "SwiftUI/Swing rendering",
+      "interactive UI latency",
+      "steady-state engine throughput",
+      "carving",
+      "keyword/browser/artifact ingest",
+      "production evidence"
+    ],
+    "baselineLimitation": "Upstream three-module Mac-compatible reference failed Solr readiness despite healthy private service; installed-adapted timings are not pristine vendor-stock timings."
+  },
+  "host": {
+    "system": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "model": "Mac14,2",
+    "cpu": "Apple M2",
+    "memoryBytes": 17179869184
+  },
+  "environmentBefore": {
+    "architecture": "arm64",
+    "system": "Darwin",
+    "kernel": "27.0.0",
+    "python": "3.14.8",
+    "backgroundLoadAverage1m5m15m": [
+      2.23486328125,
+      2.03857421875,
+      2.029296875
+    ],
+    "macOS": "27.0.1",
+    "osBuild": "26A434",
+    "machineClass": "Mac14,2",
+    "ramBytes": "17179869184",
+    "cpuClass": "Apple M2",
+    "logicalCPUCount": "8",
+    "physicalCPUCount": "8",
+    "powerSource": "AC",
+    "batteryState": "charged;0:00 remaining present: true",
+    "lowPowerModeSettings": [
+      "lowpowermode         0",
+      "lowpowermode         0"
+    ],
+    "thermalStatus": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "sourceOutputFilesystem": "apfs",
+    "sourceOutputSolidState": true
+  },
+  "environmentBeforeRecovery": {
+    "architecture": "arm64",
+    "system": "Darwin",
+    "kernel": "27.0.0",
+    "python": "3.14.8",
+    "backgroundLoadAverage1m5m15m": [
+      1.90185546875,
+      2.38671875,
+      2.2705078125
+    ],
+    "macOS": "27.0.1",
+    "osBuild": "26A434",
+    "machineClass": "Mac14,2",
+    "ramBytes": "17179869184",
+    "cpuClass": "Apple M2",
+    "logicalCPUCount": "8",
+    "physicalCPUCount": "8",
+    "powerSource": "AC",
+    "batteryState": "charged;0:00 remaining present: true",
+    "lowPowerModeSettings": [
+      "lowpowermode         0",
+      "lowpowermode         0"
+    ],
+    "thermalStatus": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "sourceOutputFilesystem": "apfs",
+    "sourceOutputSolidState": true
+  },
+  "environmentAfter": {
+    "architecture": "arm64",
+    "system": "Darwin",
+    "kernel": "27.0.0",
+    "python": "3.14.8",
+    "backgroundLoadAverage1m5m15m": [
+      3.171875,
+      2.8837890625,
+      2.50537109375
+    ],
+    "macOS": "27.0.1",
+    "osBuild": "26A434",
+    "machineClass": "Mac14,2",
+    "ramBytes": "17179869184",
+    "cpuClass": "Apple M2",
+    "logicalCPUCount": "8",
+    "physicalCPUCount": "8",
+    "powerSource": "AC",
+    "batteryState": "charged;0:00 remaining present: true",
+    "lowPowerModeSettings": [
+      "lowpowermode         0",
+      "lowpowermode         0"
+    ],
+    "thermalStatus": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "sourceOutputFilesystem": "apfs",
+    "sourceOutputSolidState": true
+  },
+  "recipeSHA256": {
+    "Package.swift": "419fdaa9245dfff9b4a1374420f44d1eeb75e864c3ae6cceb985494532ea8e8e",
+    "Sources/ForensicsPipelineBenchmark/ForensicsPipelineBenchmark.swift": "3bbcb5186ee6a77c33218d28e96bcc069872281bed057460477a43a487072fe8",
+    "script/compare_forensics_pipeline.py": "e45934f5e1a19d840bd65e6fc847724e4fb10042ac5bcc3b4f693d1d176d30cf",
+    "script/benchmark_autopsy_pipeline.py": "b6ab5f58f6cfe391da062eb975db89cb4f669fe051ef97986c729b89a4984a40",
+    "Benchmarks/AutopsyComparison/AutopsyCaseVerifier.java": "d648713258473143a3d837c01eb94e58a5b99f281d1cdd0c6245ec70891b79df",
+    "Tests/NativeEngine/fixtures.py": "39a0bd0d79c87f2df50fab45309bf6a9b5b183227c194e8076449eed7f9681ad",
+    "Tests/NativeEngine/ntfs_fixtures.py": "f8ff1b4c9ff2cbf08b9f58c82ee235a3cb107d92edb7eef2729462a660dd3054",
+    "Tests/NativeEngine/benchmark_fixtures.py": "61ce351788872aeb2f2884dd9fd165a7c04294ebd298a188831d44ce2198f875",
+    "script/benchmark_native_engine.py": "db324df903f8b3344e3c1601479e3afc0ab2ff126c9f77159e278078a97d390c"
+  },
+  "recovery": {
+    "sourceExperimentPreserved": true,
+    "timedRecipesUnchanged": true,
+    "recoveryHarnessSHA256": "a1deb3bc613cc66fae99ccbf53ccf2c64a797a2796112fb6f4012f4471d8aa2f",
+    "maximumExtraMeasuredPairsPerImage": 2,
+    "statistics": "Conditional on complete known-payload imports. Failed attempts are retained, never counted as faster results. Adaptive replacements run both applications as new pairs."
+  },
+  "provenance": {
+    "nativeBenchmarkSHA256": "e4591bb5a1b10ac260fe60056e01981413e9430b5522cb1f8b06905d47ad8831",
+    "nativeHelperSHA256": "5c6208eb267daca21670d58bc86c36b11f6fd633b4c8021f04ee16a584049156",
+    "verifierClassSHA256": "9b080d976cc10943ca6fb13ddb51900e28ce0b92a370a34583736e6bfe2b048e",
+    "autopsyVariants": {
+      "original-mac-compatible": {
+        "modules": [
+          {
+            "name": "org-sleuthkit-autopsy-core.jar",
+            "sha256": "edd9c8b949656adf4e352e6ce620919ccd425090b91da7274a92a57af000a4fc"
+          },
+          {
+            "name": "org-sleuthkit-autopsy-keywordsearch.jar",
+            "sha256": "b88d50a05f24d74b4b996e8257aef0675ff1be1b818da6d67aee4d1dcea9aa82"
+          },
+          {
+            "name": "org-sleuthkit-autopsy-recentactivity.jar",
+            "sha256": "0d84067ea7144c1774fcf0f5a6662e5b595bbcb4a313f2787969ff8aa4cadaf8"
+          }
+        ],
+        "nativeFiles": [
+          {
+            "name": "libtsk.23.dylib",
+            "sha256": "1dc83922f220c94f69b329e198a37b30cac7a2916ee63580c31471246b2535e9"
+          },
+          {
+            "name": "libtsk_jni.0.dylib",
+            "sha256": "84795278951e6aaf4075db1b6dfd182097ae042cec363685e3a264ff9d0135f4"
+          }
+        ],
+        "safetyAdapter": {
+          "originalJarSHA256": "75b627ca113c4bd35fa6547755414916618a4a17a1db6f0f27a536be44d7f77c",
+          "effectiveJarSHA256": "b88d50a05f24d74b4b996e8257aef0675ff1be1b818da6d67aee4d1dcea9aa82",
+          "changedEntries": [
+            {
+              "entry": "org/sleuthkit/autopsy/keywordsearch/Server.class",
+              "occurrences": 3
+            }
+          ],
+          "purpose": "Prevent upstream fallback process queries from matching unrelated Solr instances"
+        }
+      },
+      "installed-adapted": {
+        "modules": [
+          {
+            "name": "org-sleuthkit-autopsy-core.jar",
+            "sha256": "41bac89f188c6c3ee517e61630a2826a22f4cb29398b3238c96aa047ff8e0983"
+          },
+          {
+            "name": "org-sleuthkit-autopsy-keywordsearch.jar",
+            "sha256": "59d44b353064f7381c9ccca7b967a5e4740726de03e6f22c3752a48f2d0824e8"
+          },
+          {
+            "name": "org-sleuthkit-autopsy-recentactivity.jar",
+            "sha256": "69cf2dd6aae3368895fff76104e79764508d505827541bb364d2a631a5cd8563"
+          }
+        ],
+        "nativeFiles": [
+          {
+            "name": "libtsk.23.dylib",
+            "sha256": "8a48c53e8897e3594232e678b2608af1b3956f15011db2623611d1b7456df8fa"
+          },
+          {
+            "name": "libtsk_jni.0.dylib",
+            "sha256": "84795278951e6aaf4075db1b6dfd182097ae042cec363685e3a264ff9d0135f4"
+          }
+        ],
+        "safetyAdapter": {
+          "originalJarSHA256": "269b5f52973e3a1f5564db6a0f573763db69fbe3665614e3d35568e5440d0236",
+          "effectiveJarSHA256": "59d44b353064f7381c9ccca7b967a5e4740726de03e6f22c3752a48f2d0824e8",
+          "changedEntries": [
+            {
+              "entry": "org/sleuthkit/autopsy/keywordsearch/Server.class",
+              "occurrences": 3
+            }
+          ],
+          "purpose": "Prevent upstream fallback process queries from matching unrelated Solr instances"
+        }
+      }
+    },
+    "commonRuntimeJARCount": 1063,
+    "commonRuntimeJARManifestSHA256": "a423e7af5953e5ec7017953b5c8c3b5a0f6e72b60b9638bd0b977161b44d8cf3",
+    "selectedCommonRuntimeJARs": [
+      {
+        "relativePath": "autopsy/modules/ext/sleuthkit-4.15.0.jar",
+        "sha256": "9e888f8dfb14eb9e5ebce8f8199f550d149615ac2a7002df3fabbf5b24f69b3b"
+      },
+      {
+        "relativePath": "autopsy/modules/ext/sqlite-jdbc-3.49.1.0.jar",
+        "sha256": "5c8609d2ca341deb8c6f71778974b5ba4995c7d32d7c7c89d9392a3e72c39291"
+      }
+    ],
+    "measuredToolsCommit": "1d8192eb73c330c47e755aae326b0215f7e6a800"
+  },
+  "workloads": [
+    {
+      "image": "fat16-512.raw",
+      "imageSize": 2560000,
+      "sha256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3",
+      "filesystem": "FAT16",
+      "summary": {
+        "native": {
+          "wallMedianSeconds": 0.18634495900187176,
+          "wallMinSeconds": 0.14494720799848437,
+          "wallMaxSeconds": 0.2023030840064166,
+          "sampledAggregatePeakRSSMedianMiB": 8.84375,
+          "sampledCPULowerBoundMedianSeconds": 0.011590291666666665,
+          "reportedSampleErrorsPresent": false
+        },
+        "autopsy": {
+          "wallMedianSeconds": 21.5823906250007,
+          "wallMinSeconds": 19.47653154199361,
+          "wallMaxSeconds": 21.938990374997957,
+          "sampledAggregatePeakRSSMedianMiB": 1944.671875,
+          "sampledCPULowerBoundMedianSeconds": 46.683515,
+          "reportedSampleErrorsPresent": true
+        },
+        "pairedWallRatioMedian": 111.30154290256337,
+        "pairedWallReductionPercentMedian": 99.10153985836887,
+        "payloadsPerApplicationPerRun": 5,
+        "measuredPairs": 5,
+        "conditionalOnSuccessfulImports": true
+      },
+      "applicationAttempts": {
+        "native": {
+          "measured": 5,
+          "completedKnownPayloads": 5,
+          "failedKnownPayloads": 0
+        },
+        "autopsy": {
+          "measured": 6,
+          "completedKnownPayloads": 5,
+          "failedKnownPayloads": 1
+        }
+      },
+      "performanceRatioAllowed": true,
+      "fixture": {
+        "sectorSize": 512,
+        "fsOffsetBytes": 0,
+        "expectedEpochUTC": 1700000000,
+        "synthetic": true,
+        "knownPayloads": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "successful": true,
+          "reusedUnchangedTimedObservation": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.19764016599219758,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.00759191650286084,
+              "sampleCount": 19,
+              "sampledAggregatePeakRSSBytes": 9240576,
+              "sampledUserCPULowerBoundSeconds": 0.006979458333333332,
+              "sampledSystemCPULowerBoundSeconds": 0.00411325,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 138.8535,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.08875,
+                "clientEnumerationMilliseconds": 130.512875,
+                "resultPublicationMilliseconds": 1.410084,
+                "selectedFileInspectionAndManifestMilliseconds": 2.043166,
+                "sourceVerificationAfterMilliseconds": 2.487417,
+                "sourceVerificationBeforeMilliseconds": 1.29525
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.024782458000118,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007558437006082386,
+              "sampleCount": 2769,
+              "sampledAggregatePeakRSSBytes": 2120925184,
+              "sampledUserCPULowerBoundSeconds": 36.41523925,
+              "sampledSystemCPULowerBoundSeconds": 8.715872124999999,
+              "sampledDiskReadLowerBoundBytes": 42983424,
+              "sampledDiskWriteLowerBoundBytes": 94343168,
+              "failedSampleCount": 62,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 8,
+                "basename": 1,
+                "bash": 26,
+                "expr": 5,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 4,
+                "jspawnhelper": 2,
+                "lsof": 5,
+                "sed": 3,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 62
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 1,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "successful": true,
+          "reusedUnchangedTimedObservation": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.18634495900187176,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007591000001411885,
+              "sampleCount": 20,
+              "sampledAggregatePeakRSSBytes": 9273344,
+              "sampledUserCPULowerBoundSeconds": 0.007187291666666666,
+              "sampledSystemCPULowerBoundSeconds": 0.003977416666666666,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 140.863625,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.013,
+                "clientEnumerationMilliseconds": 131.932042,
+                "resultPublicationMilliseconds": 2.02825,
+                "selectedFileInspectionAndManifestMilliseconds": 2.101667,
+                "sourceVerificationAfterMilliseconds": 2.517416,
+                "sourceVerificationBeforeMilliseconds": 1.260834
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.70862845800002,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007562916012830101,
+              "sampleCount": 2864,
+              "sampledAggregatePeakRSSBytes": 2285977600,
+              "sampledUserCPULowerBoundSeconds": 37.27555225,
+              "sampledSystemCPULowerBoundSeconds": 8.264946833333333,
+              "sampledDiskReadLowerBoundBytes": 16191488,
+              "sampledDiskWriteLowerBoundBytes": 92819456,
+              "failedSampleCount": 58,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 8,
+                "bash": 32,
+                "cat": 1,
+                "egrep": 1,
+                "ffmpeg": 3,
+                "grep": 12,
+                "head": 1,
+                "java": 3,
+                "jspawnhelper": 3,
+                "locale": 1,
+                "lsof": 5,
+                "sed": 2,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 58
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "successful": true,
+          "reusedUnchangedTimedObservation": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.19711308399564587,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007581583995488472,
+              "sampleCount": 20,
+              "sampledAggregatePeakRSSBytes": 9273344,
+              "sampledUserCPULowerBoundSeconds": 0.007783333333333332,
+              "sampledSystemCPULowerBoundSeconds": 0.0038069583333333328,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 139.718666,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.047917,
+                "clientEnumerationMilliseconds": 130.768625,
+                "resultPublicationMilliseconds": 1.677042,
+                "selectedFileInspectionAndManifestMilliseconds": 2.132292,
+                "sourceVerificationAfterMilliseconds": 2.760375,
+                "sourceVerificationBeforeMilliseconds": 1.320459
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 21.938990374997957,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.0075653339954442345,
+              "sampleCount": 3005,
+              "sampledAggregatePeakRSSBytes": 1602764800,
+              "sampledUserCPULowerBoundSeconds": 39.98814020833333,
+              "sampledSystemCPULowerBoundSeconds": 8.909887833333332,
+              "sampledDiskReadLowerBoundBytes": 9498624,
+              "sampledDiskWriteLowerBoundBytes": 93188096,
+              "failedSampleCount": 60,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 28,
+                "egrep": 1,
+                "expr": 3,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 4,
+                "jspawnhelper": 2,
+                "lsof": 5,
+                "rm": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "unresolved": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 60
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "successful": true,
+          "reusedUnchangedTimedObservation": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.1502400830067927,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007590833003632724,
+              "sampleCount": 20,
+              "sampledAggregatePeakRSSBytes": 9420800,
+              "sampledUserCPULowerBoundSeconds": 0.00994175,
+              "sampledSystemCPULowerBoundSeconds": 0.0048964583333333325,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 136.631042,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.093875,
+                "clientEnumerationMilliseconds": 128.054958,
+                "resultPublicationMilliseconds": 1.547375,
+                "selectedFileInspectionAndManifestMilliseconds": 2.161792,
+                "sourceVerificationAfterMilliseconds": 2.454958,
+                "sourceVerificationBeforeMilliseconds": 1.300334
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 21.826548458004254,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007565749998320825,
+              "sampleCount": 3021,
+              "sampledAggregatePeakRSSBytes": 2035712000,
+              "sampledUserCPULowerBoundSeconds": 37.64227570833333,
+              "sampledSystemCPULowerBoundSeconds": 8.537423833333332,
+              "sampledDiskReadLowerBoundBytes": 26177536,
+              "sampledDiskWriteLowerBoundBytes": 91512832,
+              "failedSampleCount": 66,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 28,
+                "expr": 2,
+                "ffmpeg": 3,
+                "grep": 13,
+                "java": 3,
+                "jspawnhelper": 4,
+                "locale": 1,
+                "lsof": 5,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 66
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "successful": true,
+          "reusedUnchangedTimedObservation": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.14494720799848437,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007570957997813821,
+              "sampleCount": 20,
+              "sampledAggregatePeakRSSBytes": 9322496,
+              "sampledUserCPULowerBoundSeconds": 0.009483708333333332,
+              "sampledSystemCPULowerBoundSeconds": 0.004726666666666666,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 137.045125,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.028416,
+                "clientEnumerationMilliseconds": 128.448625,
+                "resultPublicationMilliseconds": 1.622958,
+                "selectedFileInspectionAndManifestMilliseconds": 2.121458,
+                "sourceVerificationAfterMilliseconds": 2.550792,
+                "sourceVerificationBeforeMilliseconds": 1.260833
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 19.47653154199361,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.00756108300993219,
+              "sampleCount": 2693,
+              "sampledAggregatePeakRSSBytes": 2105114624,
+              "sampledUserCPULowerBoundSeconds": 39.502831791666665,
+              "sampledSystemCPULowerBoundSeconds": 8.783931749999999,
+              "sampledDiskReadLowerBoundBytes": 14794752,
+              "sampledDiskWriteLowerBoundBytes": 94654464,
+              "failedSampleCount": 67,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 34,
+                "cat": 1,
+                "egrep": 1,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 2,
+                "locale": 1,
+                "lsof": 5,
+                "sed": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 67
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "successful": false,
+          "nativeAttempted": false,
+          "failureClass": "JVM SIGSEGV in __findenv_locked; exit 137",
+          "retainedFailedAttempt": true,
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 15.105515624993131,
+            "exitCode": 137,
+            "structuralGatePassed": false,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "failureSummary": "Import or structural gate failed; raw diagnostics retained outside Git.",
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007565083498775493,
+              "sampleCount": 2081,
+              "sampledAggregatePeakRSSBytes": 2058338304,
+              "sampledUserCPULowerBoundSeconds": 29.086812749999996,
+              "sampledSystemCPULowerBoundSeconds": 6.430114249999999,
+              "sampledDiskReadLowerBoundBytes": 10088448,
+              "sampledDiskWriteLowerBoundBytes": 17690624,
+              "failedSampleCount": 57,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 24,
+                "egrep": 1,
+                "expr": 1,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 4,
+                "jspawnhelper": 3,
+                "lsof": 5,
+                "mv": 1,
+                "sed": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 57
+                }
+              ]
+            },
+            "validation": {
+              "passed": false,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 0,
+              "knownPayloadReadbackSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1
+          },
+          "metadataComparison": {
+            "compared": false,
+            "reason": "Import incomplete; metadata parity was not evaluated."
+          }
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "replacement": true,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.2023030840064166,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007597958494443446,
+              "sampleCount": 19,
+              "sampledAggregatePeakRSSBytes": 9256960,
+              "sampledUserCPULowerBoundSeconds": 0.006979874999999999,
+              "sampledSystemCPULowerBoundSeconds": 0.004064541666666666,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 137.715333,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.027,
+                "clientEnumerationMilliseconds": 128.953708,
+                "resultPublicationMilliseconds": 1.86125,
+                "selectedFileInspectionAndManifestMilliseconds": 2.03925,
+                "sourceVerificationAfterMilliseconds": 2.547292,
+                "sourceVerificationBeforeMilliseconds": 1.274791
+              },
+              "entryCount": 10,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 10,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "b262cb266b7038c82eeef416c6f0f6f5b19ad3d7949f56f4d710d4126052baae",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 21.5823906250007,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007563083498098422,
+              "sampleCount": 2973,
+              "sampledAggregatePeakRSSBytes": 2039136256,
+              "sampledUserCPULowerBoundSeconds": 38.64355520833333,
+              "sampledSystemCPULowerBoundSeconds": 8.039959791666666,
+              "sampledDiskReadLowerBoundBytes": 21417984,
+              "sampledDiskWriteLowerBoundBytes": 91922432,
+              "failedSampleCount": 62,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 22,
+                "egrep": 1,
+                "expr": 4,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 3,
+                "lsof": 5,
+                "mkdir": 1,
+                "mv": 1,
+                "rm": 1,
+                "sed": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 62
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 5,
+              "verifiedPayloads": 5,
+              "filesystemRows": 13,
+              "regularFilesystemRows": 5,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 12,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "15bc2307522e509869f778845ab59fa48f04f391b15ac02619489f0c7f82b19b",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 2560000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 4,
+                  "blockSize": 512,
+                  "blockCount": 5000
+                }
+              ],
+              "filesystemEntryCount": 13,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        }
+      ],
+      "readbackExample": {
+        "native": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          }
+        ],
+        "autopsy": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "expectedSha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false,
+            "metaAddress": 3,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "expectedSha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "metaAddress": 4,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "expectedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "metaAddress": 5,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "expectedSha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true,
+            "metaAddress": 6,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "expectedSha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false,
+            "metaAddress": 853,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          }
+        ]
+      },
+      "nativeCoreStageMediansMilliseconds": {
+        "caseCreateMilliseconds": 1.028416,
+        "clientEnumerationMilliseconds": 128.953708,
+        "resultPublicationMilliseconds": 1.677042,
+        "selectedFileInspectionAndManifestMilliseconds": 2.121458,
+        "sourceVerificationAfterMilliseconds": 2.547292,
+        "sourceVerificationBeforeMilliseconds": 1.274791
+      },
+      "nativeCorePipelineMedianMilliseconds": 137.715333
+    },
+    {
+      "image": "large-fat32.raw",
+      "imageSize": 286720000,
+      "sha256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d",
+      "filesystem": "FAT32",
+      "summary": {
+        "native": {
+          "wallMedianSeconds": 0.8579951669962611,
+          "wallMinSeconds": 0.7702887920022476,
+          "wallMaxSeconds": 0.8892540839879075,
+          "sampledAggregatePeakRSSMedianMiB": 8.921875,
+          "sampledCPULowerBoundMedianSeconds": 0.5366697083333333,
+          "reportedSampleErrorsPresent": false
+        },
+        "autopsy": {
+          "wallMedianSeconds": 20.648568832999445,
+          "wallMinSeconds": 18.61611712499871,
+          "wallMaxSeconds": 21.242787417009822,
+          "sampledAggregatePeakRSSMedianMiB": 1935.140625,
+          "sampledCPULowerBoundMedianSeconds": 46.69569287499999,
+          "reportedSampleErrorsPresent": true
+        },
+        "pairedWallRatioMedian": 23.952728065999782,
+        "pairedWallReductionPercentMedian": 95.82511020354517,
+        "payloadsPerApplicationPerRun": 6,
+        "measuredPairs": 5,
+        "conditionalOnSuccessfulImports": true
+      },
+      "applicationAttempts": {
+        "native": {
+          "measured": 5,
+          "completedKnownPayloads": 5,
+          "failedKnownPayloads": 0
+        },
+        "autopsy": {
+          "measured": 5,
+          "completedKnownPayloads": 5,
+          "failedKnownPayloads": 0
+        }
+      },
+      "performanceRatioAllowed": true,
+      "fixture": {
+        "sectorSize": 4096,
+        "fsOffsetBytes": 0,
+        "expectedEpochUTC": 1700000000,
+        "synthetic": true,
+        "knownPayloads": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false
+          },
+          {
+            "path": "BENCH128.BIN",
+            "size": 134217728,
+            "sha256": "8bd6711de9fbccf7400846e5995553dbd24b1d3d3836dab3c295f420bcf5e85d",
+            "isDeleted": false,
+            "recipe": {
+              "algorithm": "SHAKE-256 per indexed 1 MiB block",
+              "seedHex": "4e6174697665466f72656e7369637320776f726b65722062656e63686d61726b204641543332207061796c6f616420763100",
+              "blockBytes": 1048576,
+              "byteCount": 134217728
+            },
+            "onDisk": {
+              "firstCluster": 64,
+              "clusterCount": 32768,
+              "clusterBytes": 4096,
+              "payloadOffsetBytes": 950272,
+              "rootEntryOffsetBytes": 696480
+            }
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.8477132909902139,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007549999994807877,
+              "sampleCount": 114,
+              "sampledAggregatePeakRSSBytes": 9469952,
+              "sampledUserCPULowerBoundSeconds": 0.4529828333333333,
+              "sampledSystemCPULowerBoundSeconds": 0.08052562499999999,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 803.951708,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.236708,
+                "clientEnumerationMilliseconds": 401.883666,
+                "resultPublicationMilliseconds": 1.089333,
+                "selectedFileInspectionAndManifestMilliseconds": 128.34875,
+                "sourceVerificationAfterMilliseconds": 144.779042,
+                "sourceVerificationBeforeMilliseconds": 126.602083
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.81060324999271,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007563125007436611,
+              "sampleCount": 2880,
+              "sampledAggregatePeakRSSBytes": 2038628352,
+              "sampledUserCPULowerBoundSeconds": 38.34441208333333,
+              "sampledSystemCPULowerBoundSeconds": 8.710751416666666,
+              "sampledDiskReadLowerBoundBytes": 1191936,
+              "sampledDiskWriteLowerBoundBytes": 91136000,
+              "failedSampleCount": 63,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 27,
+                "egrep": 1,
+                "expr": 2,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 4,
+                "lsof": 5,
+                "mkdir": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 2
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 63
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 1,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.8579951669962611,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007554249998065643,
+              "sampleCount": 117,
+              "sampledAggregatePeakRSSBytes": 9355264,
+              "sampledUserCPULowerBoundSeconds": 0.4572916666666666,
+              "sampledSystemCPULowerBoundSeconds": 0.07937804166666666,
+              "sampledDiskReadLowerBoundBytes": 409600,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 824.814875,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.033625,
+                "clientEnumerationMilliseconds": 418.609084,
+                "resultPublicationMilliseconds": 1.178333,
+                "selectedFileInspectionAndManifestMilliseconds": 130.593375,
+                "sourceVerificationAfterMilliseconds": 142.73725,
+                "sourceVerificationBeforeMilliseconds": 130.650583
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.551324917003512,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007558792000054382,
+              "sampleCount": 2840,
+              "sampledAggregatePeakRSSBytes": 2029142016,
+              "sampledUserCPULowerBoundSeconds": 39.62292495833333,
+              "sampledSystemCPULowerBoundSeconds": 8.892682583333333,
+              "sampledDiskReadLowerBoundBytes": 2355200,
+              "sampledDiskWriteLowerBoundBytes": 100573184,
+              "failedSampleCount": 63,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "basename": 1,
+                "bash": 29,
+                "cat": 1,
+                "dirname": 1,
+                "egrep": 1,
+                "expr": 4,
+                "ffmpeg": 3,
+                "grep": 13,
+                "head": 1,
+                "java": 3,
+                "jspawnhelper": 3,
+                "lsof": 5,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 63
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.7702887920022476,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007550540991360322,
+              "sampleCount": 106,
+              "sampledAggregatePeakRSSBytes": 9355264,
+              "sampledUserCPULowerBoundSeconds": 0.44293433333333326,
+              "sampledSystemCPULowerBoundSeconds": 0.07727783333333332,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 752.551667,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.059833,
+                "clientEnumerationMilliseconds": 360.26875,
+                "resultPublicationMilliseconds": 1.136,
+                "selectedFileInspectionAndManifestMilliseconds": 130.218542,
+                "sourceVerificationAfterMilliseconds": 132.565417,
+                "sourceVerificationBeforeMilliseconds": 127.291209
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.648568832999445,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007562853999843355,
+              "sampleCount": 2859,
+              "sampledAggregatePeakRSSBytes": 2158264320,
+              "sampledUserCPULowerBoundSeconds": 38.17609329166666,
+              "sampledSystemCPULowerBoundSeconds": 8.519599583333333,
+              "sampledDiskReadLowerBoundBytes": 6103040,
+              "sampledDiskWriteLowerBoundBytes": 94445568,
+              "failedSampleCount": 55,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "basename": 1,
+                "bash": 26,
+                "dirname": 1,
+                "egrep": 1,
+                "expr": 4,
+                "ffmpeg": 3,
+                "grep": 13,
+                "java": 3,
+                "jspawnhelper": 4,
+                "lsof": 5,
+                "mkdir": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 2
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 55
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.8653163749986561,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007551832997705787,
+              "sampleCount": 114,
+              "sampledAggregatePeakRSSBytes": 9404416,
+              "sampledUserCPULowerBoundSeconds": 0.4590670833333333,
+              "sampledSystemCPULowerBoundSeconds": 0.07953087499999999,
+              "sampledDiskReadLowerBoundBytes": 409600,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 818.601,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.00825,
+                "clientEnumerationMilliseconds": 413.715667,
+                "resultPublicationMilliseconds": 1.364625,
+                "selectedFileInspectionAndManifestMilliseconds": 129.961083,
+                "sourceVerificationAfterMilliseconds": 142.33025,
+                "sourceVerificationBeforeMilliseconds": 130.209
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 18.61611712499871,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007559166988357902,
+              "sampleCount": 2564,
+              "sampledAggregatePeakRSSBytes": 1663270912,
+              "sampledUserCPULowerBoundSeconds": 38.67138358333333,
+              "sampledSystemCPULowerBoundSeconds": 7.898880708333333,
+              "sampledDiskReadLowerBoundBytes": 598016,
+              "sampledDiskWriteLowerBoundBytes": 98627584,
+              "failedSampleCount": 63,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 26,
+                "dirname": 1,
+                "egrep": 2,
+                "expr": 1,
+                "ffmpeg": 3,
+                "grep": 14,
+                "java": 3,
+                "jspawnhelper": 4,
+                "lsof": 5,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 63
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "order": [
+            "native",
+            "autopsy"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.8233500000060303,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007556145996204577,
+              "sampleCount": 113,
+              "sampledAggregatePeakRSSBytes": 9338880,
+              "sampledUserCPULowerBoundSeconds": 0.4574614583333333,
+              "sampledSystemCPULowerBoundSeconds": 0.07822249999999999,
+              "sampledDiskReadLowerBoundBytes": 0,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 813.25175,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.23525,
+                "clientEnumerationMilliseconds": 406.990209,
+                "resultPublicationMilliseconds": 1.238708,
+                "selectedFileInspectionAndManifestMilliseconds": 131.617125,
+                "sourceVerificationAfterMilliseconds": 142.495833,
+                "sourceVerificationBeforeMilliseconds": 129.661625
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 20.864646917005302,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007565416002762504,
+              "sampleCount": 2884,
+              "sampledAggregatePeakRSSBytes": 2114240512,
+              "sampledUserCPULowerBoundSeconds": 37.56918341666666,
+              "sampledSystemCPULowerBoundSeconds": 8.591879458333333,
+              "sampledDiskReadLowerBoundBytes": 3084288,
+              "sampledDiskWriteLowerBoundBytes": 91451392,
+              "failedSampleCount": 57,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "basename": 1,
+                "bash": 30,
+                "cat": 1,
+                "egrep": 1,
+                "expr": 5,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 4,
+                "lsof": 5,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 57
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "replacement": false,
+          "successful": true,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.8892540839879075,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007550916998297907,
+              "sampleCount": 116,
+              "sampledAggregatePeakRSSBytes": 9437184,
+              "sampledUserCPULowerBoundSeconds": 0.4616469583333333,
+              "sampledSystemCPULowerBoundSeconds": 0.07966549999999999,
+              "sampledDiskReadLowerBoundBytes": 409600,
+              "sampledDiskWriteLowerBoundBytes": 16384,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 822.060917,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.102875,
+                "clientEnumerationMilliseconds": 416.143875,
+                "resultPublicationMilliseconds": 1.221708,
+                "selectedFileInspectionAndManifestMilliseconds": 130.685792,
+                "sourceVerificationAfterMilliseconds": 143.688167,
+                "sourceVerificationBeforeMilliseconds": 129.204209
+              },
+              "entryCount": 11,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 11,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "cc27f75b3492e98fc343cee7fa3eb0fe56350e960a02d2b7b224152020570461",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 21.242787417009822,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007562375001725741,
+              "sampleCount": 2936,
+              "sampledAggregatePeakRSSBytes": 1972338688,
+              "sampledUserCPULowerBoundSeconds": 38.55460304166666,
+              "sampledSystemCPULowerBoundSeconds": 8.615331916666666,
+              "sampledDiskReadLowerBoundBytes": 9474048,
+              "sampledDiskWriteLowerBoundBytes": 93319168,
+              "failedSampleCount": 63,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "bash": 27,
+                "dirname": 1,
+                "egrep": 1,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 4,
+                "lsof": 5,
+                "sed": 1,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 63
+                }
+              ]
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 6,
+              "verifiedPayloads": 6,
+              "filesystemRows": 14,
+              "regularFilesystemRows": 6,
+              "directoryFilesystemRows": 5,
+              "allocatedFilesystemRows": 13,
+              "deletedFilesystemRows": 1,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "c1d2b01f3bf71abc22dfebc7417f20ddc66d03193b399a763f7be9592cf36522",
+              "failedPayloads": []
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 286720000
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 8,
+                  "blockSize": 4096,
+                  "blockCount": 70000
+                }
+              ],
+              "filesystemEntryCount": 14,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "HELLO.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "HELLO.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BIGDATA.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "EMPTY.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "_ELETED.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "NESTED/INNER.TXT",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "createdEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "modifiedEpoch",
+                1699974800,
+                1700000000,
+                -25200
+              ],
+              [
+                "BENCH128.BIN",
+                "accessedEpoch",
+                1699894800,
+                1699920000,
+                -25200
+              ]
+            ]
+          }
+        }
+      ],
+      "readbackExample": {
+        "native": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BENCH128.BIN",
+            "size": 134217728,
+            "sha256": "8bd6711de9fbccf7400846e5995553dbd24b1d3d3836dab3c295f420bcf5e85d",
+            "isDeleted": false,
+            "createdEpoch": 1700000000,
+            "modifiedEpoch": 1700000000,
+            "accessedEpoch": 1699920000,
+            "exactBytesMatched": true
+          }
+        ],
+        "autopsy": [
+          {
+            "path": "HELLO.TXT",
+            "size": 44,
+            "sha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "expectedSha256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+            "isDeleted": false,
+            "metaAddress": 3,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BIGDATA.BIN",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "expectedSha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "metaAddress": 4,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "EMPTY.TXT",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "expectedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "metaAddress": 5,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "_ELETED.TXT",
+            "size": 54,
+            "sha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "expectedSha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+            "isDeleted": true,
+            "metaAddress": 6,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "NESTED/INNER.TXT",
+            "size": 25,
+            "sha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "expectedSha256": "24bb7bf7b56d842831499802e02088aa79c5996d030c5aeac0a38fed88404b6a",
+            "isDeleted": false,
+            "metaAddress": 901,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "BENCH128.BIN",
+            "size": 134217728,
+            "sha256": "8bd6711de9fbccf7400846e5995553dbd24b1d3d3836dab3c295f420bcf5e85d",
+            "expectedSha256": "8bd6711de9fbccf7400846e5995553dbd24b1d3d3836dab3c295f420bcf5e85d",
+            "isDeleted": false,
+            "metaAddress": 8,
+            "attributeType": 1,
+            "attributeID": 0,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1699974800,
+            "modifiedEpoch": 1699974800,
+            "changedEpoch": 0,
+            "accessedEpoch": 1699894800,
+            "passed": true,
+            "exactBytesMatched": true
+          }
+        ]
+      },
+      "nativeCoreStageMediansMilliseconds": {
+        "caseCreateMilliseconds": 1.059833,
+        "clientEnumerationMilliseconds": 413.715667,
+        "resultPublicationMilliseconds": 1.221708,
+        "selectedFileInspectionAndManifestMilliseconds": 130.593375,
+        "sourceVerificationAfterMilliseconds": 142.495833,
+        "sourceVerificationBeforeMilliseconds": 129.661625
+      },
+      "nativeCorePipelineMedianMilliseconds": 818.601
+    }
+  ],
+  "correctnessControls": [
+    {
+      "image": "ntfs-streams.raw",
+      "imageSize": 16777216,
+      "sha256": "972e11ec14598d55a2f0da7def7db832f08530951e5d7301387173d854990c0d",
+      "filesystem": "NTFS",
+      "performanceRatioAllowed": false,
+      "fixture": {
+        "sectorSize": 512,
+        "fsOffsetBytes": 0,
+        "expectedEpochUTC": 1704164679,
+        "syntheticLayout": {
+          "version": "NTFS3.1",
+          "mftRecordSize": 1024,
+          "clusterSize": 4096,
+          "allocatedStreamCount": 11,
+          "deletedStreamCount": 2,
+          "compressedData": false,
+          "encryptedData": false,
+          "bootable": false
+        },
+        "synthetic": true,
+        "knownPayloads": [
+          {
+            "path": "resident.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "metaAddress": 24,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "resident-link.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "metaAddress": 24,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "fragmented.bin",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "metaAddress": 25,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "nonresident"
+          },
+          {
+            "path": "deleted-resident.txt",
+            "size": 42,
+            "sha256": "ef0046821ae6ed6561004e07474c4aa8831eb2a9d468ad6e5e17152e097ccfdd",
+            "isDeleted": true,
+            "metaAddress": 26,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "deleted-fragmented.bin",
+            "size": 9005,
+            "sha256": "01f324ff9093de2c1f9ade7c90eec03705f9eb2c23888d9b271d4fb1a5f1f007",
+            "isDeleted": true,
+            "metaAddress": 27,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "nonresident"
+          },
+          {
+            "path": "รายงาน-🔍-กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก.txt",
+            "size": 60,
+            "sha256": "f9a9cc213d7d7fdba85189de87b1d5b5ff2e4c2ff0737a85a1cb87c0f87ca158",
+            "isDeleted": false,
+            "metaAddress": 28,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "empty.txt",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "metaAddress": 29,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "streams.txt",
+            "size": 20,
+            "sha256": "a561c10f433bdc176c99c1dab340eb5d74bc0365dbda3be479e3547d4e7704fc",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "streams.txt:note",
+            "size": 43,
+            "sha256": "711104cacf31bf7583b535a3df51bb8fc23aa08f9391e9d91f24d9ae522c648b",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 3,
+            "storage": "resident"
+          },
+          {
+            "path": "streams.txt:รายละเอียด",
+            "size": 5001,
+            "sha256": "204ca7c64e25af32b8312655b9efe5d2337117df531560a7f6365617f90956a8",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 4,
+            "storage": "nonresident"
+          },
+          {
+            "path": "sparse.bin",
+            "size": 12295,
+            "sha256": "e463659c1bcf5d831fc87728aab4bb222352006ecde9a454441fb14b956aed3d",
+            "isDeleted": false,
+            "metaAddress": 31,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "sparse"
+          },
+          {
+            "path": "หลักฐาน/nested.txt",
+            "size": 30,
+            "sha256": "ee2b93ef25b71b2647d2cabf00d03afd4d3ae3741416f95eb6ca82a5e8ed9c35",
+            "isDeleted": false,
+            "metaAddress": 33,
+            "attributeType": 128,
+            "attributeID": 2,
+            "storage": "resident"
+          },
+          {
+            "path": "หลักฐาน:directory-note",
+            "size": 52,
+            "sha256": "18e04ecceae8760dd760a06050d85ccfececb4a5d2b3093d84c15f03457c40e3",
+            "isDeleted": false,
+            "metaAddress": 34,
+            "attributeType": 128,
+            "attributeID": 3,
+            "storage": "resident"
+          }
+        ]
+      },
+      "pairs": [
+        {
+          "iteration": 1,
+          "warmup": false,
+          "order": [
+            "autopsy",
+            "native"
+          ],
+          "replacement": false,
+          "successful": false,
+          "native": {
+            "application": "NativeForensics",
+            "wallSeconds": 0.20318512500671204,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.0075925830024061725,
+              "sampleCount": 26,
+              "sampledAggregatePeakRSSBytes": 9371648,
+              "sampledUserCPULowerBoundSeconds": 0.03493395833333333,
+              "sampledSystemCPULowerBoundSeconds": 0.008318041666666666,
+              "sampledDiskReadLowerBoundBytes": 409600,
+              "sampledDiskWriteLowerBoundBytes": 8192,
+              "failedSampleCount": 0,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": true,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "ForensicsPipelineBenchmark": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [],
+              "nativeExpectedHelperObserved": false
+            },
+            "core": {
+              "schemaVersion": 1,
+              "status": "completed",
+              "pipelineMilliseconds": 181.144834,
+              "stageMilliseconds": {
+                "caseCreateMilliseconds": 1.018208,
+                "clientEnumerationMilliseconds": 148.842166,
+                "resultPublicationMilliseconds": 1.963833,
+                "selectedFileInspectionAndManifestMilliseconds": 8.400667,
+                "sourceVerificationAfterMilliseconds": 13.526708,
+                "sourceVerificationBeforeMilliseconds": 7.380041
+              },
+              "entryCount": 25,
+              "engineVersion": "0.1.1-tsk4.15.0",
+              "selectedFileSHA256": "972e11ec14598d55a2f0da7def7db832f08530951e5d7301387173d854990c0d"
+            },
+            "validation": {
+              "passed": true,
+              "declaredPayloads": 13,
+              "verifiedPayloads": 13,
+              "filesystemRows": 25,
+              "verificationOutsideTiming": true,
+              "knownPayloadReadbackSHA256": "2cb6f6407e963f66b39317fe0a8ebd404986d322d189df7e724789e0537e4423",
+              "failedPayloads": []
+            }
+          },
+          "autopsy": {
+            "variant": "installed-adapted",
+            "wallSeconds": 19.823689707991434,
+            "exitCode": 0,
+            "structuralGatePassed": true,
+            "ownedServicePersistedAfterAppExit": true,
+            "existingSolrUnchanged": true,
+            "ownedSolrPortsFreeAfterCleanup": true,
+            "protectedFilesAndSourcesUnchanged": true,
+            "resources": {
+              "machTimebase": {
+                "numer": 125,
+                "denom": 3
+              },
+              "requestedIntervalSeconds": 0.005,
+              "actualIntervalMedianSeconds": 0.007563645995105617,
+              "sampleCount": 2731,
+              "sampledAggregatePeakRSSBytes": 1667350528,
+              "sampledUserCPULowerBoundSeconds": 38.086309625,
+              "sampledSystemCPULowerBoundSeconds": 8.483191499999998,
+              "sampledDiskReadLowerBoundBytes": 7409664,
+              "sampledDiskWriteLowerBoundBytes": 94945280,
+              "failedSampleCount": 64,
+              "failureRecordsTruncatedCount": 0,
+              "noSamplerErrors": false,
+              "observedProcessCoverage": "unproven",
+              "sampledProcessExecutableCounts": {
+                "awk": 7,
+                "basename": 1,
+                "bash": 23,
+                "cat": 1,
+                "egrep": 1,
+                "expr": 3,
+                "ffmpeg": 3,
+                "grep": 12,
+                "java": 3,
+                "jspawnhelper": 3,
+                "lsof": 5,
+                "sleep": 5,
+                "sort": 2,
+                "tesseract": 1,
+                "tr": 1,
+                "uname": 1
+              },
+              "sampleErrorsByExecutableAndErrno": [
+                {
+                  "executableBasename": "ps",
+                  "errno": 1,
+                  "type": "PermissionError",
+                  "count": 64
+                }
+              ]
+            },
+            "validation": {
+              "passed": false,
+              "declaredPayloads": 13,
+              "verifiedPayloads": 12,
+              "filesystemRows": 28,
+              "regularFilesystemRows": 22,
+              "directoryFilesystemRows": 6,
+              "allocatedFilesystemRows": 26,
+              "deletedFilesystemRows": 2,
+              "verificationOutsideTiming": true,
+              "exactSelectedNativeLibraryLoaded": true,
+              "knownPayloadReadbackSHA256": "afc30588d485eb42508451fcd64d30f0c34c5378976211c3836be8262e6e5b80",
+              "failedPayloads": [
+                {
+                  "path": "หลักฐาน:directory-note",
+                  "passed": false,
+                  "matchedRows": 0,
+                  "error": "Expected exactly one filesystem row for the declared path and stream identity"
+                }
+              ]
+            },
+            "selectedNativeLibraryLoadTraceCount": 1,
+            "unintendedNativeLibraryLoadTraceCount": 0,
+            "requiredForcedOwnedProcessCleanupCount": 1,
+            "sqlite": {
+              "images": [
+                {
+                  "type": 1,
+                  "sectorSize": 512,
+                  "timezone": "UTC",
+                  "size": 16777216
+                }
+              ],
+              "filesystems": [
+                {
+                  "offset": 0,
+                  "type": 1,
+                  "blockSize": 4096,
+                  "blockCount": 4096
+                }
+              ],
+              "filesystemEntryCount": 28,
+              "effectiveTimezone": "UTC"
+            }
+          },
+          "metadataComparison": {
+            "compared": "Known payload presence and four raw epoch fields; zero normalized to absent",
+            "knownPayloadMetadataParity": false,
+            "differenceColumns": [
+              "path",
+              "field",
+              "autopsy",
+              "native",
+              "autopsyMinusNativeSeconds"
+            ],
+            "differenceRows": [
+              [
+                "หลักฐาน:directory-note",
+                "payloadPresence",
+                false,
+                true,
+                null
+              ]
+            ]
+          }
+        }
+      ],
+      "readbackExample": {
+        "native": [
+          {
+            "path": "resident.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "resident-link.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "fragmented.bin",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "deleted-resident.txt",
+            "size": 42,
+            "sha256": "ef0046821ae6ed6561004e07474c4aa8831eb2a9d468ad6e5e17152e097ccfdd",
+            "isDeleted": true,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "deleted-fragmented.bin",
+            "size": 9005,
+            "sha256": "01f324ff9093de2c1f9ade7c90eec03705f9eb2c23888d9b271d4fb1a5f1f007",
+            "isDeleted": true,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "รายงาน-🔍-กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก.txt",
+            "size": 60,
+            "sha256": "f9a9cc213d7d7fdba85189de87b1d5b5ff2e4c2ff0737a85a1cb87c0f87ca158",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "empty.txt",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt",
+            "size": 20,
+            "sha256": "a561c10f433bdc176c99c1dab340eb5d74bc0365dbda3be479e3547d4e7704fc",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt:note",
+            "size": 43,
+            "sha256": "711104cacf31bf7583b535a3df51bb8fc23aa08f9391e9d91f24d9ae522c648b",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt:รายละเอียด",
+            "size": 5001,
+            "sha256": "204ca7c64e25af32b8312655b9efe5d2337117df531560a7f6365617f90956a8",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "sparse.bin",
+            "size": 12295,
+            "sha256": "e463659c1bcf5d831fc87728aab4bb222352006ecde9a454441fb14b956aed3d",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "หลักฐาน/nested.txt",
+            "size": 30,
+            "sha256": "ee2b93ef25b71b2647d2cabf00d03afd4d3ae3741416f95eb6ca82a5e8ed9c35",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "หลักฐาน:directory-note",
+            "size": 52,
+            "sha256": "18e04ecceae8760dd760a06050d85ccfececb4a5d2b3093d84c15f03457c40e3",
+            "isDeleted": false,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "exactBytesMatched": true
+          }
+        ],
+        "autopsy": [
+          {
+            "path": "resident.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "expectedSha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "metaAddress": 24,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "resident-link.txt",
+            "size": 32,
+            "sha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "expectedSha256": "8ad93d87e7a328b5999f33454f84fceb4fee8ffb44e60f2c7f8220cd4ec6f5ff",
+            "isDeleted": false,
+            "metaAddress": 24,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "fragmented.bin",
+            "size": 9001,
+            "sha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "expectedSha256": "40eb49d1ab5caea1560c6372ae15e9f1ed9ab53eac9e8be94e983d755e11aa13",
+            "isDeleted": false,
+            "metaAddress": 25,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "deleted-resident.txt",
+            "size": 42,
+            "sha256": "ef0046821ae6ed6561004e07474c4aa8831eb2a9d468ad6e5e17152e097ccfdd",
+            "expectedSha256": "ef0046821ae6ed6561004e07474c4aa8831eb2a9d468ad6e5e17152e097ccfdd",
+            "isDeleted": true,
+            "metaAddress": 26,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "deleted-fragmented.bin",
+            "size": 9005,
+            "sha256": "01f324ff9093de2c1f9ade7c90eec03705f9eb2c23888d9b271d4fb1a5f1f007",
+            "expectedSha256": "01f324ff9093de2c1f9ade7c90eec03705f9eb2c23888d9b271d4fb1a5f1f007",
+            "isDeleted": true,
+            "metaAddress": 27,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "รายงาน-🔍-กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก.txt",
+            "size": 60,
+            "sha256": "f9a9cc213d7d7fdba85189de87b1d5b5ff2e4c2ff0737a85a1cb87c0f87ca158",
+            "expectedSha256": "f9a9cc213d7d7fdba85189de87b1d5b5ff2e4c2ff0737a85a1cb87c0f87ca158",
+            "isDeleted": false,
+            "metaAddress": 28,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "empty.txt",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "expectedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "isDeleted": false,
+            "metaAddress": 29,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt",
+            "size": 20,
+            "sha256": "a561c10f433bdc176c99c1dab340eb5d74bc0365dbda3be479e3547d4e7704fc",
+            "expectedSha256": "a561c10f433bdc176c99c1dab340eb5d74bc0365dbda3be479e3547d4e7704fc",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt:note",
+            "size": 43,
+            "sha256": "711104cacf31bf7583b535a3df51bb8fc23aa08f9391e9d91f24d9ae522c648b",
+            "expectedSha256": "711104cacf31bf7583b535a3df51bb8fc23aa08f9391e9d91f24d9ae522c648b",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 3,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "streams.txt:รายละเอียด",
+            "size": 5001,
+            "sha256": "204ca7c64e25af32b8312655b9efe5d2337117df531560a7f6365617f90956a8",
+            "expectedSha256": "204ca7c64e25af32b8312655b9efe5d2337117df531560a7f6365617f90956a8",
+            "isDeleted": false,
+            "metaAddress": 30,
+            "attributeType": 128,
+            "attributeID": 4,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "sparse.bin",
+            "size": 12295,
+            "sha256": "e463659c1bcf5d831fc87728aab4bb222352006ecde9a454441fb14b956aed3d",
+            "expectedSha256": "e463659c1bcf5d831fc87728aab4bb222352006ecde9a454441fb14b956aed3d",
+            "isDeleted": false,
+            "metaAddress": 31,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "หลักฐาน/nested.txt",
+            "size": 30,
+            "sha256": "ee2b93ef25b71b2647d2cabf00d03afd4d3ae3741416f95eb6ca82a5e8ed9c35",
+            "expectedSha256": "ee2b93ef25b71b2647d2cabf00d03afd4d3ae3741416f95eb6ca82a5e8ed9c35",
+            "isDeleted": false,
+            "metaAddress": 33,
+            "attributeType": 128,
+            "attributeID": 2,
+            "fsOffsetBytes": 0,
+            "createdEpoch": 1704164646,
+            "modifiedEpoch": 1704164679,
+            "changedEpoch": 1704164691,
+            "accessedEpoch": 1704164703,
+            "passed": true,
+            "exactBytesMatched": true
+          },
+          {
+            "path": "หลักฐาน:directory-note",
+            "passed": false,
+            "matchedRows": 0,
+            "error": "Expected exactly one filesystem row for the declared path and stream identity"
+          }
+        ]
+      }
+    }
+  ],
+  "sourceAndRuntimeHashesUnchanged": true,
+  "healthAfterComparison": {
+    "counts": {
+      "PASS": 30,
+      "FAIL": 0,
+      "WARN": 0,
+      "INFO": 2,
+      "SKIP": 3
+    },
+    "installedAutopsyClosed": true,
+    "installedSolrAbsent": true,
+    "skipped": "Three live application/socket/service checks; health check did not start or stop applications."
+  },
+  "postMeasurementValidation": {
+    "swiftDebug": {
+      "passed": 49,
+      "core": 45,
+      "searchStore": 4
+    },
+    "swiftRelease": {
+      "passed": 49,
+      "core": 45,
+      "searchStore": 4
+    },
+    "pythonBenchmarkHarness": {
+      "passed": 13
+    },
+    "existingBundleStrictSignatureVerification": "passed",
+    "existingNativeGUIRetained": true,
+    "guiRestartOrGUIBenchmarkPerformed": false,
+    "samplerReceiptLabelClarification": "After measurement, resourceCoverageComplete was renamed noSamplerErrors and coverage declared unproven. Counters and timers were unchanged; recorded recipe hashes identify the measured code."
+  },
+  "resourceLimitations": [
+    "5 ms requested libproc polling; actual intervals are reported for each run.",
+    "Sampler uses libproc PROC_PGRP_ONLY/rusage_info_v2 and exact new-session group/PID creation identities; PID identities are redacted.",
+    "RSS is a sequential sampled aggregate of observed owned processes; peaks and short-lived children can be missed.",
+    "CPU and disk counters sum last-live samples and are lower bounds; they are not wait4 complete process totals.",
+    "Native helper was not necessarily observed in every short run. No recorded errors does not prove full child coverage.",
+    "Autopsy bootstrap utility EPERM sampling failures are retained by executable basename/errno/count.",
+    "Java process roles are unresolved in these receipts. JVM totals include observed Autopsy, bootstrap and Solr processes.",
+    "RSS/CPU exclude the Python coordinator and desktop GUI. Owned Solr cleanup happens after the app wall timer."
+  ],
+  "sampledProcessRoleMap": {
+    "ForensicsPipelineBenchmark": "native_application_core",
+    "NFTSKEngine": "native_filesystem_helper",
+    "java": "owned_jvm_role_unresolved_main_bootstrap_or_solr",
+    "otherExecutableBasenames": "owned_bootstrap_child"
+  },
+  "baselineDiagnosticsExcludedFromPerformance": {
+    "originalMacCompatibleReference": {
+      "originalThreeAutopsyModulesPlusUnpatchedTSK": true,
+      "timeoutSeconds": 120,
+      "caseImportCompleted": false,
+      "privateSolrWasHealthy": true,
+      "failure": "Application did not pass Solr readiness; no completed-import time or speed ratio.",
+      "remainingMacCompatibilityDependencies": true,
+      "commonPrivateStopKeySafetyAdapter": true
+    },
+    "failedPreparationOrFailedImportAttemptsUsedInMedians": false,
+    "retainedSourceExperimentSuccessfulPairsReused": true
+  },
+  "upstreamSources": {
+    "autopsyCLI": "https://github.com/sleuthkit/autopsy/blob/autopsy-4.23.1/Core/src/org/sleuthkit/autopsy/commandlineingest/CommandLineIngestManager.java",
+    "tskJNI": "https://github.com/sleuthkit/sleuthkit/blob/01de0345edaa1ebf21dba6939a7c6bc7129e6e7d/bindings/java/jni/dataModel_SleuthkitJNI.cpp#L871-L884",
+    "applePutenv": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/putenv.3.html"
+  },
+  "sanitization": {
+    "absolutePersonalPaths": false,
+    "processIdentifiers": false,
+    "payloadHex": false,
+    "runtimeBinaries": false,
+    "rawLogs": false,
+    "privateSolrStopKey": false,
+    "preserved": "Every warmup, measured successful attempt, retained failure, actual order, wall sample, native core stage, sampled resource receipt, fixture identity and raw metadata difference."
+  }
+}

@@ -457,7 +457,8 @@ class OwnedGroupSampler:
             "ownedProcesses": rows, "failedSamples": list(self.failure_counts.values()),
             "failedSampleCount": sum(row["count"] for row in self.failure_counts.values()) + self.failure_overflow_count,
             "failureRecordsTruncatedCount": self.failure_overflow_count,
-            "resourceCoverageComplete": not self.failure_counts and not self.failure_overflow_count,
+            "noSamplerErrors": not self.failure_counts and not self.failure_overflow_count,
+            "observedProcessCoverage": "Unproven: short-lived descendants, between-sample peaks and exit tails may be missed even without reported errors",
             "limitations": "Includes successfully sampled owned main JVM, Solr and shell children; Python and GUI excluded. Denied/unavailable PIDs are retained as bounded failure receipts and excluded from sums, making coverage partial. Sequential RSS samples can miss peaks. Last-live CPU/disk samples omit exit tails and unseen short processes; they are lower bounds, not wait4 kernel totals."}
 def sqlite_receipt(case_db: Path, expected: dict) -> dict:
     connection = sqlite3.connect(case_db.as_uri() + "?mode=ro", uri=True)
