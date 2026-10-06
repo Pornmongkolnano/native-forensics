@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "appVersion": "0.3.0",
+  "appBuild": "8",
+  "host": {
+    "architecture": "arm64",
+    "chip": "Apple M2",
+    "macOS": "27.0.1",
+    "swift": "6.4"
+  },
+  "localValidation": {
+    "swiftDebug": {"core": 90, "app": 31, "passed": true},
+    "swiftRelease": {"core": 90, "app": 31, "passed": true},
+    "pythonHarnessAndBundle": {"tests": 23, "passed": true},
+    "realHelperIntegration": "enabled for both Swift configurations, including source-change refusal and exact text disclosure",
+    "releaseBundle": "staged, signed, validated and launched",
+    "appSigning": "ad-hoc; distribution notarization is not complete",
+    "nativeHelperVersion": "0.1.2-tsk4.15.0",
+    "nativeHelperSHA256": "fb155921ce06ddf24910b8fb184065b89834378091936ea30a3ead372af9f9d1",
+    "nativeHelperCoverage": "unchanged C++ helper; previous readiness receipt has 105 checks across 26 configurations; current real-helper Swift integration passed",
+    "review": "independent read-only source review found no actionable code issue; CLI upgrade compatibility wording corrected"
+  },
+  "liveGUI": {
+    "provider": "OpenAI through Codex CLI",
+    "codexCLIVersion": "0.160.1",
+    "authentication": "existing ChatGPT sign-in; no credentials copied or included in this receipt",
+    "source": "synthetic FAT16 fixture",
+    "filePathInsideImage": "/HELLO.TXT",
+    "includedUTF8Bytes": 44,
+    "completeFileBytes": 44,
+    "requestSHA256": "9129eb1c711ffe29339e41baab41cc445959237319bc1275c3d0f027d97b5ed7",
+    "containerSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3",
+    "extractedFileSHA256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+    "observed": [
+      "metadata-only local review prepared without transmission",
+      "optional UTF-8 content independently extracted and verified",
+      "exact prompt displayed and explicit review accepted before Send",
+      "Thai answer rendered in Summary, Observations, Hypotheses, Limitations and Next Steps",
+      "request hash displayed and review confirmation reset after completion",
+      "container and extracted-file hash scopes distinguished in the answer",
+      "source SHA-256 after GUI testing matched the saved evidence record",
+      "Cmd-Q with the assistant sheet open exited the original app process",
+      "build workflow SIGTERM with the assistant sheet open drained the original process and published/launched its verified replacement"
+    ],
+    "startupProtocol": "only the exact disabled-Code-Mode-host stock notice before turn start is allowed, bounded to four notices; unknown or in-turn errors and tool actions fail closed",
+    "responseSemantics": "AI interpretation; schema and request binding do not verify the conclusions",
+    "realUserEvidenceSent": false,
+    "rawProviderResponseCommitted": false
+  },
+  "permissionProfileProbe": {
+    "codexCLIVersion": "0.160.1",
+    "profile": "named profile: root deny, minimal read, tmpdir deny, slash_tmp deny, workspace_roots read, network disabled",
+    "scratchRead": "allowed",
+    "siblingRead": "denied EPERM",
+    "siblingReadViaScratchSymlink": "denied EPERM",
+    "scratchWrite": "denied EPERM",
+    "siblingWrite": "denied EPERM",
+    "liveLoopbackConnection": "denied EPERM",
+    "unsandboxedPositiveControl": "all six operations allowed",
+    "scope": "OS-sandboxed command profile; does not confine the provider harness, authentication or hosted tools; minimal runtime read access remains intentional",
+    "providerUsed": false
+  },
+  "ci": {
+    "previousReadinessRun": 37509563927,
+    "previousReadinessCommit": "131e1e13528fddb3e4bdd71aeefd235622030576",
+    "previousReadinessConclusion": "failure in a timing-dependent manifest-commit test",
+    "testRepair": "observed lock-inode descriptor barrier, fresh MainActor heartbeat and independent failure-only watchdog; targeted test passed 10 repetitions and a synchronous negative control failed as expected",
+    "newCommitConclusion": "recorded separately in GitHub Actions after push; local results are not a CI success claim",
+    "providerCallsInCI": false
+  },
+  "limits": [
+    "one selected regular file per request; no multi-file conversation or durable assistant ledger",
+    "UTF-8 source file at most 1 MiB; disclosed excerpt at most 32 KiB",
+    "PDF, image, Office and other binary content has metadata only",
+    "metadata-only context is historical and does not reverify current source bytes",
+    "permission profiles are beta and tested with CLI 0.160.1; upgraded or managed environments need revalidation",
+    "physical MacBook Air M5 and older macOS have not been tested",
+    "filesystem coverage gates in the roadmap remain open"
+  ]
+}

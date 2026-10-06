@@ -37,6 +37,8 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 
 ชุด readiness 0.2.5 ผ่าน native 105 checks รวม 26 image configurations และ Swift 59 core + 20 workspace/presentation tests; ดู [Readiness](READINESS.md) สำหรับผลล่าสุด ส่วน benchmark harness/artifact checks รวม 23 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
 
+App 0.3.0 เพิ่ม [Analyze with Codex](CODEX-ANALYSIS.md): บริบทของไฟล์ที่เลือกและ optional UTF-8 excerpt ที่ตรวจ hash, explicit review ก่อนส่ง, คำตอบแบบ advisory แยก observations/hypotheses/limits และ cancellation ที่รอ cleanup ตัวอ่าน JSONL/permission profile ตรวจด้วย Codex CLI 0.160.1 การทดสอบ CI ใช้ fake provider; live GUI ใช้ synthetic FAT16 เท่านั้น นี่เป็นฟีเจอร์ช่วยตีความที่เปิดใช้แยก ไม่ใช่ document-content index หรือการปิด Phase 1 coverage gates
+
 App 0.2.3 เพิ่ม single-pass background path search พร้อม superseded-query cancellation, store regressions และ 100-row presentation pages ลด fixed chrome และจัด inspector ให้ file details อยู่ก่อน image provenance มี matched search/scheduling experiment แยกจาก GUI frame measurements; optimized release เป็น default ของ app build งานนี้ไม่เปลี่ยน native helper worker policy
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:

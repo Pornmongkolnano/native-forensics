@@ -23,6 +23,7 @@
 - จัดการ progress, cancellation, timeout, helper crash และ malformed protocol โดยไม่ใช้ exit 0 เพียงอย่างเดียวเป็น success
 - ค้นหา file paths แบบยกเลิก query เก่าได้ โดยคง Unicode matching เดิมและทำงานนอก main thread; ตารางแบ่งหน้า 100 แถวพร้อมค้นหาจากผลทั้งหมด
 - Analysis Options และ provenance พับได้; validation/partial warnings ยังมองเห็น และ inspector แสดงไฟล์ที่เลือกก่อนรายละเอียด image/hash scopes
+- **Analyze with Codex**: ถามเกี่ยวกับไฟล์ที่เลือก ทบทวน exact prompt ก่อนส่ง และดูคำตอบในแอปผ่าน Codex CLI เริ่มจาก metadata; เลือกรวม UTF-8 excerpt ได้พร้อมตรวจ source/extracted hashes ดู [วิธีใช้และขอบเขต](docs/CODEX-ANALYSIS.md)
 
 Engine ส่งข้อมูลผ่าน [versioned NDJSON](docs/ENGINE-PROTOCOL.md) กำหนด frame ไม่เกิน 1 MiB, listing ไม่เกิน 50,000 records และ response/cache ไม่เกิน 64 MiB Limits แสดงเป็น partial/failure states; ขนาดเหล่านี้เป็น data limits ไม่ใช่ข้อรับรอง peak RAM ของ process
 
@@ -39,7 +40,7 @@ Helper ตรวจ EWF segment order/completeness และปฏิเสธ s
 
 TSK adapter ชุดนี้ **ไม่มี UDF**; งาน UDF ต้องมี adapter แยก APFS/FileVault และ encrypted filesystem ถูกปิดไว้สำหรับ Phase 3 Carving, document-content indexing, previews และ artifact analysis ยังอยู่ใน [แผนพัฒนา](docs/ROADMAP.md) File/path filtering ใน UI ไม่ใช่ document-content search และ deleted metadata ไม่รับรองว่า content ยังสมบูรณ์
 
-เวอร์ชัน 0.2.5 เพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
+เวอร์ชัน 0.3.0 เพิ่ม [Codex file analysis](docs/CODEX-ANALYSIS.md) บนฐาน readiness 0.2.5 ซึ่งเพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) คำตอบ AI เป็นคำอธิบายที่ผู้ตรวจต้องยืนยัน ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
 
 ## Build และ run
 
