@@ -124,6 +124,26 @@ def read_json(path: Path) -> dict | None:
     except (OSError, ValueError):
         return None
 
+def valid_sidecars(manifest: dict) -> bool:
+    """A cached helper receipt also promises retained notices/relink material."""
+    inventory = manifest.get("relinkSha256", {})
+    required = {"NFTSKEngine.o", "libtsk.a", "libewf.a", "Relink.command", "link-command.json"}
+    if set(inventory) != required:
+        return False
+    for name, digest in inventory.items():
+        path = CACHE / "relink" / name
+        if path.is_symlink() or not path.is_file() or sha(path) != digest:
+            return False
+    for name, digest in manifest.get("licenseSha256", {}).items():
+        parts = PurePosixPath(name).parts
+        if len(parts) < 3 or parts[:2] != ("NativeEngine", "licenses") or ".." in parts:
+            return False
+        path = CACHE / "licenses" / Path(*parts[2:])
+        if path.is_symlink() or not path.is_file() or sha(path) != digest:
+            return False
+    notice = CACHE / "licenses/THIRD_PARTY_NOTICES.md"
+    return not notice.is_symlink() and notice.is_file() and sha(notice) == manifest.get("noticesSha256")
+
 def build_dependencies(spec: dict, env: dict[str, str], jobs: int, identity: dict, force: bool) -> dict:
     prefix = CACHE / "prefix"
     required = [prefix / "lib/libtsk.a", prefix / "lib/libewf.a", prefix / "include/tsk/libtsk.h", prefix / "include/libewf.h", CACHE / "deps/json/include/nlohmann/json.hpp"]
@@ -276,7 +296,7 @@ def main() -> int:
         binary = CACHE / "bin/NFTSKEngine"
         manifest_path = CACHE / "manifest.json"
         manifest = read_json(manifest_path)
-        if not args.force and manifest and manifest.get("buildFingerprint") == fingerprint and binary.exists() and manifest.get("engineSha256") == sha(binary):
+        if not args.force and manifest and manifest.get("buildFingerprint") == fingerprint and binary.exists() and manifest.get("engineSha256") == sha(binary) and valid_sidecars(manifest):
             dependency_closure(binary, env)
             print(f"Native engine: verified cached helper {binary}")
             return 0
@@ -307,6 +327,7 @@ def main() -> int:
         shutil.copytree(ROOT / "NativeEngine/licenses", notices)
         shutil.copyfile(ROOT / "THIRD_PARTY_NOTICES.md", notices / "THIRD_PARTY_NOTICES.md")
         manifest = {"schemaVersion": 1, "protocolVersion": spec["protocolVersion"], "engineVersion": spec["engineVersion"], "patchDigest": patch_digest, "exfatPatchDigest": patches[0]["sha256"], "appliedPatches": applied_patches, "buildFingerprint": fingerprint, "engineSha256": sha(binary), "architecture": architecture, "toolchain": identity, "dependencies": spec["dependencies"], "dynamicDependencyClosure": closure, "compiledImageCapabilities": ["RAW", "EWF"], "capabilityNote": "Filesystem coverage is validated by integration tests; build features alone do not certify all filesystems", "linking": "static libtsk + libewf, header-only nlohmann/json; system-only dynamic libraries", "configureTransform": "Remove four generated TSK configure Homebrew/usr/local -I/-L injections; transformation is in build_native_engine.py", "relinkArtifacts": "relink/ (helper object, static archives, link-command.json and portable Relink.command); source archives in downloads/", "licenses": "licenses/", "licenseSha256": license_inventory, "noticesSha256": sha(ROOT / "THIRD_PARTY_NOTICES.md"), "buildOnlyTools": "libewf ewftools in prefix/bin are test utilities and are not bundled in the app"}
+        manifest["relinkSha256"] = {name: sha(CACHE / "relink" / name) for name in ("NFTSKEngine.o", "libtsk.a", "libewf.a", "Relink.command", "link-command.json")}
         atomic_json(manifest_path, manifest)
         print(f"Native engine: built {binary}")
     return 0

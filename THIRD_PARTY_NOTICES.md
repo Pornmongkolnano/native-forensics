@@ -2,7 +2,7 @@
 
 Foundation นี้เป็น private project code ยังไม่ได้เลือก blanket open-source license สำหรับโค้ดใหม่ และไม่ได้คัดลอก Autopsy หรือ Strata source/binaries เข้ามา การเลือกชื่อโครงการหรือ repository visibility ไม่เปลี่ยน license ของ dependency ที่ใช้ภายหลัง
 
-Repository เก็บ [exFAT UTC-offset patch](patches/sleuthkit/exfat-utc-offset.patch) สำหรับ TSK 4.15.0 เป็น reproducibility artifact ของงานแก้ที่ตรวจมาก่อน ไม่ใช่ vendored toolkit หรือ compiled engine SHA-256 คือ `fe17dab7a4f83f774eb9b4992801033131e66bf9579e91bc0e5aa5a5309613cf` Patch มีบริบทของ upstream file; การ build/distribute TSK ที่แก้แล้วต้องรักษา provenance และ upstream notices ตาม exact component ที่รวม Phase 0 ไม่ได้ใช้ TSK runtime; Phase 1 build native helper จาก pinned TSK source โดยใช้ patch นี้
+Repository เก็บ [exFAT UTC-offset patch](patches/sleuthkit/exfat-utc-offset.patch) สำหรับ TSK 4.15.0 เป็น reproducibility artifact ของงานแก้ที่ตรวจมาก่อน ไม่ใช่ vendored toolkit หรือ compiled engine SHA-256 คือ `6c2ee777a604993adc90556360190cd232cce707be7809905abe30f7d4d5995b` Patch มีบริบทของ upstream file; การ build/distribute TSK ที่แก้แล้วต้องรักษา provenance และ upstream notices ตาม exact component ที่รวม Phase 0 ไม่ได้ใช้ TSK runtime; Phase 1 build native helper จาก pinned TSK source โดยใช้ patch นี้
 
 ## Foundation ที่ใช้
 

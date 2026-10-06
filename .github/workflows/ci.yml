@@ -23,7 +23,7 @@ jobs:
       - name: Toolchain
         run: swift --version
       - name: Benchmark harness safety regressions
-        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline
+        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline test_app_bundle
       - name: Build pinned native engine
         run: python3 script/build_native_engine.py
       - name: Native filesystem regressions
@@ -35,6 +35,8 @@ jobs:
         run: swift test
       - name: Build native app bundle
         run: ./script/build_and_run.sh --build-only
+      - name: Verify packaged app provenance and runtime closure
+        run: python3 script/validate_app_bundle.py dist/NativeForensics.app
       - name: Optimized correctness tests
         env:
           NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine

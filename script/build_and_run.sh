@@ -15,6 +15,19 @@ APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 BUILD_CONFIGURATION="release"
 if [[ "$MODE" == "--debug" ]]; then BUILD_CONFIGURATION="debug"; fi
 
+cd "$ROOT_DIR"
+python3 ./script/build_native_engine.py
+swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
+BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
+# Fully stage/sign/verify before asking the running app to drain its work.
+STAGED_APP="$(python3 ./script/package_app.py --stage "$BUILD_DIR/$APP_NAME")"
+cleanup_stage() {
+  if [[ -n "${STAGED_APP:-}" && -d "$(dirname "$STAGED_APP")" ]]; then
+    rm -rf "$(dirname "$STAGED_APP")"
+  fi
+}
+trap cleanup_stage EXIT
+
 # Stop only this checkout's app, never another copy or Autopsy.
 python3 - "$APP_BINARY" "$APP_NAME" <<'PY'
 import os, signal, subprocess, sys, time
@@ -26,62 +39,16 @@ for item in result.stdout.split():
     if command != binary:
         continue
     os.kill(pid, signal.SIGTERM)
-    for _ in range(50):
+    for _ in range(300):
         try: os.kill(pid, 0)
         except ProcessLookupError: break
         time.sleep(0.1)
     else:
-        raise SystemExit('This checkout app did not stop; close it before rebuilding.')
+        raise SystemExit('This checkout app is still finishing work; the verified stage was not published.')
 PY
 
-cd "$ROOT_DIR"
-python3 ./script/build_native_engine.py
-swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
-BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
-mkdir -p "$ROOT_DIR/dist"
-rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-mkdir -p "$APP_BUNDLE/Contents/Helpers" "$APP_BUNDLE/Contents/Resources/EngineLicenses"
-cp "$BUILD_DIR/$APP_NAME" "$APP_BINARY"
-chmod +x "$APP_BINARY"
-cp "$ROOT_DIR/.engine/bin/NFTSKEngine" "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
-cp "$ROOT_DIR/.engine/manifest.json" "$APP_BUNDLE/Contents/Resources/engine-manifest.json"
-cp "$ROOT_DIR/Assets/AppIcon/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-cp -R "$ROOT_DIR/NativeEngine/licenses/." "$APP_BUNDLE/Contents/Resources/EngineLicenses/"
-/usr/bin/codesign --force --sign - "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
-
-cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleExecutable</key><string>NativeForensics</string>
-  <key>CFBundleIdentifier</key><string>io.github.pornmongkolnano.nativeforensics</string>
-  <key>CFBundleName</key><string>NativeForensics</string>
-  <key>CFBundleDisplayName</key><string>Native Forensics</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2.4</string>
-  <key>CFBundleVersion</key><string>6</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>NSPrincipalClass</key><string>NSApplication</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>CFBundleDocumentTypes</key><array><dict>
-    <key>CFBundleTypeName</key><string>Native Forensics Case</string>
-    <key>CFBundleTypeRole</key><string>Editor</string>
-    <key>LSItemContentTypes</key><array><string>io.github.pornmongkolnano.nativeforensics.case</string></array>
-    <key>LSTypeIsPackage</key><true/>
-  </dict></array>
-  <key>UTExportedTypeDeclarations</key><array><dict>
-    <key>UTTypeIdentifier</key><string>io.github.pornmongkolnano.nativeforensics.case</string>
-    <key>UTTypeDescription</key><string>Native Forensics Case</string>
-    <key>UTTypeConformsTo</key><array><string>com.apple.package</string></array>
-    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>nativecase</string></array></dict>
-  </dict></array>
-</dict></plist>
-PLIST
-
-/usr/bin/codesign --force --sign - "$APP_BUNDLE"
-/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+python3 ./script/package_app.py --publish "$STAGED_APP"
+STAGED_APP=""
 
 case "$MODE" in
   --build-only) echo "Built: $APP_BUNDLE" ;;
