@@ -41,6 +41,7 @@ final class WorkspaceStore {
     var searchText = ""
     var showInspector = true
     var isPresentingPanel = false
+    private(set) var isClosing = false
     var isInspecting = false
     var progress: InspectionProgress?
     var inspectionFilename: String?
@@ -92,8 +93,17 @@ final class WorkspaceStore {
 
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
+    @ObservationIgnored let engineHelperURL: URL
 
-    var isBusy: Bool { isPresentingPanel || isInspecting || isEngineRunning }
+    init(helperURL: URL? = nil) {
+        engineHelperURL = helperURL ?? Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/NFTSKEngine")
+    }
+
+    var isBusy: Bool { isClosing || isPresentingPanel || isInspecting || isEngineRunning }
+    var hasActiveWork: Bool {
+        inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
+    }
     var canInspectImage: Bool { currentCase != nil && !isBusy }
 
     var rows: [EvidenceRow] {
@@ -114,7 +124,8 @@ final class WorkspaceStore {
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
-            guard let destination = await CasePanelService.newCaseDestination() else { return }
+            guard !isClosing else { return }
+            guard let destination = await CasePanelService.newCaseDestination(), !isClosing else { return }
             do {
                 let name = destination.deletingPathExtension().lastPathComponent
                 let created = try CaseStore.create(name: name, in: destination.deletingLastPathComponent())
@@ -129,14 +140,16 @@ final class WorkspaceStore {
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
-            guard let url = await CasePanelService.existingCase() else { return }
+            guard !isClosing else { return }
+            guard let url = await CasePanelService.existingCase(), !isClosing else { return }
+            isPresentingPanel = false
             openCase(at: url)
         }
     }
 
     func openCase(at url: URL) {
-        guard !isInspecting && !isEngineRunning else {
-            errorMessage = "Wait for the current job to finish, or cancel it before opening a different case."
+        guard !isBusy else {
+            errorMessage = "Finish or cancel the current job or file dialog before opening a different case."
             return
         }
         do {
@@ -150,13 +163,15 @@ final class WorkspaceStore {
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
-            guard let source = await CasePanelService.imageSource() else { return }
+            guard !isClosing else { return }
+            guard let source = await CasePanelService.imageSource(), !isClosing else { return }
+            isPresentingPanel = false
             inspectImage(at: source)
         }
     }
 
     func inspectImage(at url: URL) {
-        guard let forensicCase = currentCase, !isInspecting && !isEngineRunning else { return }
+        guard let forensicCase = currentCase, !isBusy else { return }
         let jobID = UUID()
         inspectionID = jobID
         inspectionFilename = url.lastPathComponent
@@ -165,6 +180,7 @@ final class WorkspaceStore {
         statusMessage = "Reading selected file bytes…"
         inspectionTask = Task { [weak self] in
             guard let self else { return }
+            var recordWasSaved = false
             do {
                 let image = try await ImageInspector.inspect(url: url) { [weak self] update in
                     Task { @MainActor [weak self] in
@@ -173,17 +189,26 @@ final class WorkspaceStore {
                     }
                 }
                 try Task.checkCancellation()
-                let updated = try CaseStore.adding(image: image, to: forensicCase)
+                // Waiting for the case lock and publishing the manifest must not
+                // block the UI actor. Once started, this atomic commit is drained
+                // during close/quit even if cancellation arrives meanwhile.
+                let updated = try await Task.detached(priority: .utility) {
+                    try CaseStore.adding(image: image, to: forensicCase)
+                }.value
+                recordWasSaved = true
                 self.currentCase = updated
                 self.section = .evidence
                 self.selectedEvidenceID = updated.manifest.evidence.last?.id
                 self.showInspector = true
                 self.statusMessage = "Inspection complete. The selected file SHA-256 was saved to the case."
+                try Task.checkCancellation()
             } catch is CancellationError {
-                self.statusMessage = "Inspection cancelled. No evidence record was added."
+                self.statusMessage = recordWasSaved
+                    ? "The evidence record was saved before cancellation completed."
+                    : "Inspection cancelled. No evidence record was added."
             } catch {
                 self.present(error)
-                self.statusMessage = "Inspection failed. No evidence record was added."
+                self.statusMessage = "Inspection failed. Reopen the case to confirm its saved evidence records before retrying."
             }
             guard self.inspectionID == jobID else { return }
             self.isInspecting = false
@@ -200,7 +225,28 @@ final class WorkspaceStore {
         inspectionTask?.cancel()
     }
 
+    /// Immediately prevents a dismissed panel or a menu command from starting
+    /// another operation while the window/app is closing.
+    func prepareForClosing() {
+        isClosing = true
+    }
+
+    /// Awaiting the owning tasks also drains their detached workers and native
+    /// helper cleanup. Cancellation alone does not make an in-flight write stop.
+    func beginShutdown() -> [Task<Void, Never>] {
+        prepareForClosing()
+        let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask].compactMap { $0 }
+        cancelCurrentJob()
+        return pending
+    }
+
+    func shutdown() async {
+        let pending = beginShutdown()
+        for task in pending { await task.value }
+    }
+
     private func load(_ forensicCase: ForensicCase) {
+        errorMessage = nil
         cancelFilesystemSearch()
         filesystemSearchIndex = FilesystemSearchIndex(files: [])
         filesystemSelectionID = nil

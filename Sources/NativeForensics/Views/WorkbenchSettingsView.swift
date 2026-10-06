@@ -15,9 +15,24 @@ struct WorkbenchSettingsView: View {
                 Text("Follow macOS, or choose an appearance for this workbench.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("Appearance")
+            }
+            Section("Analysis scope") {
+                Text("Filesystem listing and extraction for RAW/EWF images. FAT16, FAT32, exFAT and NTFS are covered by synthetic tests.")
+                Text("File Views use filename hints. Content search, file previews, carving and artifact analysis are unavailable.")
+                    .foregroundStyle(.secondary)
+                Text("APFS, FileVault and UDF are unavailable. Deleted-file contents may have been overwritten.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
+                Text("Phase 1 · Development build, signed for local use. General distribution and clean-machine compatibility are not verified.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 150)
+        .frame(width: 480, height: 430)
     }
 }

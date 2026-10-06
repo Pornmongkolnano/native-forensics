@@ -82,6 +82,7 @@ extension WorkspaceStore {
     /// Generation + source-selection guards prevent an old query being published.
     func refreshFilesystemRows() {
         cancelFilesystemSearch()
+        guard !isClosing else { return }
         let index = filesystemSearchIndex
         let query = filesystemSearchText
         let category = filesystemCategory
@@ -145,6 +146,7 @@ extension WorkspaceStore {
     }
 
     func refreshFilesystemSelection() {
+        guard !isClosing else { return }
         let selectedCaseID = currentCase?.manifest.id
         guard filesystemSelectionID != selectedEvidenceID || filesystemSelectionCaseID != selectedCaseID else { return }
         filesystemSelectionID = selectedEvidenceID
@@ -209,7 +211,7 @@ extension WorkspaceStore {
                 guard self.filesystemLoadID == loadID,
                       self.currentCase?.manifest.id == caseID,
                       self.selectedEvidenceID == evidenceID else { return }
-                self.errorMessage = "The saved filesystem result could not be read: \(error.localizedDescription)"
+                self.errorMessage = "The saved filesystem result could not be read: \(error.localizedDescription) The cache was preserved. Reanalyze the source to create a validated replacement."
             }
         }
     }
@@ -218,6 +220,7 @@ extension WorkspaceStore {
         guard canAnalyzeFilesystem,
               let evidence = selectedEvidence,
               let forensicCase = currentCase else { return }
+        guard ensureEngineAvailable() else { return }
         let jobID = beginEngineJob(label: "Verifying source before analysis…")
         let options = engineOptions
         let sources = [URL(fileURLWithPath: evidence.sourcePath)] + additionalImageSegments
@@ -269,7 +272,7 @@ extension WorkspaceStore {
                     : "Filesystem analysis cancelled. No new result was saved."
             } catch {
                 self.errorMessage = error.localizedDescription
-                self.statusMessage = "Filesystem analysis failed. No new result was saved."
+                self.statusMessage = "Filesystem analysis failed. Reopen the case to check its saved results before retrying."
             }
         }
     }
@@ -292,6 +295,7 @@ extension WorkspaceStore {
               let evidence = selectedEvidence,
               let file = selectedFilesystemFile,
               let forensicCase = currentCase else { return }
+        guard ensureEngineAvailable() else { return }
         var options = selectedFilesystemResult?.options ?? engineOptions
         // Exact hashes of every cached input protect extraction integrity. Avoid
         // recomputing the decompressed logical-image hash for each file export.
@@ -302,9 +306,13 @@ extension WorkspaceStore {
         isPresentingPanel = true
         Task { [weak self] in
             guard let self else { return }
+            guard !self.isClosing else {
+                self.isPresentingPanel = false
+                return
+            }
             let destination = await CasePanelService.newExtractedFile(named: file.name)
             self.isPresentingPanel = false
-            guard let destination else { return }
+            guard let destination, !self.isClosing else { return }
             guard self.currentCase?.manifest.id == forensicCase.manifest.id,
                   self.currentCase?.bundleURL == forensicCase.bundleURL,
                   self.selectedEvidenceID == evidence.id,
@@ -330,7 +338,9 @@ extension WorkspaceStore {
         Task { [weak self] in
             guard let self else { return }
             defer { self.isPresentingPanel = false }
+            guard !self.isClosing else { return }
             guard let selected = await CasePanelService.additionalImageSegments(),
+                  !self.isClosing,
                   self.selectedEvidenceID == evidence.id,
                   self.currentCase?.manifest.id == forensicCase.manifest.id,
                   self.currentCase?.bundleURL == forensicCase.bundleURL else { return }
@@ -397,8 +407,14 @@ extension WorkspaceStore {
     }
 
     private var engineClient: EngineClient {
-        EngineClient(helperURL: Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/NFTSKEngine"))
+        EngineClient(helperURL: engineHelperURL)
+    }
+
+    private func ensureEngineAvailable() -> Bool {
+        guard let issue = EngineAvailability.issue(for: engineHelperURL) else { return true }
+        errorMessage = issue
+        statusMessage = "Native engine unavailable. The evidence and saved results were preserved."
+        return false
     }
 
     private func rebuildFilesystemIndex() {

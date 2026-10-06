@@ -5,6 +5,11 @@ import UniformTypeIdentifiers
 @MainActor
 enum CasePanelService {
     private static let caseType = UTType(exportedAs: "io.github.pornmongkolnano.nativeforensics.case", conformingTo: .package)
+    private static var activePanels: [UUID: NSSavePanel] = [:]
+
+    static func cancelActivePanels() {
+        for panel in Array(activePanels.values) { panel.cancel(nil) }
+    }
 
     static func newCaseDestination() async -> URL? {
         let panel = NSSavePanel()
@@ -69,6 +74,9 @@ enum CasePanelService {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
+        let panelID = UUID()
+        activePanels[panelID] = panel
+        defer { activePanels[panelID] = nil }
         NSApp.activate(ignoringOtherApps: true)
         return await withCheckedContinuation { continuation in
             let completion: (NSApplication.ModalResponse) -> Void = { response in
@@ -84,6 +92,9 @@ enum CasePanelService {
     }
 
     private static func present(_ panel: NSSavePanel) async -> URL? {
+        let panelID = UUID()
+        activePanels[panelID] = panel
+        defer { activePanels[panelID] = nil }
         NSApp.activate(ignoringOtherApps: true)
         return await withCheckedContinuation { continuation in
             let completion: (NSApplication.ModalResponse) -> Void = { response in

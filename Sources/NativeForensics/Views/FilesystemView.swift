@@ -209,8 +209,8 @@ private struct FilesystemResultSummaryView: View {
                         .fixedSize()
                 }
             }
-            if result.engineVersion == "0.1.0-tsk4.15.0" {
-                Label("Reanalyze to validate timestamps and include NTFS directory streams.", systemImage: "arrow.clockwise")
+            if let notice = FilesystemFormatting.reanalysisNotice(for: result) {
+                Label(notice, systemImage: "arrow.clockwise")
                     .foregroundStyle(.orange)
             }
             if let warning = result.warnings.first {

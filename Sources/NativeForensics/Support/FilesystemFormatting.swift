@@ -35,4 +35,15 @@ enum FilesystemFormatting {
         guard let seconds else { return "Unavailable" }
         return "\(seconds) seconds + \(nanoseconds) ns"
     }
+
+    static func reanalysisNotice(for result: EnumerationResult) -> String? {
+        if result.engineVersion == "0.1.0-tsk4.15.0" {
+            return "Reanalyze to validate timestamps and include NTFS directory streams."
+        }
+        if result.engineVersion == "0.1.1-tsk4.15.0",
+           result.volumes.contains(where: { ["fat12", "fat16", "fat32"].contains($0.filesystem.lowercased()) }) {
+            return "Reanalyze to validate classic FAT dates and times with the updated engine."
+        }
+        return nil
+    }
 }
