@@ -147,40 +147,72 @@ struct WorkspaceReadinessTests {
         let source = root.appendingPathComponent("source.raw")
         try Data(repeating: 0x43, count: 4096).write(to: source)
         let descriptor = Darwin.open(forensicCase.bundleURL.appendingPathComponent(".case.lock").path, O_RDWR)
-        #expect(descriptor >= 0)
+        try #require(descriptor >= 0)
         defer { _ = readinessFlock(descriptor, LOCK_UN); Darwin.close(descriptor) }
-        #expect(readinessFlock(descriptor, LOCK_EX) == 0)
-        let watchdogState = WatchdogState()
-        // The fallback prevents the regression itself from hanging this test.
-        let watchdog = Task.detached {
-            do { try await Task.sleep(for: .seconds(2)); try Task.checkCancellation() }
-            catch { return }
-            await watchdogState.markReleased()
-            _ = readinessFlock(descriptor, LOCK_UN)
-        }
+        var lockIdentity = stat()
+        try #require(Darwin.fstat(descriptor, &lockIdentity) == 0)
+        try #require(readinessFlock(descriptor, LOCK_EX) == 0)
+        // A dedicated OS thread can release the lock even if a regression blocks
+        // MainActor and Swift's cooperative executor. Its timeout is a failure
+        // fallback, never the signal that the commit is ready for cancellation.
+        let watchdog = ManifestCommitWatchdog(descriptor: descriptor)
+        defer { watchdog.stop() }
         let workspace = WorkspaceStore()
         workspace.openCase(at: forensicCase.bundleURL)
         workspace.inspectImage(at: source)
-        let deadline = ContinuousClock.now + .seconds(3)
-        while workspace.isInspecting && workspace.progress?.fraction != 1 && ContinuousClock.now < deadline {
+        var commitIsWaiting = false
+        // Hash completion does not imply that publication started. Observe the
+        // commit's second descriptor for this test's unique lock inode instead.
+        // It cannot acquire LOCK_EX while this test still holds the first one.
+        while workspace.isInspecting && !watchdog.didExpire {
+            if lockDescriptorCount(device: lockIdentity.st_dev, inode: lockIdentity.st_ino) >= 2 {
+                commitIsWaiting = true
+                break
+            }
             try await Task.sleep(for: .milliseconds(5))
         }
-        try await Task.sleep(for: .milliseconds(20))
-        #expect(workspace.isInspecting)
-        #expect(await !watchdogState.released)
+        #expect(commitIsWaiting)
+        #expect(!watchdog.didExpire)
+        guard commitIsWaiting, !watchdog.didExpire else {
+            // A synchronous MainActor commit reaches this failure branch only
+            // after the watchdog releases it; still drain before deleting data.
+            _ = readinessFlock(descriptor, LOCK_UN)
+            await workspace.shutdown()
+            return
+        }
+
+        // Executing a fresh UI task while the observed commit remains blocked
+        // proves responsiveness without measuring a scheduling/sleep duration.
+        let heartbeat = Task { @MainActor in
+            #expect(workspace.isInspecting)
+            #expect(!watchdog.didExpire)
+            #expect(lockDescriptorCount(device: lockIdentity.st_dev, inode: lockIdentity.st_ino) >= 2)
+        }
+        await heartbeat.value
         let shuttingDown = Task { await workspace.shutdown() }
-        await Task.yield()
+        while !workspace.isClosing && !watchdog.didExpire { await Task.yield() }
         #expect(workspace.isClosing)
         #expect(workspace.isInspecting)
-        _ = readinessFlock(descriptor, LOCK_UN)
-        watchdog.cancel()
-        await watchdog.value
+        #expect(!watchdog.didExpire)
+        #expect(lockDescriptorCount(device: lockIdentity.st_dev, inode: lockIdentity.st_ino) >= 2)
+        #expect(readinessFlock(descriptor, LOCK_UN) == 0)
+        watchdog.stop()
         await shuttingDown.value
         #expect(!workspace.hasActiveWork)
         #expect(!workspace.isInspecting)
         #expect(workspace.currentCase?.manifest.evidence.count == 1)
         #expect(try CaseStore.open(at: forensicCase.bundleURL).manifest.evidence.count == 1)
         #expect(workspace.statusMessage.contains("saved before cancellation"))
+    }
+
+    private func lockDescriptorCount(device: dev_t, inode: ino_t) -> Int {
+        var count = 0
+        for descriptor in Int32(0)..<Int32(min(getdtablesize(), 4096)) {
+            var metadata = stat()
+            if Darwin.fstat(descriptor, &metadata) == 0,
+               metadata.st_dev == device, metadata.st_ino == inode { count += 1 }
+        }
+        return count
     }
 
     @Test("Termination cancels every workspace and waits for their cleanup acknowledgements")
@@ -272,9 +304,47 @@ struct WorkspaceReadinessTests {
     }
 }
 
-private actor WatchdogState {
-    private(set) var released = false
-    func markReleased() { released = true }
+private final class ManifestCommitWatchdog: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var stopped = false
+    private var finished = false
+    private var expired = false
+
+    init(descriptor: Int32) {
+        let deadline = Date(timeIntervalSinceNow: 30)
+        let thread = Thread { [self] in
+            condition.lock()
+            while !stopped && Date() < deadline {
+                _ = condition.wait(until: deadline)
+            }
+            let shouldRelease = !stopped
+            if shouldRelease { expired = true }
+            condition.unlock()
+            if shouldRelease { _ = readinessFlock(descriptor, LOCK_UN) }
+            condition.lock()
+            finished = true
+            condition.broadcast()
+            condition.unlock()
+        }
+        thread.name = "Manifest commit regression watchdog"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+    }
+
+    var didExpire: Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return expired
+    }
+
+    /// Join before closing its descriptor, so it can never unlock a reused FD.
+    func stop() {
+        condition.lock()
+        stopped = true
+        condition.broadcast()
+        while !finished { condition.wait() }
+        condition.unlock()
+    }
 }
 
 private actor CleanupGate {
