@@ -32,7 +32,7 @@ enum FilesystemFormatting {
     }
 
     static func rawTime(_ seconds: Int64?, nanoseconds: Int32) -> String {
-        guard let seconds else { return "Not recorded" }
+        guard let seconds else { return "Unavailable" }
         return "\(seconds) seconds + \(nanoseconds) ns"
     }
 }

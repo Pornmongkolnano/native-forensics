@@ -32,12 +32,16 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 - Explicit ordered segments: no sibling discovery, intrinsic EWF order/completeness และ actual-opened-path validation
 - Selected-file/container-segment hashes, hashes ของทุก ordered inputs, logical-image SHA-256 และ extracted-file SHA-256 เป็นคนละ scopes
 - Atomic versioned JSON cache ที่เปิดเป็น historical result; extraction bytes ตรวจอิสระก่อน exclusive publication
+- Portable NTFS corpus สร้างด้วย Python stdlib: resident/nonresident, allocated/deleted, fragmented runs, sparse hole, hardlinks, Unicode, file/directory ADS พร้อม exact bytes/locators และ 100 ns timestamps
+- exFAT per-field offsets, unknown-offset IANA/DST interpretation, Gregorian date validation และ missing-time handling; valid-offset timestamps ตรวจภายใต้หลาย host timezones
+
+ชุด correctness ล่าสุดผ่าน native 87 checks และ Swift 41 tests รวม 20 image configurations ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:
 
-- Portable NTFS fixture generator/corpus ที่ไม่ผูกกับ local runtime และตรวจ names, allocation flags, streams, sizes, timestamps และ content hashes
-- เพิ่ม exFAT unknown-offset, negative-offset/DST/invalid-date และ precision matrix ให้ชัดเจน รวม host-timezone invariance สำหรับ valid offsets
-- Known fragmented/deleted content, Thai/Unicode long paths และ split image corner cases โดยตรวจ expected bytes พร้อม source integrity ทุก run
+- NTFS corpus เพิ่ม ATTRIBUTE_LIST, multilevel directory indexes, compression/EFS และ deleted clusters ที่ถูกเขียนทับ; corpus ปัจจุบันเป็น minimal nonbootable volume
+- Unknown-offset DST overlap/gap policy และ classic FAT invalid-calendar handling; offset ที่ไม่ทราบค่าต้องคง timezone assumption
+- Fragmented deleted FAT recovery เมื่อ chain ถูกล้าง และ differential references ของ damaged/reallocated files; known intact NTFS deleted runs และ allocated fragmented FAT ผ่าน exact-byte checks แล้ว
 - Negative input/protocol/cancel coverage พร้อม retained partial/error state และ safe export races; ผลที่ผ่านจริงระบุใน Validation ไม่อนุมานจาก code
 - Worker 1/2/4 experiment และ profiler ก่อนสร้าง measured worker policy; 50,000/64 MiB limits ไม่แทน peak-RAM measurement หรือ memory scheduler
 - Full GUI create → inspect → analyze → browse → extract → reopen ทั้ง success, partial, cancel และ failure พร้อม hash/receipt readback

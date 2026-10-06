@@ -129,6 +129,11 @@ private struct FilesystemResultSummaryView: View {
             Text("Historical result. Source hashes are checked again before extraction; reanalyze to refresh the listing.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if result.engineVersion == "0.1.0-tsk4.15.0" {
+                Label("Reanalyze this image to apply timestamp validation and include NTFS directory streams.", systemImage: "arrow.clockwise")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
             if !result.warnings.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 5) {

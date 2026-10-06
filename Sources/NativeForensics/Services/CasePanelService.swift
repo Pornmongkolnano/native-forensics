@@ -49,7 +49,9 @@ enum CasePanelService {
         panel.message = "Create a new output file outside the evidence image. Existing files cannot be replaced. SHA-256 will describe the extracted bytes."
         panel.prompt = "Extract"
         panel.nameFieldLabel = "Output filename:"
-        let name = URL(fileURLWithPath: filename).lastPathComponent
+        // NSSavePanel displays a colon as a slash on macOS. Suggest a plain
+        // filename for NTFS streams while retaining the original path in metadata.
+        let name = URL(fileURLWithPath: filename).lastPathComponent.replacingOccurrences(of: ":", with: " - ")
         panel.nameFieldStringValue = name.isEmpty || name == "." || name == ".." ? "Extracted file" : name
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
