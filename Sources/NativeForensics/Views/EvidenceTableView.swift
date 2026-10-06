@@ -10,7 +10,7 @@ struct EvidenceTableView: View {
                 ContentUnavailableView {
                     Label("No Evidence Recorded", systemImage: "externaldrive")
                 } description: {
-                    Text("Inspect an image to save its selected file SHA-256 and byte count. Filesystem browsing and file recovery are planned for later versions.")
+                    Text("Inspect an image to save its selected file SHA-256 and byte count, then analyze its filesystem from the Filesystem section.")
                         .frame(maxWidth: 470)
                 } actions: {
                     Button("Inspect Disk Image…", action: workspace.chooseImage)
@@ -44,6 +44,7 @@ struct EvidenceTableView: View {
                     }
                     .width(min: 150, ideal: 170)
                 }
+                .disabled(workspace.isEngineRunning)
                 .searchable(text: $workspace.searchText, prompt: "Find filename or SHA-256")
                 .contextMenu(forSelectionType: UUID.self) { selection in
                     if let id = selection.first,
@@ -52,6 +53,10 @@ struct EvidenceTableView: View {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(record.sha256, forType: .string)
                         }
+                        Button("Analyze Filesystem") {
+                            workspace.selectAndAnalyzeEvidence(id)
+                        }
+                        .disabled(workspace.isBusy)
                     }
                 }
                 .overlay {

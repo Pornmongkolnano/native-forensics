@@ -29,6 +29,6 @@ private struct WorkbenchWindow: View {
         ContentView(workspace: workspace)
             .focusedSceneValue(\.forensicWorkspace, workspace)
             .onOpenURL { workspace.openCase(at: $0) }
-            .onDisappear { workspace.cancelInspection() }
+            .onDisappear { workspace.cancelCurrentJob() }
     }
 }

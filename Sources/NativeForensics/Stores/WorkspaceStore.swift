@@ -4,11 +4,24 @@ import Observation
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case evidence
+    case filesystem
     case caseDetails
 
     var id: Self { self }
-    var title: String { self == .evidence ? "Evidence" : "Case Details" }
-    var symbol: String { self == .evidence ? "externaldrive" : "folder" }
+    var title: String {
+        switch self {
+        case .evidence: "Evidence"
+        case .filesystem: "Filesystem"
+        case .caseDetails: "Case Details"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .evidence: "externaldrive"
+        case .filesystem: "list.bullet.rectangle"
+        case .caseDetails: "folder"
+        }
+    }
 }
 
 struct EvidenceRow: Identifiable {
@@ -32,10 +45,35 @@ final class WorkspaceStore {
     var statusMessage = "Create a case to inspect a disk image."
     var errorMessage: String?
 
+    var filesystemResults: [UUID: EnumerationResult] = [:]
+    var filesystemRows: [FilesystemEntry] = []
+    var filesystemFilesByID: [String: FilesystemEntry] = [:]
+    var selectedFileID: String?
+    var filesystemSearchText = ""
+    var engineImageType = "auto"
+    var engineSectorSize = 0
+    var additionalImageSegments: [URL] = []
+    var evidenceTimezone = "Asia/Bangkok"
+    var timestampDisplayTimezone = "UTC"
+    var isEngineRunning = false
+    var isLoadingFilesystem = false
+    var engineOperationLabel = ""
+    var engineProgress: EngineProgress?
+    var verificationProgress: InspectionProgress?
+    var extractionReceipt: ExtractionResult?
+    var extractionReceiptIsVerified = false
+
+    @ObservationIgnored var engineTask: Task<Void, Never>?
+    @ObservationIgnored var engineJobID: UUID?
+    @ObservationIgnored var filesystemLoadTask: Task<Void, Never>?
+    @ObservationIgnored var filesystemLoadID: UUID?
+    @ObservationIgnored var filesystemSelectionID: UUID?
+    @ObservationIgnored var filesystemSelectionCaseID: UUID?
+
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
 
-    var isBusy: Bool { isPresentingPanel || isInspecting }
+    var isBusy: Bool { isPresentingPanel || isInspecting || isEngineRunning }
     var canInspectImage: Bool { currentCase != nil && !isBusy }
 
     var rows: [EvidenceRow] {
@@ -77,8 +115,8 @@ final class WorkspaceStore {
     }
 
     func openCase(at url: URL) {
-        guard !isInspecting else {
-            errorMessage = "Wait for the current inspection to finish, or cancel it before opening a different case."
+        guard !isInspecting && !isEngineRunning else {
+            errorMessage = "Wait for the current job to finish, or cancel it before opening a different case."
             return
         }
         do {
@@ -98,7 +136,7 @@ final class WorkspaceStore {
     }
 
     func inspectImage(at url: URL) {
-        guard let forensicCase = currentCase, !isInspecting else { return }
+        guard let forensicCase = currentCase, !isInspecting && !isEngineRunning else { return }
         let jobID = UUID()
         inspectionID = jobID
         inspectionFilename = url.lastPathComponent
@@ -143,10 +181,21 @@ final class WorkspaceStore {
     }
 
     private func load(_ forensicCase: ForensicCase) {
+        filesystemSelectionID = nil
+        filesystemSelectionCaseID = nil
+        filesystemResults = [:]
+        filesystemRows = []
+        filesystemFilesByID = [:]
+        selectedFileID = nil
+        filesystemSearchText = ""
+        additionalImageSegments = []
+        extractionReceipt = nil
+        extractionReceiptIsVerified = false
         currentCase = forensicCase
         section = .evidence
         searchText = ""
         selectedEvidenceID = forensicCase.manifest.evidence.first?.id
+        refreshFilesystemSelection()
     }
 
     private func present(_ error: Error) {

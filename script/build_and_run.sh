@@ -33,13 +33,19 @@ for item in result.stdout.split():
 PY
 
 cd "$ROOT_DIR"
+python3 ./script/build_native_engine.py
 swift build --product "$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
 mkdir -p "$ROOT_DIR/dist"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Helpers" "$APP_BUNDLE/Contents/Resources/EngineLicenses"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$ROOT_DIR/.engine/bin/NFTSKEngine" "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
+cp "$ROOT_DIR/.engine/manifest.json" "$APP_BUNDLE/Contents/Resources/engine-manifest.json"
+cp -R "$ROOT_DIR/NativeEngine/licenses/." "$APP_BUNDLE/Contents/Resources/EngineLicenses/"
+/usr/bin/codesign --force --sign - "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,8 +56,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>NativeForensics</string>
   <key>CFBundleDisplayName</key><string>Native Forensics</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -71,7 +77,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 PLIST
 
 /usr/bin/codesign --force --sign - "$APP_BUNDLE"
-/usr/bin/codesign --verify --strict "$APP_BUNDLE"
+/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
 case "$MODE" in
   --build-only) echo "Built: $APP_BUNDLE" ;;

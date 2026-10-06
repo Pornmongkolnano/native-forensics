@@ -14,6 +14,8 @@ struct ContentView: View {
                     Divider()
                     if workspace.section == .caseDetails {
                         CaseDetailsView(forensicCase: forensicCase)
+                    } else if workspace.section == .filesystem {
+                        FilesystemView(workspace: workspace)
                     } else {
                         EvidenceTableView(workspace: workspace)
                     }
@@ -24,8 +26,14 @@ struct ContentView: View {
                 InspectionStatusView(workspace: workspace)
             }
             .inspector(isPresented: $workspace.showInspector) {
-                EvidenceInspectorView(evidence: workspace.selectedEvidence)
-                    .inspectorColumnWidth(min: 270, ideal: 310, max: 420)
+                Group {
+                    if workspace.section == .filesystem {
+                        FilesystemInspectorView(workspace: workspace)
+                    } else {
+                        EvidenceInspectorView(evidence: workspace.selectedEvidence)
+                    }
+                }
+                .inspectorColumnWidth(min: 270, ideal: 310, max: 420)
             }
         }
         .navigationTitle(workspace.currentCase?.manifest.name ?? "Native Forensics")
@@ -49,6 +57,12 @@ struct ContentView: View {
                 }
                 .help("Inspect a disk image and record its SHA-256 (⇧⌘I)")
                 .disabled(!workspace.canInspectImage)
+
+                Button(action: workspace.analyzeSelectedImage) {
+                    Label("Analyze Filesystem", systemImage: "list.bullet.rectangle")
+                }
+                .help("Analyze the selected evidence image (⇧⌘A)")
+                .disabled(!workspace.canAnalyzeFilesystem)
             }
 
             ToolbarItem(placement: .automatic) {
@@ -57,6 +71,9 @@ struct ContentView: View {
                 }
                 .help("Toggle evidence inspector (⌥⌘I)")
             }
+        }
+        .onChange(of: workspace.selectedEvidenceID) { _, _ in
+            workspace.refreshFilesystemSelection()
         }
         .alert("Unable to Complete Action", isPresented: Binding(
             get: { workspace.errorMessage != nil },

@@ -37,9 +37,17 @@ struct ForensicCommands: Commands {
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(workspace?.canInspectImage != true)
 
-            Button("Cancel Inspection") { workspace?.cancelInspection() }
+            Button("Analyze Selected Filesystem") { workspace?.analyzeSelectedImage() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(workspace?.canAnalyzeFilesystem != true)
+
+            Button("Extract Selected File…") { workspace?.chooseExtractionDestination() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(workspace?.canExtractFilesystemFile != true)
+
+            Button("Cancel Current Job") { workspace?.cancelCurrentJob() }
                 .keyboardShortcut(".", modifiers: .command)
-                .disabled(workspace?.isInspecting != true)
+                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true)
         }
 
         CommandGroup(after: .sidebar) {

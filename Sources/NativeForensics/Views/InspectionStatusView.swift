@@ -5,7 +5,33 @@ struct InspectionStatusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if workspace.isInspecting {
+            if workspace.isEngineRunning {
+                HStack {
+                    Text(workspace.engineOperationLabel).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: workspace.cancelEngineJob)
+                        .controlSize(.small)
+                }
+                if let progress = workspace.verificationProgress {
+                    ProgressView(value: progress.fraction)
+                    Text("Source verification: \(EvidenceFormatting.bytes(progress.bytesRead)) of \(EvidenceFormatting.bytes(progress.totalBytes))")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                } else if let progress = workspace.engineProgress {
+                    if let total = progress.total, total > 0 {
+                        ProgressView(value: min(1, max(0, Double(progress.completed) / Double(total))))
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("\(progress.stage): \(progress.completed)\(progress.total.map { " of \($0)" } ?? "") \(progress.unit)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            } else if workspace.isInspecting {
                 HStack {
                     Text("Inspecting \(workspace.inspectionFilename ?? "image")")
                         .lineLimit(1)
@@ -25,6 +51,14 @@ struct InspectionStatusView: View {
                     .foregroundStyle(.secondary)
                 } else {
                     ProgressView().controlSize(.small)
+                }
+            } else if workspace.isLoadingFilesystem {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Loading saved filesystem result…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
             } else {
                 HStack(spacing: 8) {
