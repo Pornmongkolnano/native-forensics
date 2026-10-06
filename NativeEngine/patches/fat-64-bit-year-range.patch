@@ -1,0 +1,18 @@
+--- a/tsk/fs/fatfs_utils.c
++++ b/tsk/fs/fatfs_utils.c
+@@ -168,11 +168,11 @@
+     if ((tm1.tm_mon < 0) || (tm1.tm_mon > 11))
+         tm1.tm_mon = 0;
+ 
+-    /* There is a limit to the year because the UNIX time value is
+-     * a 32-bit value
+-     * the maximum UNIX time is Tue Jan 19 03:14:07 2038 */
++    /* Preserve the legacy 2037 limit only when time_t is 32-bit.
++     * On 64-bit hosts, DOS/FAT dates cover 1980 through 2107. */
+     tm1.tm_year = ((date & FATFS_YEAR_MASK) >> FATFS_YEAR_SHIFT) + 80;
+-    if ((tm1.tm_year < 0) || (tm1.tm_year > 137))
++    if ((tm1.tm_year < 0) ||
++        ((sizeof(time_t) <= 4) && (tm1.tm_year > 137)))
+         tm1.tm_year = 0;
+ 
+     /* set the daylight savings variable to -1 so that mktime() figures

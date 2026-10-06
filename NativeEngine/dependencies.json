@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "engineVersion": "0.1.0-tsk4.15.0",
+  "protocolVersion": 1,
+  "minimumMacOS": "14.0",
+  "buildJobsMaximum": 4,
+  "dependencies": [
+    {
+      "name": "sleuthkit",
+      "version": "4.15.0",
+      "archive": "sleuthkit-4.15.0.tar.gz",
+      "sourceRoot": "sleuthkit-4.15.0",
+      "url": "https://github.com/sleuthkit/sleuthkit/releases/download/sleuthkit-4.15.0/sleuthkit-4.15.0.tar.gz",
+      "sha256": "3a8c1e7d18a9b81f3e5e8aa78313974aceaafc6e051d636bc92cd7168286eca9",
+      "linking": "static C/C++ libtsk; Java/tools excluded",
+      "licenseInventory": "NativeEngine/licenses/sleuthkit/README.md",
+      "patches": [
+        {
+          "path": "patches/sleuthkit/exfat-utc-offset.patch",
+          "sha256": "fe17dab7a4f83f774eb9b4992801033131e66bf9579e91bc0e5aa5a5309613cf"
+        },
+        {
+          "path": "NativeEngine/patches/ewf-20240506-read-api.patch",
+          "sha256": "b19b6d1fb55a586519ab10c48dee2731861cac3f272894e7a2f86b568bede461",
+          "reason": "libewf 20240506 removed the historical read_random alias; read_buffer_at_offset uses the same handle/buffer/length/offset/error signature"
+        },
+        {
+          "path": "NativeEngine/patches/fat-64-bit-year-range.patch",
+          "sha256": "8f2133775cab18df63fb5bb7c33748c2ccf965e915c6914180d0b9af45d5d747",
+          "reason": "TSK assumes a 32-bit Unix timestamp and maps DOS/FAT years after 2037 to 1900; macOS has a 64-bit time_t, so retain the actual 1980-2107 year range while preserving the legacy 32-bit fallback"
+        },
+        {
+          "path": "NativeEngine/patches/ewf-explicit-segments.patch",
+          "sha256": "89d6fe34f0bbcbbb5f7f977650088f1348c0b782d005fd96b1dd2e7ba3226adc",
+          "reason": "NativeForensics always supplies all preflighted EWF segments explicitly. Disable upstream single-path convenience glob to avoid unselected sibling reads and permit a valid single-segment EWF regardless of filename extension."
+        }
+      ]
+    },
+    {
+      "name": "libewf",
+      "version": "20240506",
+      "archive": "libewf-experimental-20240506.tar.gz",
+      "sourceRoot": "libewf-20240506",
+      "url": "https://github.com/libyal/libewf/releases/download/20240506/libewf-experimental-20240506.tar.gz",
+      "sha256": "247d8ee9572392a2404be514d1137f099970f41f240c1134ddc3f04322281c67",
+      "linking": "static; bundled libyal support libraries; system zlib/bzip2; OpenSSL/FUSE/Python disabled",
+      "license": "LGPL-3.0-or-later",
+      "licenseInventory": "NativeEngine/licenses/libewf/COPYING.LESSER"
+    },
+    {
+      "name": "nlohmann-json",
+      "version": "3.11.3",
+      "archive": "json-v3.11.3.hpp",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "linking": "header-only C++",
+      "license": "MIT",
+      "licenseInventory": "NativeEngine/licenses/nlohmann-json/LICENSE.MIT"
+    }
+  ],
+  "systemDependencies": [
+    "macOS CommonCrypto (libSystem)",
+    "libc++",
+    "libz",
+    "libbz2",
+    "libiconv (libewf character conversions)",
+    "CoreFoundation (if required by toolkit)"
+  ]
+}

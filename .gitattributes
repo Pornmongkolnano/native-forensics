@@ -1,2 +1,5 @@
 # Preserve reviewed diff artifacts byte-for-byte, including upstream context.
 patches/**/*.patch whitespace=-trailing-space
+# Retain checksum-pinned upstream notices and patch context byte for byte.
+NativeEngine/licenses/** whitespace=-trailing-space,-blank-at-eof
+NativeEngine/patches/*.patch whitespace=-trailing-space

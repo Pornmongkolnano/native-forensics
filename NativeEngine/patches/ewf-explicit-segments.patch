@@ -1,0 +1,15 @@
+--- a/tsk/img/ewf.cpp
++++ b/tsk/img/ewf.cpp
+@@ -227,9 +227,10 @@
+     }
+     img_info = (TSK_IMG_INFO *) ewf_info;
+ 
+-    // See if they specified only the first of the set...
++    // NativeForensics supplies the complete, preflighted segment set.
++    // Never discover unselected siblings, including for a single file.
+     ewf_info->used_ewf_glob = 0;
+-    if (a_num_img == 1) {
++    if (false) { // Disable upstream convenience glob for this local build.
+ #if defined( HAVE_LIBEWF_V2_API)
+ #ifdef TSK_WIN32
+         is_error = (libewf_glob_wide(a_images[0], TSTRLEN(a_images[0]),
