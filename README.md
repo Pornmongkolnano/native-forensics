@@ -39,7 +39,7 @@ Helper ตรวจ EWF segment order/completeness และปฏิเสธ s
 
 TSK adapter ชุดนี้ **ไม่มี UDF**; งาน UDF ต้องมี adapter แยก APFS/FileVault และ encrypted filesystem ถูกปิดไว้สำหรับ Phase 3 Carving, document-content indexing, previews และ artifact analysis ยังอยู่ใน [แผนพัฒนา](docs/ROADMAP.md) File/path filtering ใน UI ไม่ใช่ document-content search และ deleted metadata ไม่รับรองว่า content ยังสมบูรณ์
 
-ดูผลและขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) ยังไม่รับรองทุก TSK filesystem, full GUI recovery flow หรือ performance ที่ดีกว่า Autopsy
+เวอร์ชัน 0.2.5 เพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
 
 ## Build และ run
 
@@ -51,7 +51,7 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-`build_and_run.sh` เรียก native helper build ให้อัตโนมัติ แล้วสร้าง `dist/NativeForensics.app` แบบ optimized release สำหรับการใช้ปกติ/`--verify`/`--build-only` ใช้ `--debug` สำหรับ debug build และ LLDB หรือ `--logs`, `--telemetry` ตามงาน Codex Run action ใช้ script เดียวกัน
+`build_and_run.sh` เรียก native helper build ให้อัตโนมัติ แล้ว stage/sign/ตรวจ provenance และ system runtime dependencies ก่อนแทน `dist/NativeForensics.app` แบบ optimized release สำหรับการใช้ปกติ/`--verify`/`--build-only` ใช้ `--debug` สำหรับ debug build และ LLDB หรือ `--logs`, `--telemetry` ตามงาน ตรวจ artifact แยกได้ด้วย `python3 script/validate_app_bundle.py dist/NativeForensics.app` Codex Run action ใช้ script เดียวกัน
 
 Independent native synthetic suite อยู่ที่ `python3 Tests/NativeEngine/run_tests.py` ส่วน real-helper Swift integration tests เป็น opt-in ตาม `NFTSK_ENGINE_HELPER` และ `NFTSK_SYNTHETIC_FIXTURES`; การผ่าน pure Swift/mock protocol tests ไม่แทน native format coverage
 

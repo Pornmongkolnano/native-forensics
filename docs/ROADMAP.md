@@ -35,14 +35,14 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 - Portable NTFS corpus สร้างด้วย Python stdlib: resident/nonresident, allocated/deleted, fragmented runs, sparse hole, hardlinks, Unicode, file/directory ADS พร้อม exact bytes/locators และ 100 ns timestamps
 - exFAT per-field offsets, unknown-offset IANA/DST interpretation, Gregorian date validation และ missing-time handling; valid-offset timestamps ตรวจภายใต้หลาย host timezones
 
-ชุด correctness ล่าสุดผ่าน native 87 checks, Swift 45 core + 4 workspace tests รวม 20 image configurations และ benchmark harness 7 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
+ชุด readiness 0.2.5 ผ่าน native 105 checks รวม 26 image configurations และ Swift 59 core + 20 workspace/presentation tests; ดู [Readiness](READINESS.md) สำหรับผลล่าสุด ส่วน benchmark harness/artifact checks รวม 23 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
 
 App 0.2.3 เพิ่ม single-pass background path search พร้อม superseded-query cancellation, store regressions และ 100-row presentation pages ลด fixed chrome และจัด inspector ให้ file details อยู่ก่อน image provenance มี matched search/scheduling experiment แยกจาก GUI frame measurements; optimized release เป็น default ของ app build งานนี้ไม่เปลี่ยน native helper worker policy
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:
 
 - NTFS corpus เพิ่ม ATTRIBUTE_LIST, multilevel directory indexes, compression/EFS และ deleted clusters ที่ถูกเขียนทับ; corpus ปัจจุบันเป็น minimal nonbootable volume
-- Unknown-offset DST overlap/gap policy และ classic FAT invalid-calendar handling; offset ที่ไม่ทราบค่าต้องคง timezone assumption
+- Unknown-offset DST overlap/gap policy; classic FAT invalid-calendar handling แก้ใน engine 0.1.2 และตรวจด้วย independent matrices แล้ว; offset ที่ไม่ทราบค่าต้องคง timezone assumption
 - Fragmented deleted FAT recovery เมื่อ chain ถูกล้าง และ differential references ของ damaged/reallocated files; known intact NTFS deleted runs และ allocated fragmented FAT ผ่าน exact-byte checks แล้ว
 - Negative input/protocol/cancel coverage พร้อม retained partial/error state และ safe export races; ผลที่ผ่านจริงระบุใน Validation ไม่อนุมานจาก code
 - วัด worker policy ทั้งแอปต่อจาก helper 1/2/4 experiment ที่ผ่านแล้ว: Swift prehash/publication, mixed/cold/large inputs, battery/thermal และ GUI RAM; 50,000/64 MiB limits ไม่แทน memory scheduler
@@ -81,7 +81,7 @@ Acceptance gate:
 
 ## เงื่อนไขเพิ่มประสิทธิภาพ
 
-มี matched native-helper concurrency experiment แล้ว แต่ยังไม่มี full-app หรือ Autopsy comparison claim ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
+มี matched native-helper concurrency experiment และ [conditional Autopsy import comparison](AUTOPSY-COMPARISON.md) แล้ว; ยังไม่มี full GUI/module-parity หรือ production worker-policy claim ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
 
 งานตัวอย่างที่ควรทดลองคือ fewer rereads, bounded streaming buffers, batched DB/index writes, export/hash pipeline และ preview caching Worker defaults ต้องมาจากผลบนหลาย workload/power policies ไม่ใช้ชื่อรุ่น CPU กำหนดจำนวน threads เพียงอย่างเดียว
 

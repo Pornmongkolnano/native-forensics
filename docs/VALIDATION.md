@@ -1,5 +1,7 @@
 # Native workbench validation — 6 October 2026
 
+**Update 7 October 2026:** [Readiness 0.2.5](READINESS.md) records the current 105 native checks, 79 Swift tests per configuration, 23 Python checks and additional case/lifecycle/package fixes. Sections below retain earlier milestone receipts.
+
 Scope: Phase 0 foundation and the first Phase 1 filesystem adapter. Host: Apple Silicon M2 arm64, macOS 27.0.1, Xcode 27.0 / Swift 6.4. Deployment target is macOS 14; older macOS and physical M5 machines have not been tested. Phase 1 remains in progress under the [roadmap](ROADMAP.md).
 
 ## Swift core and real helper integration

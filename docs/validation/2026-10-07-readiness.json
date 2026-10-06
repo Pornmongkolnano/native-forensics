@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "clientDate": "2026-10-07",
+  "syntheticOnly": true,
+  "appVersion": "0.2.5",
+  "appBuild": 7,
+  "engineVersion": "0.1.2-tsk4.15.0",
+  "engineSha256": "fb155921ce06ddf24910b8fb184065b89834378091936ea30a3ead372af9f9d1",
+  "patchDigest": "efa479f6b5723b6c134c251e7d828062b22bb0e4544cf33ae8b0d352cef525f9",
+  "host": {
+    "architecture": "arm64",
+    "hardware": "Apple M2",
+    "macOS": "27.0.1",
+    "declaredMinimumMacOS": "14.0",
+    "physicalM5Tested": false,
+    "macOS14Tested": false
+  },
+  "native": {
+    "passed": 105,
+    "failed": 0,
+    "imageConfigurations": 26,
+    "warnings": 0
+  },
+  "swift": {
+    "coreDeclarations": 59,
+    "workspaceAndPresentationDeclarations": 20,
+    "perConfigurationDeclarations": 79,
+    "configurations": [
+      "debug",
+      "release"
+    ],
+    "realHelperIntegrationEnabled": true
+  },
+  "python": {
+    "passed": 23,
+    "failed": 0,
+    "scope": "benchmark harnesses, artifact metadata/publication and retained build sidecars"
+  },
+  "fatConverterSupplement": {
+    "dateEncodings": 65536,
+    "timeEncodings": 65536,
+    "creationIncrements": 256,
+    "failed": 0,
+    "scope": "patched converter, independent UTC Gregorian oracle; excludes DST policy"
+  },
+  "gui": {
+    "freshFATAnalysisRows": 10,
+    "deletedExportBytes": 54,
+    "deletedExportSha256": "8fbe71046493052fb85fe910943e0f12c8611298f94cba61825fee75e33ba937",
+    "deletedBytesIndependentlyMatched": true,
+    "quitDuringInspection": {
+      "logicalSourceBytes": 8589934592,
+      "observedProgressBytesApproximate": 586200000,
+      "appExited": true,
+      "manifestAndCacheUnchanged": true,
+      "recordNotAppended": true
+    },
+    "reopenPassed": true,
+    "freshUnsupportedInputFailedExplicitly": true,
+    "priorFATCacheUnchanged": true
+  },
+  "bundle": {
+    "strictSignatureVerified": true,
+    "signing": "ad-hoc",
+    "systemOnlyDynamicDependencies": true,
+    "helperAndLicenseAndNoticeReceiptsVerified": true,
+    "notarizationVerified": false,
+    "correspondingSourceAndRelinkDistributionBundled": false
+  },
+  "autopsyPreservation": {
+    "frozenBaselineHealthPass": 30,
+    "fail": 0,
+    "warn": 0,
+    "appAndSolrStarted": false,
+    "baselineRegenerated": false
+  },
+  "limitations": [
+    "Phase 1 in progress",
+    "Historical JSON caches have no cryptographic authentication",
+    "Extraction receipts are transient",
+    "No force-kill/power-loss guarantee",
+    "No general Autopsy parity or production worker-policy claim",
+    "Unsupported UDF/APFS/FileVault, carving, content search, previews and artifact analysis",
+    "Complex/damaged NTFS and ambiguous DST need more coverage",
+    "Developer ID/notarization, complete source/relink distribution and clean-machine/M5 testing pending"
+  ]
+}
