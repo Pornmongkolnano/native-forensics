@@ -263,16 +263,23 @@ enum EngineValidation {
               result.files.count <= result.options.maxFiles,
               result.warnings.count <= 1024, result.warnings.allSatisfy({ text($0, maximum: 65_536) }),
               Set(result.files.map(\.id)).count == result.files.count,
+              result.volumes.count <= 4096,
               Set(result.volumes.map(\.id)).count == result.volumes.count else {
             throw EngineError.invalidCache("The filesystem result has an unsupported version or invalid records.")
         }
         try result.options.validate()
         try image(result.image)
+        guard !result.options.hashLogicalImage || result.image.logicalSha256 != nil else {
+            throw EngineError.invalidCache("The requested logical-image SHA-256 is missing from the filesystem cache.")
+        }
         for volume in result.volumes { try self.volume(volume) }
         for file in result.files { try self.file(file) }
         if !result.sourceIdentities.isEmpty {
             guard result.sourceIdentities.map(\.path) == result.sourcePaths,
-                  result.sourceIdentities.allSatisfy({ $0.size >= 0 }) else {
+                  result.sourceIdentities.allSatisfy({
+                      $0.size >= 0 && (0..<1_000_000_000).contains($0.modifiedNanoseconds)
+                          && (0..<1_000_000_000).contains($0.changedNanoseconds)
+                  }) else {
                 throw EngineError.invalidCache("Source identity scope does not match the ordered inputs.")
             }
         }
@@ -280,6 +287,8 @@ enum EngineValidation {
               result.sourceFileHashes.values.allSatisfy(validHash) else {
             throw EngineError.invalidCache("Container-file SHA-256 scope does not match the ordered image inputs.")
         }
+        // Legacy persisted records may omit this field. Live helper metadata
+        // must declare the complete ordered scope before accepting any result.
         if let imagePaths = result.image.imagePaths, imagePaths != result.sourcePaths {
             throw EngineError.invalidCache("Engine image paths do not match the verified input scope.")
         }

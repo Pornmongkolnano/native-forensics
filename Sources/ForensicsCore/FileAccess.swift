@@ -33,6 +33,20 @@ enum FileAccess {
     static func openReadOnly(_ url: URL) throws -> Int32 {
         // Nonblocking prevents a FIFO/device from hanging before fstat rejects it.
         let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        return try regularDescriptor(descriptor)
+    }
+
+    /// A pinned parent descriptor prevents an intermediate directory swap from
+    /// redirecting case metadata reads outside the directory that was opened.
+    static func openReadOnly(_ name: String, in directory: Int32) throws -> Int32 {
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.utf8.contains(0) else {
+            throw ForensicsError.invalidFileURL
+        }
+        let descriptor = Darwin.openat(directory, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        return try regularDescriptor(descriptor)
+    }
+
+    private static func regularDescriptor(_ descriptor: Int32) throws -> Int32 {
         guard descriptor >= 0 else { throw posixError("Cannot open source") }
         do {
             _ = try identity(of: descriptor)
@@ -54,6 +68,12 @@ enum FileAccess {
 
     static func identity(at url: URL) throws -> SourceIdentity {
         let descriptor = try openReadOnly(url)
+        defer { Darwin.close(descriptor) }
+        return try identity(of: descriptor)
+    }
+
+    static func identity(at name: String, in directory: Int32) throws -> SourceIdentity {
+        let descriptor = try openReadOnly(name, in: directory)
         defer { Darwin.close(descriptor) }
         return try identity(of: descriptor)
     }

@@ -19,28 +19,73 @@ public enum CaseStore {
         try validateName(cleanName)
         let directory = try FileAccess.localURL(parent)
         try validateDirectory(directory)
+        let parentDescriptor = try openCaseDirectory(directory)
+        defer { Darwin.close(parentDescriptor) }
         let destination = directory.appendingPathComponent(cleanName).appendingPathExtension(bundleExtension)
-        let staging = directory.appendingPathComponent(".nativecase-\(UUID().uuidString).tmp", isDirectory: true)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: staging) }
+        let stagingName = ".nativecase-\(UUID().uuidString).tmp"
+        guard Darwin.mkdirat(parentDescriptor, stagingName, mode_t(0o700)) == 0 else {
+            throw FileAccess.posixError("Cannot create case staging directory")
+        }
+        var createdStaging = stat()
+        guard Darwin.fstatat(parentDescriptor, stagingName, &createdStaging, AT_SYMLINK_NOFOLLOW) == 0,
+              createdStaging.st_mode & S_IFMT == S_IFDIR else {
+            throw ForensicsError.invalidCase("The newly created case staging directory changed.")
+        }
+        let staging = Darwin.openat(parentDescriptor, stagingName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard staging >= 0 else {
+            let error = FileAccess.posixError("Cannot open case staging directory")
+            var current = stat()
+            if Darwin.fstatat(parentDescriptor, stagingName, &current, AT_SYMLINK_NOFOLLOW) == 0,
+               current.st_mode & S_IFMT == S_IFDIR,
+               current.st_dev == createdStaging.st_dev, current.st_ino == createdStaging.st_ino {
+                _ = Darwin.unlinkat(parentDescriptor, stagingName, AT_REMOVEDIR)
+            }
+            throw error
+        }
+        var openedStaging = stat()
+        guard Darwin.fstat(staging, &openedStaging) == 0,
+              openedStaging.st_dev == createdStaging.st_dev, openedStaging.st_ino == createdStaging.st_ino else {
+            Darwin.close(staging)
+            throw ForensicsError.invalidCase("The case staging directory changed while being opened.")
+        }
+        var wasPublished = false
+        defer {
+            if !wasPublished {
+                _ = Darwin.unlinkat(staging, manifestName, 0)
+                _ = Darwin.unlinkat(staging, lockName, 0)
+                if directoryReferenceMatches(stagingName, in: parentDescriptor, descriptor: staging) {
+                    _ = Darwin.unlinkat(parentDescriptor, stagingName, AT_REMOVEDIR)
+                }
+            }
+            Darwin.close(staging)
+        }
 
         let manifest = try canonicalManifest(CaseManifest(name: cleanName))
-        try writeNewFile(try encode(manifest), at: staging.appendingPathComponent(manifestName))
-        try writeNewFile(Data(), at: staging.appendingPathComponent(lockName))
-        try syncDirectory(staging)
-        let published = Darwin.renameatx_np(AT_FDCWD, staging.path, AT_FDCWD, destination.path, UInt32(RENAME_EXCL))
+        try writeNewFile(try encode(manifest), named: manifestName, in: staging)
+        try writeNewFile(Data(), named: lockName, in: staging)
+        guard Darwin.fsync(staging) == 0 else { throw FileAccess.posixError("Cannot flush case staging directory") }
+        try validateDirectoryReference(directory, descriptor: parentDescriptor)
+        guard directoryReferenceMatches(stagingName, in: parentDescriptor, descriptor: staging) else {
+            throw ForensicsError.invalidCase("The case staging directory changed before publication.")
+        }
+        let published = Darwin.renameatx_np(parentDescriptor, stagingName, parentDescriptor, destination.lastPathComponent, UInt32(RENAME_EXCL))
         guard published == 0 else {
             if errno == EEXIST { throw ForensicsError.caseAlreadyExists }
             throw FileAccess.posixError("Cannot create case")
         }
-        try syncDirectory(directory)
+        wasPublished = true
+        guard Darwin.fsync(parentDescriptor) == 0 else { throw FileAccess.posixError("Cannot flush case parent directory") }
+        try validateDirectoryReference(directory, descriptor: parentDescriptor)
         return ForensicCase(bundleURL: destination, manifest: manifest)
     }
 
     /// Opens the manifest without modifying the bundle or opening its evidence.
     public static func open(at url: URL) throws -> ForensicCase {
         let bundle = try caseURL(url)
-        let manifest = try readManifest(in: bundle)
+        let directory = try openCaseDirectory(bundle)
+        defer { Darwin.close(directory) }
+        let (manifest, _) = try readManifest(in: bundle, directory: directory)
+        try validateDirectoryReference(bundle, descriptor: directory)
         return ForensicCase(bundleURL: bundle, manifest: manifest)
     }
 
@@ -49,6 +94,8 @@ public enum CaseStore {
     /// is not serialized. The case lock makes compare-and-write one transaction.
     public static func adding(image: InspectedImage, to forensicCase: ForensicCase) throws -> ForensicCase {
         let bundle = try caseURL(forensicCase.bundleURL)
+        let directory = try openCaseDirectory(bundle)
+        defer { Darwin.close(directory) }
         guard image.hashScope == FileHashScope.selectedFileBytes,
               validHash(image.sha256), image.byteCount >= 0,
               let original = image.sourceIdentity else {
@@ -61,18 +108,21 @@ public enum CaseStore {
         guard (try? FileAccess.identity(at: source)) == original,
               image.byteCount == original.size else { throw ForensicsError.sourceChanged }
 
-        let lockURL = bundle.appendingPathComponent(lockName)
-        let lock = Darwin.open(lockURL.path, O_RDWR | O_NOFOLLOW | O_CLOEXEC)
+        let lock = Darwin.openat(directory, lockName, O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard lock >= 0 else { throw ForensicsError.invalidCase("The case lock is missing or inaccessible.") }
         defer { Darwin.close(lock) }
-        _ = try FileAccess.identity(of: lock)
+        let lockIdentity = try FileAccess.identity(of: lock)
         while systemFlock(lock, LOCK_EX) != 0 {
             if errno == EINTR { continue }
             throw FileAccess.posixError("Cannot lock case")
         }
         defer { _ = systemFlock(lock, LOCK_UN) }
 
-        let current = try readManifest(in: bundle)
+        try validateDirectoryReference(bundle, descriptor: directory)
+        guard (try? FileAccess.identity(at: lockName, in: directory)) == lockIdentity else {
+            throw ForensicsError.invalidCase("The case lock changed while the transaction was waiting.")
+        }
+        let (current, manifestIdentity) = try readManifest(in: bundle, directory: directory)
         guard current == forensicCase.manifest else { throw ForensicsError.staleCase }
         guard !current.evidence.contains(where: { $0.sourcePath == source.path }) else {
             throw ForensicsError.duplicateEvidence
@@ -93,7 +143,19 @@ public enum CaseStore {
             createdAt: current.createdAt,
             evidence: current.evidence + [evidence]
         ))
-        try replaceManifest(updated, in: bundle)
+        // Serialization can take time for a large case. Recheck immediately
+        // before publication as well as after acquiring the transaction lock.
+        let data = try encode(updated)
+        try replaceManifest(data, directory: directory) {
+            guard (try? FileAccess.identity(at: source)) == original else { throw ForensicsError.sourceChanged }
+            try validateDirectoryReference(bundle, descriptor: directory)
+            guard (try? FileAccess.identity(at: lockName, in: directory)) == lockIdentity else {
+                throw ForensicsError.invalidCase("The case lock changed during the transaction.")
+            }
+            guard (try? FileAccess.identity(at: manifestName, in: directory)) == manifestIdentity else {
+                throw ForensicsError.staleCase
+            }
+        }
         return ForensicCase(bundleURL: bundle, manifest: updated)
     }
 
@@ -130,7 +192,7 @@ public enum CaseStore {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
-    private static func validateManifest(_ manifest: CaseManifest) throws {
+    private static func validateManifest(_ manifest: CaseManifest, bundle: URL? = nil) throws {
         guard manifest.schemaVersion == 1 else {
             throw ForensicsError.invalidCase("This case schema version is unsupported; the original manifest was preserved.")
         }
@@ -140,9 +202,14 @@ public enum CaseStore {
         for record in manifest.evidence {
             guard identifiers.insert(record.id).inserted, paths.insert(record.sourcePath).inserted,
                   record.sourcePath.hasPrefix("/"), !record.sourcePath.utf8.contains(0),
+                  record.sourcePath != "/",
+                  record.sourcePath == URL(fileURLWithPath: record.sourcePath).standardizedFileURL.path,
                   record.byteCount >= 0, validHash(record.sha256),
                   record.hashScope == FileHashScope.selectedFileBytes else {
                 throw ForensicsError.invalidCase("The evidence manifest has invalid or duplicate records.")
+            }
+            if let bundle, FileAccess.isInside(URL(fileURLWithPath: record.sourcePath), directory: bundle) {
+                throw ForensicsError.invalidCase("Evidence sources in a manifest must be outside the case bundle.")
             }
         }
     }
@@ -175,10 +242,9 @@ public enum CaseStore {
         try decoder().decode(CaseManifest.self, from: encode(manifest))
     }
 
-    private static func readManifest(in bundle: URL) throws -> CaseManifest {
-        let url = bundle.appendingPathComponent(manifestName)
+    private static func readManifest(in bundle: URL, directory: Int32) throws -> (CaseManifest, SourceIdentity) {
         let descriptor: Int32
-        do { descriptor = try FileAccess.openReadOnly(url) }
+        do { descriptor = try FileAccess.openReadOnly(manifestName, in: directory) }
         catch { throw ForensicsError.invalidCase("A readable, regular manifest.json is required.") }
         defer { Darwin.close(descriptor) }
         let before = try FileAccess.identity(of: descriptor)
@@ -191,20 +257,25 @@ public enum CaseStore {
             guard count > 0 else { throw ForensicsError.invalidCase("The manifest changed while being opened.") }
             data.append(contentsOf: buffer.prefix(count))
         }
-        guard try FileAccess.identity(of: descriptor) == before else {
+        guard try FileAccess.identity(of: descriptor) == before,
+              (try? FileAccess.identity(at: manifestName, in: directory)) == before else {
             throw ForensicsError.invalidCase("The manifest changed while being opened.")
         }
         let manifest: CaseManifest
         do { manifest = try decoder().decode(CaseManifest.self, from: data) }
         catch { throw ForensicsError.invalidCase("manifest.json is not a supported case manifest.") }
-        try validateManifest(manifest)
-        return manifest
+        try validateManifest(manifest, bundle: bundle)
+        return (manifest, before)
     }
 
-    private static func writeNewFile(_ data: Data, at url: URL) throws {
-        let descriptor = Darwin.open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+    private static func writeNewFile(_ data: Data, named name: String, in directory: Int32) throws {
+        let descriptor = Darwin.openat(directory, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
         guard descriptor >= 0 else { throw FileAccess.posixError("Cannot create case file") }
         defer { Darwin.close(descriptor) }
+        try writeAndSync(data, descriptor: descriptor)
+    }
+
+    private static func writeAndSync(_ data: Data, descriptor: Int32) throws {
         try data.withUnsafeBytes { buffer in
             var written = 0
             while written < buffer.count {
@@ -217,20 +288,57 @@ public enum CaseStore {
         guard Darwin.fsync(descriptor) == 0 else { throw FileAccess.posixError("Cannot flush case file") }
     }
 
-    private static func replaceManifest(_ manifest: CaseManifest, in bundle: URL) throws {
-        let temporary = bundle.appendingPathComponent(".manifest-\(UUID().uuidString).tmp")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try writeNewFile(try encode(manifest), at: temporary)
-        guard Darwin.rename(temporary.path, bundle.appendingPathComponent(manifestName).path) == 0 else {
+    private static func replaceManifest(_ data: Data, directory: Int32, validateBeforePublish: () throws -> Void) throws {
+        let temporary = ".manifest-\(UUID().uuidString).tmp"
+        let descriptor = Darwin.openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard descriptor >= 0 else { throw FileAccess.posixError("Cannot create case file") }
+        defer {
+            if referenceMatches(temporary, in: directory, descriptor: descriptor, kind: S_IFREG) {
+                _ = Darwin.unlinkat(directory, temporary, 0)
+            }
+            Darwin.close(descriptor)
+        }
+        try writeAndSync(data, descriptor: descriptor)
+        try validateBeforePublish()
+        guard referenceMatches(temporary, in: directory, descriptor: descriptor, kind: S_IFREG) else {
+            throw ForensicsError.invalidCase("The staged case manifest changed before publication.")
+        }
+        guard Darwin.renameat(directory, temporary, directory, manifestName) == 0 else {
             throw FileAccess.posixError("Cannot save case manifest")
         }
-        try syncDirectory(bundle)
+        guard Darwin.fsync(directory) == 0 else { throw FileAccess.posixError("Cannot flush case directory") }
     }
 
-    private static func syncDirectory(_ url: URL) throws {
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw FileAccess.posixError("Cannot open case directory") }
-        defer { Darwin.close(descriptor) }
-        guard Darwin.fsync(descriptor) == 0 else { throw FileAccess.posixError("Cannot flush case directory") }
+    private static func openCaseDirectory(_ bundle: URL) throws -> Int32 {
+        let descriptor = Darwin.open(bundle.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw ForensicsError.invalidCase("The case directory is inaccessible or has changed.") }
+        do { try validateDirectoryReference(bundle, descriptor: descriptor) }
+        catch { Darwin.close(descriptor); throw error }
+        return descriptor
     }
+
+    private static func validateDirectoryReference(_ url: URL, descriptor: Int32) throws {
+        var opened = stat()
+        var current = stat()
+        guard Darwin.fstat(descriptor, &opened) == 0,
+              Darwin.lstat(url.path, &current) == 0,
+              current.st_mode & S_IFMT == S_IFDIR,
+              opened.st_dev == current.st_dev, opened.st_ino == current.st_ino else {
+            throw ForensicsError.invalidCase("The case directory changed during the operation; reopen the case.")
+        }
+    }
+
+    private static func directoryReferenceMatches(_ name: String, in parent: Int32, descriptor: Int32) -> Bool {
+        referenceMatches(name, in: parent, descriptor: descriptor, kind: S_IFDIR)
+    }
+
+    private static func referenceMatches(_ name: String, in parent: Int32, descriptor: Int32, kind: mode_t) -> Bool {
+        var opened = stat()
+        var current = stat()
+        return Darwin.fstat(descriptor, &opened) == 0
+            && Darwin.fstatat(parent, name, &current, AT_SYMLINK_NOFOLLOW) == 0
+            && current.st_mode & S_IFMT == kind
+            && opened.st_dev == current.st_dev && opened.st_ino == current.st_ino
+    }
+
 }

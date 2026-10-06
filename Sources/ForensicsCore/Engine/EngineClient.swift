@@ -98,11 +98,16 @@ public struct EngineClient: Sendable {
             }
         }
         var inspections: [InspectedImage] = []
+        var inputIdentities = Set<EngineInputIdentity>()
         for source in canonical {
             let inspected = try await ImageInspector.inspect(url: source) { update in
                 progress(EngineProgress(stage: "source-file-sha256", completed: update.bytesRead, total: update.totalBytes, unit: "bytes"))
             }
             if let expected = expectedHashes[source.path], expected != inspected.sha256 { throw EngineError.sourceChanged }
+            guard let identity = inspected.sourceIdentity,
+                  inputIdentities.insert(EngineInputIdentity(identity)).inserted else {
+                throw EngineError.invalidRequest("Image segments must refer to distinct source files; hard-link aliases are duplicates.")
+            }
             inspections.append(inspected)
         }
         for inspection in inspections {
@@ -136,13 +141,21 @@ public struct EngineClient: Sendable {
                 outputPath: outputPath, progress: progress
             )
         }
-        let outcome = try await withTaskCancellationHandler {
-            try await worker.value
-        } onCancel: {
-            cancellation.cancel()
+        do {
+            let outcome = try await withTaskCancellationHandler {
+                try await worker.value
+            } onCancel: {
+                cancellation.cancel()
+            }
+            try Task.checkCancellation()
+            return outcome
+        } catch {
+            // The owned worker has already unwound/reaped before this point.
+            // A cancelled caller stays cancelled even if shutdown emits a bad
+            // frame or exits unsuccessfully during the cancellation grace.
+            try Task.checkCancellation()
+            throw error
         }
-        try Task.checkCancellation()
-        return outcome
     }
 
     private static func outputDestination(_ url: URL, sources: [URL]) throws -> URL {
@@ -221,11 +234,14 @@ private final class EngineOutputTransaction {
         guard try FileAccess.identity(of: output) == identity else {
             throw EngineError.helperFailed("The extracted file changed before publication.")
         }
+        // Durability belongs to this publication transaction too. A valid
+        // size/hash receipt does not establish that a helper flushed its bytes.
+        guard Darwin.fsync(output) == 0 else { throw FileAccess.posixError("Cannot synchronize verified extracted file") }
         guard Darwin.renameatx_np(stagingFD, "output", parentFD, destination.lastPathComponent, UInt32(RENAME_EXCL)) == 0 else {
             if errno == EEXIST { throw EngineError.invalidRequest("The extraction destination already exists.") }
             throw FileAccess.posixError("Cannot publish extracted file")
         }
-        // The helper fsyncs its output. Synchronize the directory entry too.
+        // Synchronize the newly published directory entry too.
         if Darwin.fsync(parentFD) != 0 {
             let error = FileAccess.posixError("Cannot synchronize extraction destination")
             rollbackPublished(identity: identity)
@@ -271,6 +287,12 @@ private final class EngineOutputTransaction {
     private static func sameDirectory(_ lhs: stat, _ rhs: stat) -> Bool {
         lhs.st_mode & S_IFMT == S_IFDIR && rhs.st_mode & S_IFMT == S_IFDIR && lhs.st_dev == rhs.st_dev && lhs.st_ino == rhs.st_ino
     }
+}
+
+private struct EngineInputIdentity: Hashable {
+    let device: dev_t
+    let inode: ino_t
+    init(_ identity: SourceIdentity) { device = identity.device; inode = identity.inode }
 }
 
 private final class EngineCancellation: @unchecked Sendable {
@@ -392,12 +414,13 @@ private struct EngineStream {
             receivedHello = true
             outcome.engineVersion = version; outcome.patchDigest = digest
         case "image":
-            guard outcome.image == nil, let type = frame.imageType, let size = frame.logicalSize, let sector = frame.sectorSize else {
-                throw EngineError.protocolViolation("Missing or repeated image metadata.")
+            guard outcome.image == nil, let type = frame.imageType, let size = frame.logicalSize,
+                  let sector = frame.sectorSize, let actualPaths = frame.imagePaths else {
+                throw EngineError.protocolViolation("Missing or repeated image metadata, including its ordered source paths.")
             }
             let image = EngineImageMetadata(imageType: type, logicalSize: size, sectorSize: sector, logicalSha256: frame.logicalSha256, imagePaths: frame.imagePaths)
             try EngineValidation.image(image)
-            if let actualPaths = frame.imagePaths, actualPaths != outcome.sources.map(\.path) {
+            if actualPaths != outcome.sources.map(\.path) {
                 throw EngineError.protocolViolation("The engine read images outside the verified ordered source scope.")
             }
             outcome.image = image
@@ -493,10 +516,15 @@ private struct EngineRunner {
         var descriptors: [Int32] = []
         defer { for descriptor in descriptors { Darwin.close(descriptor) } }
         var identities: [EngineSourceIdentity] = []
+        var inputIdentities = Set<EngineInputIdentity>()
         for url in canonical {
             let descriptor = try FileAccess.openReadOnly(url)
             descriptors.append(descriptor)
-            identities.append(EngineSourceIdentity(path: url.path, identity: try FileAccess.identity(of: descriptor)))
+            let identity = try FileAccess.identity(of: descriptor)
+            guard inputIdentities.insert(EngineInputIdentity(identity)).inserted else {
+                throw EngineError.invalidRequest("Image segments must refer to distinct source files; hard-link aliases are duplicates.")
+            }
+            identities.append(EngineSourceIdentity(path: url.path, identity: identity))
         }
         let helper = try FileAccess.localURL(helperURL)
         _ = try FileAccess.identity(at: helper)
@@ -539,6 +567,7 @@ private struct EngineRunner {
         var terminatedAt: Double?
         var exitedAt: Double?
         var timeoutError: EngineError?
+        let cancelRequest = Data("{\"protocolVersion\":1,\"jobID\":\"\(jobID)\",\"operation\":\"cancel\"}\n".utf8)
         var buffer = [UInt8](repeating: 0, count: 65_536)
         while true {
             let now = uptime()
@@ -546,8 +575,7 @@ private struct EngineRunner {
             if !isRunning && exitedAt == nil { exitedAt = now }
             if cancellation.isCancelled && cancelledAt == nil {
                 cancelledAt = now
-                let cancel = "{\"protocolVersion\":1,\"jobID\":\"\(jobID)\",\"operation\":\"cancel\"}\n"
-                outgoing.append(Data(cancel.utf8))
+                outgoing.append(cancelRequest)
             }
             if cancelledAt == nil && timeoutError == nil {
                 if !stream.receivedHello && now - started > timeouts.startup {
@@ -555,7 +583,10 @@ private struct EngineRunner {
                 } else if stream.receivedHello && now - lastActivity > timeouts.inactivity {
                     timeoutError = .timeout("The native engine stopped reporting activity before its stage deadline.")
                 }
-                if timeoutError != nil { cancelledAt = now }
+                if timeoutError != nil {
+                    cancelledAt = now
+                    outgoing.append(cancelRequest)
+                }
             }
             if let cancelledAt, isRunning, now - cancelledAt >= timeouts.cancellationGrace, terminatedAt == nil {
                 _ = Darwin.kill(process.processIdentifier, SIGTERM)
