@@ -70,14 +70,14 @@ class Runner:
         result.update(extra)
         return result
 
-    def call(self, request, *, cancel=False, raw_input=None):
+    def call(self, request, *, cancel=False, raw_input=None, host_timezone="UTC"):
         payload = (json.dumps(request, ensure_ascii=False) + "\n").encode() if raw_input is None else raw_input
         if cancel:
             payload += (json.dumps({"protocolVersion": 1, "jobID": request["jobID"], "operation": "cancel"}) + "\n").encode()
         start = time.monotonic()
         process = subprocess.run([str(self.helper)], input=payload, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, timeout=self.timeout,
-                                 env=dict(os.environ, TZ="UTC", LC_ALL="C"))
+                                 env=dict(os.environ, TZ=host_timezone, LC_ALL="C"))
         lines = process.stdout.splitlines()
         expect(lines, "helper emitted no protocol frames; stderr=" + process.stderr.decode(errors="replace")[:500])
         expect(len(process.stdout) <= 64 * 1024 * 1024, "serialized output exceeded 64 MiB")
@@ -113,7 +113,36 @@ class Runner:
 
     @staticmethod
     def regular(files):
-        return {row["path"].lstrip("/"): row for row in files if not row["isDirectory"] and not row["name"].startswith("$")}
+        rows = [row for row in files if not row["isDirectory"] and not row["name"].startswith("$")]
+        entries = {row["path"].lstrip("/"): row for row in rows}
+        expect(len(entries) == len(rows), "duplicate payload paths must not be hidden by dictionary conversion")
+        return entries
+
+    @staticmethod
+    def timestamps(fixture, expected_file, timezone):
+        matrix = expected_file.get("timestampsByTimezone")
+        if matrix is not None:
+            expect(timezone in matrix, "fixture lacks independent expected timezone " + timezone)
+            return matrix[timezone]
+        epoch = fixture["expectedEpochUTC"] - (7 * 3600 if timezone == "Asia/Bangkok" and not fixture.get("validUTCOffset") else 0)
+        return {
+            "createdEpoch": epoch, "modifiedEpoch": epoch,
+            "accessedEpoch": epoch if fixture.get("validUTCOffset") else epoch - 80000,
+            "createdNanoseconds": fixture.get("expectedCreatedNanoseconds", 0),
+            "modifiedNanoseconds": fixture.get("expectedModifiedNanoseconds", 0),
+            "accessedNanoseconds": 0,
+        }
+
+    @classmethod
+    def check_timestamps(cls, fixture, expected_file, row, timezone):
+        expected = cls.timestamps(fixture, expected_file, timezone)
+        for prefix in ("created", "modified", "accessed", "changed"):
+            epoch_key, nano_key = prefix + "Epoch", prefix + "Nanoseconds"
+            if epoch_key in expected:
+                expect(row.get(epoch_key) == expected[epoch_key], f"{epoch_key} differs: {expected_file['path']} {row.get(epoch_key)} != {expected[epoch_key]}")
+                expect(row.get(nano_key, 0) == expected.get(nano_key, 0), nano_key + " differs: " + expected_file["path"])
+            else:
+                expect(epoch_key not in row and nano_key not in row, "missing/invalid timestamp must be absent: " + expected_file["path"] + " " + prefix)
 
     def enumeration(self, fixture, timezone="UTC"):
         request = self.request(fixture, timezone=timezone)
@@ -129,6 +158,7 @@ class Runner:
         volumes = [frame["volume"] for frame in result["frames"] if frame["type"] == "volume"]
         expect(any(volume["offsetBytes"] == fixture["fsOffsetBytes"] for volume in volumes), "filesystem byte offset differs")
         entries = self.regular(result["files"])
+        expect(len({row["id"] for row in result["files"]}) == len(result["files"]), "listing contains duplicate stable entry IDs")
         if fixture["filesystem"] == "exFAT":
             # TSK exposes our explicit root volume label as a metadata pseudo-file.
             # Assert its exact name/shape rather than dropping arbitrary extra rows.
@@ -136,8 +166,6 @@ class Runner:
             expect(label is not None and label["size"] == 0 and not label["isDeleted"], "exFAT volume-label metadata entry differs")
         expected = {row["path"] for row in fixture["files"]}
         expect(set(entries) == expected, f"file names differ: expected {sorted(expected)}, actual {sorted(entries)}")
-        # FAT stores local DOS civil time; exFAT valid UTC offsets override request TZ.
-        epoch = fixture["expectedEpochUTC"] - (7 * 3600 if timezone == "Asia/Bangkok" and not fixture.get("validUTCOffset") else 0)
         ids = set()
         for file in fixture["files"]:
             row = entries[file["path"]]
@@ -148,13 +176,10 @@ class Runner:
             ids.add(row["id"])
             expect(row["size"] == file["size"], "file size differs: " + file["path"])
             expect(row["isDeleted"] == file["isDeleted"], "allocation state differs: " + file["path"])
-            expect(row["modifiedEpoch"] == epoch, f"mtime differs: {file['path']} {row.get('modifiedEpoch')} != {epoch}")
-            expect(row["createdEpoch"] == epoch, "creation epoch differs: " + file["path"])
-            expected_access = epoch if fixture.get("validUTCOffset") else epoch - 80000
-            expect(row["accessedEpoch"] == expected_access, "access epoch differs: " + file["path"])
-            expect(row.get("modifiedNanoseconds", 0) == fixture.get("expectedModifiedNanoseconds", 0), "mtime nanoseconds differ")
-            expect(row.get("createdNanoseconds", 0) == fixture.get("expectedCreatedNanoseconds", 0), "creation nanoseconds differ")
-            expect("changedEpoch" not in row and "changedNanoseconds" not in row, "FAT/exFAT has no metadata-change timestamp; zero must remain absent")
+            self.check_timestamps(fixture, file, row, timezone)
+            for field in ("attributeType", "attributeID", "metaAddress"):
+                if field in file:
+                    expect(row.get(field) == file[field], field + " differs: " + file["path"])
         for file in fixture["files"]:
             row = entries[file["path"]]
             destination = self.exports / (uuid.uuid4().hex + "-" + row["name"])
@@ -169,6 +194,24 @@ class Runner:
             expect(receipts[0].get("byteCount") == file["size"], "extracted byte count differs")
         return {"logicalHashMatched": True, "fileBytesMatched": len(fixture["files"]), "timezone": timezone,
                 "rowCount": len(result["files"]), "seconds": round(result["seconds"], 6)}
+
+    def host_timezone_invariance(self, fixture):
+        matrix = fixture["timestampMatrix"]
+        timezone = matrix["requestTimezones"][0]
+        baseline = None
+        for host_timezone in matrix["hostTimezones"]:
+            result = self.call(self.request(fixture, timezone=timezone, hashLogicalImage=False), host_timezone=host_timezone)
+            expect(result["terminal"]["type"] == "completed", "timezone probe was incomplete")
+            rows = self.regular(result["files"])
+            observed = {}
+            for file in fixture["files"]:
+                row = rows[file["path"]]
+                self.check_timestamps(fixture, file, row, timezone)
+                observed[file["path"]] = {key: value for key, value in row.items() if key.endswith("Epoch") or key.endswith("Nanoseconds")}
+            if baseline is None:
+                baseline = observed
+            expect(observed == baseline, "recorded timestamps depend on the ambient host timezone")
+        return {"requestTimezone": timezone, "hostTimezones": matrix["hostTimezones"], "fileCount": len(fixture["files"])}
 
     def fail_request(self, request):
         result = self.call(request)
@@ -389,6 +432,13 @@ class Runner:
         bangkok_fixtures += [fixture for fixture in self.fixtures["images"] if fixture["path"] in {"fat16-year2038.raw", "fat16-year2100.raw"}]
         for fixture in bangkok_fixtures:
             self.check(fixture["path"] + " timestamp Asia/Bangkok", lambda fixture=fixture: self.enumeration(fixture, "Asia/Bangkok"))
+        for fixture in self.fixtures["images"]:
+            matrix = fixture.get("timestampMatrix", {})
+            for timezone in matrix.get("requestTimezones", []):
+                if timezone != "UTC":
+                    self.check(fixture["path"] + " timestamp " + timezone, lambda fixture=fixture, timezone=timezone: self.enumeration(fixture, timezone))
+            if matrix.get("hostTimezones"):
+                self.check(fixture["path"] + " host timezone invariance", lambda fixture=fixture: self.host_timezone_invariance(fixture))
         self.safety()
         self.protocol()
         self.check("create EWF fixture", lambda: self.ewf(acquire))

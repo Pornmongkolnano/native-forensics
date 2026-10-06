@@ -554,12 +554,22 @@ public:
         if (attribute) { row["attributeType"] = int32_t(attribute->type); row["attributeID"] = int32_t(attribute->id); }
         if (file->meta) {
             const auto *meta = file->meta;
-            row["createdEpoch"] = int64_t(meta->crtime); row["createdNanoseconds"] = int32_t(meta->crtime_nano);
-            row["modifiedEpoch"] = int64_t(meta->mtime); row["modifiedNanoseconds"] = int32_t(meta->mtime_nano);
-            row["accessedEpoch"] = int64_t(meta->atime); row["accessedNanoseconds"] = int32_t(meta->atime_nano);
+            // FAT/exFAT dates start in 1980, so their zero is an absent or
+            // invalid timestamp sentinel. Preserve epoch zero on filesystems
+            // such as NTFS where it can be a genuine recorded instant.
+            const bool fat = TSK_FS_TYPE_ISFAT(file->fs_info->ftype);
+            const auto timestamp = [&](const char *epochKey, const char *nanoKey, time_t epoch, uint32_t nano) {
+                if (!fat || epoch != 0) {
+                    row[epochKey] = int64_t(epoch);
+                    row[nanoKey] = int32_t(nano);
+                }
+            };
+            timestamp("createdEpoch", "createdNanoseconds", meta->crtime, meta->crtime_nano);
+            timestamp("modifiedEpoch", "modifiedNanoseconds", meta->mtime, meta->mtime_nano);
+            timestamp("accessedEpoch", "accessedNanoseconds", meta->atime, meta->atime_nano);
             // FAT/exFAT has no inode-change timestamp; TSK's zero is a missing
             // field here, not recorded evidence that a change occurred in 1970.
-            if (!TSK_FS_TYPE_ISFAT(file->fs_info->ftype)) {
+            if (!fat) {
                 row["changedEpoch"] = int64_t(meta->ctime); row["changedNanoseconds"] = int32_t(meta->ctime_nano);
             }
         } else warning("MISSING_METADATA", "A directory entry lacks metadata; its content cannot be extracted reliably");
@@ -589,12 +599,18 @@ public:
             job.input.check();
             if (!file || !file->fs_info || !file->name) return TSK_WALK_CONT;
             bool emitted = false;
-            if (TSK_FS_TYPE_ISNTFS(file->fs_info->ftype) && file->meta && !TSK_FS_IS_DIR_META(file->meta->type)) {
+            if (TSK_FS_TYPE_ISNTFS(file->fs_info->ftype) && file->meta) {
+                const bool directory = TSK_FS_IS_DIR_META(file->meta->type);
+                if (directory) {
+                    if (!job.addEntry(file, path)) return TSK_WALK_STOP;
+                    emitted = true;
+                }
                 int attributes = tsk_fs_file_attr_getsize(file);
                 if (attributes < 0) { job.warning("ATTRIBUTE_READ_FAILED", tskError()); attributes = 0; }
                 for (int index = 0; index < attributes; ++index) {
                     const auto *attribute = tsk_fs_file_attr_get_idx(file, index);
-                    if (attribute && attribute->type == TSK_FS_ATTR_TYPE_NTFS_DATA) {
+                    if (attribute && attribute->type == TSK_FS_ATTR_TYPE_NTFS_DATA &&
+                        (!directory || (attribute->name && attribute->name[0]))) {
                         emitted = true;
                         if (!job.addEntry(file, path, attribute)) return TSK_WALK_STOP;
                     }

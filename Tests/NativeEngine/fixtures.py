@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import calendar
+import datetime
 import hashlib
 import json
 import math
@@ -17,6 +18,9 @@ import struct
 import uuid
 import zlib
 from pathlib import Path
+
+from ntfs_fixtures import ntfs_image
+from zoneinfo import ZoneInfo
 
 
 DOS_DATE = ((2023 - 1980) << 9) | (11 << 5) | 14
@@ -294,6 +298,227 @@ def exfat_image(path: Path) -> dict:
     return manifest
 
 
+TIMESTAMP_ZONES = ("UTC", "Asia/Bangkok", "America/New_York")
+TIMESTAMP_FIELDS = ("created", "modified", "accessed")
+
+
+def _timestamp_spec(civil, *, offset=0, increment=0, valid=True):
+    """Describe disk bytes and a separately computed expected timestamp.
+
+    offset=None means the exFAT validity bit is unset, even when the remaining
+    bits contain a nonzero value. Offset values are signed 15-minute units.
+    valid=False declares intentionally malformed or unset civil metadata;
+    callers must never normalize those dates into an apparently valid instant.
+    """
+    return {"civil": list(civil), "offsetQuarterHours": offset,
+            "incrementHundredths": increment, "valid": valid}
+
+
+def _timestamp_expectation(spec: dict, timezone: str, *, accessed=False) -> dict:
+    if not spec["valid"]:
+        return {}
+    value = datetime.datetime(*spec["civil"])
+    offset = spec["offsetQuarterHours"]
+    if offset is None:
+        value = value.replace(tzinfo=ZoneInfo(timezone))
+        epoch = int(value.timestamp())
+    else:
+        # calendar.timegm does not use the process timezone or local DST.
+        epoch = calendar.timegm(value.timetuple()) - offset * 900
+    increment = 0 if accessed else spec["incrementHundredths"]
+    return {"Epoch": epoch + increment // 100,
+            "Nanoseconds": (increment % 100) * 10000000}
+
+
+def _exfat_matrix_image(path: Path, cases: list[tuple[str, dict]], *, invariant=False) -> dict:
+    """Build at most four checksummed timestamp entries in the real root.
+
+    This retains the independently valid boot region, allocation bitmap and
+    compressed upcase table from the original exFAT fixture. Each payload lives
+    in an explicitly allocated cluster outside those metadata allocations.
+    No external formatter, mounted filesystem, TSK call or native runtime is
+    used to create either the image bytes or expected instants.
+    """
+    if not 1 <= len(cases) <= 4:
+        raise ValueError("one root cluster can hold one through four matrix files")
+    exfat_image(path)
+    heap_offset, fat_offset, sector_size = 280, 24, 512
+    payloads, file_metadata = {}, {}
+    with path.open("r+b") as stream:
+        stream.seek(heap_offset * sector_size)
+        root = bytearray(stream.read(3 * 32))
+        stream.seek((heap_offset + 2) * sector_size)
+        bitmap = bytearray(stream.read(math.ceil((32768 - heap_offset) / 8)))
+        for index, (name, fields) in enumerate(cases):
+            encoded_name = name.encode("utf-16-le")
+            if len(encoded_name) > 30:
+                raise ValueError("matrix names must fit one UTF-16 filename entry")
+            payload = ("Deterministic exFAT timestamp case: " + name + "\n").encode()
+            payloads[name] = payload
+            cluster = 3 if index == 0 else 12 + index
+            bitmap[(cluster - 2) // 8] |= 1 << ((cluster - 2) % 8)
+            entry = bytearray(96)
+            entry[0], entry[1] = 0x85, 2
+            struct.pack_into("<H", entry, 4, 0x20)
+            for field_index, field in enumerate(TIMESTAMP_FIELDS):
+                spec = fields[field]
+                year, month, day, hour, minute, second = spec["civil"]
+                if year == 0:
+                    date = 0
+                else:
+                    date = ((year - 1980) << 9) | (month << 5) | day
+                dos_time = (hour << 11) | (minute << 5) | (second // 2)
+                struct.pack_into("<HH", entry, 8 + 4 * field_index, dos_time, date)
+                if field_index < 2:
+                    entry[20 + field_index] = spec["incrementHundredths"]
+                offset = spec["offsetQuarterHours"]
+                # A nonzero but invalid offset proves bit 7 governs fallback.
+                entry[22 + field_index] = 0x1C if offset is None else 0x80 | (offset & 0x7F)
+            entry[32], entry[33], entry[35] = 0xC0, 3, len(encoded_name) // 2
+            struct.pack_into("<H", entry, 36, _rolling_checksum(encoded_name, width=16))
+            struct.pack_into("<Q", entry, 40, len(payload))
+            struct.pack_into("<IQ", entry, 52, cluster, len(payload))
+            entry[64] = 0xC1
+            entry[66:66 + len(encoded_name)] = encoded_name
+            struct.pack_into("<H", entry, 2, _rolling_checksum(entry, width=16, skip=(2, 3)))
+            root += entry
+            _put(stream, (heap_offset + cluster - 2) * sector_size, payload)
+            _put(stream, fat_offset * sector_size + cluster * 4, struct.pack("<I", 0xFFFFFFFF))
+            expected_by_zone = {}
+            for timezone in TIMESTAMP_ZONES:
+                timestamps = {}
+                for field in TIMESTAMP_FIELDS:
+                    for suffix, value in _timestamp_expectation(fields[field], timezone, accessed=field == "accessed").items():
+                        timestamps[field + suffix] = value
+                expected_by_zone[timezone] = timestamps
+            file_metadata[name] = {"timestampsByTimezone": expected_by_zone,
+                                   "timestampEncoding": fields}
+        # Four entry sets occupy 480 bytes; remaining zero bytes terminate the
+        # root walk. Clear the previous HELLO entry and all remaining slack.
+        _put(stream, heap_offset * sector_size, root.ljust(sector_size, b"\0"))
+        _put(stream, (heap_offset + 2) * sector_size, bitmap)
+    manifest = _manifest(path, "exFAT", 512, payloads)
+    for file in manifest["files"]:
+        file.update(file_metadata[file["path"]])
+    manifest["timestampMatrix"] = {
+        "requestTimezones": list(TIMESTAMP_ZONES),
+        "hostTimezones": ["UTC", "Asia/Bangkok", "America/Los_Angeles"] if invariant else [],
+        "caseNames": list(payloads),
+        "invalidTimestampsAreAbsent": True,
+        "oracle": "Gregorian calendar and independent Python zoneinfo civil conversion",
+    }
+    if invariant:
+        manifest["validUTCOffset"] = True
+    return manifest
+
+
+def exfat_valid_matrix(path: Path) -> dict:
+    def fields(civil, offset, created=0, modified=0):
+        return {"created": _timestamp_spec(civil, offset=offset, increment=created),
+                "modified": _timestamp_spec(civil, offset=offset, increment=modified),
+                "accessed": _timestamp_spec(civil, offset=offset)}
+    per_field = fields((2023, 11, 14, 22, 13, 20), 0, 25, 75)
+    per_field["modified"]["offsetQuarterHours"] = 23  # +05:45
+    per_field["accessed"]["offsetQuarterHours"] = -16  # -04:00
+    return _exfat_matrix_image(path, [
+        ("OFFSET07.TXT", fields((2023, 11, 14, 22, 13, 20), 28, 25, 75)),
+        ("NEGATIVE.TXT", fields((2024, 3, 10, 1, 59, 58), -20, 199, 100)),
+        ("PERFIELD.TXT", per_field),
+        ("YEAR2107.TXT", fields((2107, 12, 31, 23, 59, 58), 0, 199, 99)),
+    ], invariant=True)
+
+
+def exfat_unknown_matrix(path: Path) -> dict:
+    cases = []
+    for name, civil, created, modified in [
+        ("WINTER.TXT", (2024, 1, 15, 12, 0, 0), 0, 25),
+        ("SUMMER.TXT", (2024, 7, 15, 12, 0, 0), 99, 199),
+        ("DSTBEFORE.TXT", (2024, 3, 10, 1, 59, 58), 199, 0),
+        ("DSTAFTER.TXT", (2024, 3, 10, 3, 0, 0), 1, 100),
+    ]:
+        cases.append((name, {
+            "created": _timestamp_spec(civil, offset=None, increment=created),
+            "modified": _timestamp_spec(civil, offset=None, increment=modified),
+            "accessed": _timestamp_spec(civil, offset=None),
+        }))
+    return _exfat_matrix_image(path, cases)
+
+
+def exfat_invalid_matrix(path: Path) -> dict:
+    def fields(civil, offset):
+        return {field: _timestamp_spec(civil, offset=offset, increment=25 if field == "created" else 75 if field == "modified" else 0,
+                                      valid=False) for field in TIMESTAMP_FIELDS}
+    bad_time = {
+        "created": _timestamp_spec((2024, 1, 15, 31, 0, 0), offset=28, increment=25, valid=False),
+        "modified": _timestamp_spec((2024, 1, 15, 12, 63, 0), offset=None, increment=75, valid=False),
+        "accessed": _timestamp_spec((2024, 1, 15, 12, 0, 62), offset=0, valid=False),
+    }
+    return _exfat_matrix_image(path, [
+        ("FEB30.TXT", fields((2023, 2, 30, 12, 0, 0), 28)),
+        ("FEB2100.TXT", fields((2100, 2, 29, 12, 0, 0), None)),
+        ("MONTHZERO.TXT", fields((2024, 0, 15, 12, 0, 0), 0)),
+        ("BADTIME.TXT", bad_time),
+    ])
+
+
+def exfat_leap_increment_matrix(path: Path) -> dict:
+    def fields(civil, *, valid=True, increment=0, offset=0):
+        return {field: _timestamp_spec(civil, offset=offset,
+                                      increment=increment if field != "accessed" else 0,
+                                      valid=valid) for field in TIMESTAMP_FIELDS}
+    increments = fields((2024, 2, 29, 12, 0, 0), increment=200)
+    increments["created"]["valid"] = increments["modified"]["valid"] = False
+    return _exfat_matrix_image(path, [
+        ("LEAP2024.TXT", fields((2024, 2, 29, 12, 0, 0), increment=99)),
+        ("FEB2023.TXT", fields((2023, 2, 29, 12, 0, 0), valid=False, offset=-16)),
+        ("INCR200.TXT", increments),
+        # Nonzero time keeps this file's otherwise all-zero date metadata
+        # distinguishable from an unused entry for the TSK plausibility check.
+        ("ZERODATE.TXT", fields((0, 0, 0, 12, 0, 0), valid=False)),
+    ])
+
+
+def fragmented_fat(path: Path) -> dict:
+    """One allocated file with seven independently declared nonadjacent clusters.
+
+    Deleted FAT chains are intentionally outside this fixture's guarantee:
+    clearing a fragmented chain loses ordering information, so a contiguous
+    recovery guess must never be represented as verified original bytes.
+    """
+    manifest = fat_image(path, 16, 512)
+    chain = [120, 61, 900, 42, 701, 85, 1300]
+    payload = bytes((index * 37 + index // 512 * 19 + 43) % 256 for index in range(7 * 512 - 17))
+    with path.open("r+b") as stream:
+        for fat_sector in (1, 21):
+            for current, following in zip(chain, chain[1:] + [0xFFFF]):
+                _put(stream, fat_sector * 512 + current * 2, struct.pack("<H", following))
+        _put(stream, 41 * 512 + 5 * 32, _fat_entry(b"FRAGMENTBIN", chain[0], len(payload)))
+        for index, cluster in enumerate(chain):
+            block = payload[index * 512:(index + 1) * 512]
+            _put(stream, (73 + cluster - 2) * 512, block)
+    payloads = dict(PAYLOADS, **{"FRAGMENT.BIN": payload})
+    manifest = _manifest(path, "FAT16", 512, payloads)
+    manifest["fragmentedChainsByPath"] = {"FRAGMENT.BIN": chain}
+    manifest["fragmentationScope"] = "allocated FAT chain; no claim of fragmented deleted recovery"
+    return manifest
+
+
+def missing_time_fat(path: Path) -> dict:
+    """Classic FAT absent dates must not become invented epoch-zero instants."""
+    manifest = fat_image(path, 16, 512)
+    with path.open("r+b") as stream:
+        _put(stream, 41 * 512 + 16, b"\0\0")  # HELLO creation date
+        _put(stream, 41 * 512 + 18, b"\0\0")  # HELLO access date
+    file = next(row for row in manifest["files"] if row["path"] == "HELLO.TXT")
+    file["timestampsByTimezone"] = {
+        timezone: {"modifiedEpoch": UTC_EPOCH - offset, "modifiedNanoseconds": 0}
+        for timezone, offset in [("UTC", 0), ("Asia/Bangkok", 7 * 3600)]
+    }
+    manifest["timestampMatrix"] = {"requestTimezones": ["UTC", "Asia/Bangkok"]}
+    manifest["logicalSha256"] = digest(path)
+    return manifest
+
+
 def wrap_image(path: Path, source: Path, scheme: str) -> dict:
     sector, offset = 512, 2048 * 512
     payload_sectors = source.stat().st_size // sector
@@ -391,11 +616,18 @@ def _add_regressions(output: Path, manifest: dict) -> dict:
         ("fat16-year2100.raw", lambda path: fat_image(path, 16, 512, year=2100)),
         ("fat16-deep-unicode.raw", deep_unicode_fat),
         ("fat16-nsr-collision.raw", nsr_collision_fat),
+        ("ntfs-streams.raw", ntfs_image),
+        ("fat16-missing-times.raw", missing_time_fat),
+        ("fat16-fragmented.raw", fragmented_fat),
+        ("exfat-matrix-valid.raw", exfat_valid_matrix),
+        ("exfat-matrix-unknown.raw", exfat_unknown_matrix),
+        ("exfat-matrix-invalid.raw", exfat_invalid_matrix),
+        ("exfat-matrix-leap-increment.raw", exfat_leap_increment_matrix),
     ]
     for name, factory in factories:
         if name not in existing:
             manifest["images"].append(factory(output / name))
-    manifest["schemaVersion"] = 2
+    manifest["schemaVersion"] = 3
     manifest_path = output / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     return manifest

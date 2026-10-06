@@ -26,6 +26,10 @@ struct EngineIntegrationTests {
             #expect(result.sourcePaths == sources.map(\.path))
             #expect(result.sourceFileHashes.count == sources.count)
             #expect(result.volumes.contains(where: { $0.offsetBytes == expected.fsOffsetBytes }))
+            let payloadPaths = result.files.filter { !$0.isDirectory && !$0.name.hasPrefix("$") && $0.name != "NFTK (Volume Label Entry)" }
+            #expect(payloadPaths.count == expected.files.count)
+            #expect(Set(payloadPaths.map { $0.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }) == Set(expected.files.map(\.path)))
+            #expect(Set(result.files.map(\.id)).count == result.files.count)
             let originalCase = try CaseStore.create(name: "Synthetic image \(index)", in: temporary)
             let forensicCase = try CaseStore.adding(image: before, to: originalCase)
             let evidenceID = try #require(forensicCase.manifest.evidence.first?.id)
@@ -39,9 +43,10 @@ struct EngineIntegrationTests {
                 let file = try #require(result.files.first(where: { $0.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == expectedFile.path }))
                 #expect(file.size == expectedFile.size)
                 #expect(file.isDeleted == expectedFile.isDeleted)
-                #expect(file.modifiedEpoch == expected.expectedEpochUTC)
-                #expect(file.modifiedNanoseconds == (expected.expectedModifiedNanoseconds ?? 0))
-                #expect(file.createdNanoseconds == (expected.expectedCreatedNanoseconds ?? 0))
+                try checkTimestamps(file, expectedFile: expectedFile, image: expected, timezone: "UTC")
+                if let attributeType = expectedFile.attributeType { #expect(file.attributeType == attributeType) }
+                if let attributeID = expectedFile.attributeID { #expect(file.attributeID == attributeID) }
+                if let metaAddress = expectedFile.metaAddress { #expect(file.metaAddress == metaAddress) }
                 let output = temporary.appendingPathComponent("Export-\(UUID().uuidString).bin")
                 var extractionOptions = options
                 extractionOptions.hashLogicalImage = false
@@ -57,6 +62,45 @@ struct EngineIntegrationTests {
             }
         }
         #expect(extractions == fixture.manifest.images.reduce(0, { $0 + $1.files.count }))
+    }
+
+    @Test("Real timestamp matrix preserves offsets, precision and missing values", .enabled(if: NativeEngineFixture.available))
+    func realTimestampMatrix() async throws {
+        let fixture = try NativeEngineFixture()
+        let client = EngineClient(helperURL: fixture.helper)
+        for image in fixture.manifest.images {
+            for timezone in image.timestampMatrix?.requestTimezones ?? [] where timezone != "UTC" {
+                let result = try await client.enumerate(imagePaths: fixture.paths(for: image), options: EngineOptions(sectorSize: image.sectorSize, timezone: timezone, hashLogicalImage: false))
+                #expect(result.status == .completed)
+                for expectedFile in image.files {
+                    let file = try #require(result.files.first(where: { $0.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == expectedFile.path }))
+                    try checkTimestamps(file, expectedFile: expectedFile, image: image, timezone: timezone)
+                }
+            }
+        }
+    }
+
+    private func checkTimestamps(_ file: FilesystemEntry, expectedFile: NativeFixtureFile, image: NativeFixtureImage, timezone: String) throws {
+        let timestamps: [String: Int64]
+        if let matrix = expectedFile.timestampsByTimezone {
+            timestamps = try #require(matrix[timezone])
+        } else {
+            let epoch = image.expectedEpochUTC - (timezone == "Asia/Bangkok" && image.validUTCOffset != true ? 7 * 3600 : 0)
+            timestamps = ["createdEpoch": epoch, "modifiedEpoch": epoch,
+                          "accessedEpoch": image.validUTCOffset == true ? epoch : epoch - 80000,
+                          "createdNanoseconds": Int64(image.expectedCreatedNanoseconds ?? 0),
+                          "modifiedNanoseconds": Int64(image.expectedModifiedNanoseconds ?? 0)]
+        }
+        let actual: [(String, Int64?, Int32)] = [
+            ("created", file.createdEpoch, file.createdNanoseconds),
+            ("modified", file.modifiedEpoch, file.modifiedNanoseconds),
+            ("accessed", file.accessedEpoch, file.accessedNanoseconds),
+            ("changed", file.changedEpoch, file.changedNanoseconds),
+        ]
+        for (prefix, epoch, nanoseconds) in actual {
+            #expect(epoch == timestamps[prefix + "Epoch"], "\(expectedFile.path) \(timezone) \(prefix)")
+            #expect(Int64(nanoseconds) == (timestamps[prefix + "Nanoseconds"] ?? 0))
+        }
     }
 
     @Test("Real inspect accepts volume metadata without silently enumerating files", .enabled(if: NativeEngineFixture.available))
@@ -92,9 +136,8 @@ private struct NativeEngineFixture {
         helper = URL(fileURLWithPath: try #require(environment["NFTSK_ENGINE_HELPER"]))
         directory = URL(fileURLWithPath: try #require(environment["NFTSK_SYNTHETIC_FIXTURES"])).resolvingSymlinksInPath()
         manifest = try JSONDecoder().decode(NativeFixtureManifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
-        // Fixture schema 2 adds dates beyond 2038, a deep Unicode path and a
-        // filesystem/container signature collision; the row contract is intact.
-        try #require(manifest.synthetic && [1, 2].contains(manifest.schemaVersion) && !manifest.images.isEmpty)
+        // Schema 3 adds independent per-entry timestamp and stream expectations.
+        try #require(manifest.synthetic && [1, 2, 3].contains(manifest.schemaVersion) && !manifest.images.isEmpty)
     }
 
     func paths(for image: NativeFixtureImage) throws -> [URL] {
@@ -122,7 +165,13 @@ private struct NativeFixtureImage: Decodable {
     let expectedEpochUTC: Int64
     let expectedCreatedNanoseconds: Int32?
     let expectedModifiedNanoseconds: Int32?
+    let validUTCOffset: Bool?
+    let timestampMatrix: NativeFixtureTimestampMatrix?
     let files: [NativeFixtureFile]
+}
+
+private struct NativeFixtureTimestampMatrix: Decodable {
+    let requestTimezones: [String]
 }
 
 private struct NativeFixtureFile: Decodable {
@@ -131,6 +180,10 @@ private struct NativeFixtureFile: Decodable {
     let sha256: String
     let isDeleted: Bool
     let payloadHex: String
+    let timestampsByTimezone: [String: [String: Int64]]?
+    let attributeType: Int32?
+    let attributeID: Int32?
+    let metaAddress: UInt64?
     var bytes: Data {
         let characters = Array(payloadHex.utf8)
         func nibble(_ character: UInt8) -> UInt8 { character <= 57 ? character - 48 : character - 87 }
