@@ -35,7 +35,9 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 - Portable NTFS corpus สร้างด้วย Python stdlib: resident/nonresident, allocated/deleted, fragmented runs, sparse hole, hardlinks, Unicode, file/directory ADS พร้อม exact bytes/locators และ 100 ns timestamps
 - exFAT per-field offsets, unknown-offset IANA/DST interpretation, Gregorian date validation และ missing-time handling; valid-offset timestamps ตรวจภายใต้หลาย host timezones
 
-ชุด correctness ล่าสุดผ่าน native 87 checks, Swift 41 tests รวม 20 image configurations และ benchmark harness 7 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
+ชุด correctness ล่าสุดผ่าน native 87 checks, Swift 45 core + 4 workspace tests รวม 20 image configurations และ benchmark harness 7 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
+
+App 0.2.3 เพิ่ม single-pass background path search พร้อม superseded-query cancellation, store regressions และ 100-row presentation pages ลด fixed chrome และจัด inspector ให้ file details อยู่ก่อน image provenance มี matched search/scheduling experiment แยกจาก GUI frame measurements; optimized release เป็น default ของ app build งานนี้ไม่เปลี่ยน native helper worker policy
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:
 

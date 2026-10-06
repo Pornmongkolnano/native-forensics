@@ -82,7 +82,9 @@ Phase 2 เลือก document text extraction และ content indexing ห�
 
 ก่อน optimize ต้องแยกเวลาของ startup, image read/decompression, filesystem enumeration, hashing, text extraction, index write และ UI rendering ใช้ bounded streaming, backpressure และ measured worker policy; ให้ UI แสดง progress โดยไม่ redraw ต่อทุกไฟล์
 
-มี native helper และ listing/extraction UI แล้ว แต่ยังไม่มี matched performance claim หรือ M5 measurements ทุกระยะมี correctness gate ของตัวเองตาม [roadmap](ROADMAP.md), [Validation](VALIDATION.md) และ [benchmark method](BENCHMARKS.md)
+Filesystem path search ใช้ immutable bounded snapshot ของ entries เดิม สแกน Foundation Unicode predicate รอบเดียวใน cancellable detached task หลัง debounce 120 ms การ publish ตรวจ generation, case ID/URL, evidence และ query; observers ของ query/evidence อยู่ใน store จึงไม่ขึ้นกับ view lifecycle Empty query ใช้ array copy-on-write และ dictionary lookup index สร้างโดย reserve/insert โดยไม่สร้าง temporary tuple array ตารางแสดง ArraySlice สูงสุด 100 entries ต่อหน้า พร้อม exact match/page counts; pagination เป็น presentation limit ไม่ลด saved records หรือ search scope
+
+มี native helper และ listing/extraction UI แล้ว แต่ยังไม่มี matched full-app performance claim หรือ M5 measurements ทุกระยะมี correctness gate ของตัวเองตาม [roadmap](ROADMAP.md), [Validation](VALIDATION.md) และ [benchmark method](BENCHMARKS.md)
 
 ## Build provenance และ distribution
 

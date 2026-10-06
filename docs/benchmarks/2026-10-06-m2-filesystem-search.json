@@ -1,0 +1,1403 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "997ec18f5056a06c69599019431674ce5b218792",
+  "cpuClass": "Apple M2",
+  "swiftVersion": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+  "command": "swift run -c <release|debug> FilesystemSearchBenchmark --output local/search-<configuration>.json",
+  "recipeDigests": {
+    "Sources/ForensicsCore/FilesystemSearchIndex.swift": "bab2d951d7dd87adee6f2552d855e60cd220edcb16fa53aaae1b762321daeff4",
+    "Sources/FilesystemSearchBenchmark/FilesystemSearchBenchmark.swift": "8ee84e368afb2a46804f65c5d9aa496d24c6f64b3cba623a415e1ffc20c52fbd"
+  },
+  "reports": {
+    "release": {
+      "cancellation": [
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.157875
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.162167
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.028958
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.134042
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.019959
+        }
+      ],
+      "entryCount": 50000,
+      "expectedOutputSHA256": {
+        "": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+        "CAFÉ": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+        "HELLO.TXT": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "missing-file-no-match": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "straße": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+        "หลักฐาน": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+        "東京": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+        "🔎": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78"
+      },
+      "generatedAt": "2026-10-06T14:02:19Z",
+      "inputSHA256": "ad7af289e3c79617e60717a8c4242378554cb1cdf5b69ea09f367a045a8b3419",
+      "locale": "th_TH",
+      "measuredPairedBlocks": 5,
+      "measurements": [
+        {
+          "block": 0,
+          "elapsedIncludingEventPacingMilliseconds": 1969.789667,
+          "heartbeatSamples": 39,
+          "maximumMainActorHeartbeatGapMilliseconds": 519.25075,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.000167,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 136.511209,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 266.9685,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 144.283167,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 141.401417,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 260.4885,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 276.790084,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 517.582708,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 126.414125,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1870.439877
+        },
+        {
+          "block": 0,
+          "elapsedIncludingEventPacingMilliseconds": 1041.782708,
+          "heartbeatSamples": 351,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.205292,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.046833,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 70.106792,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 134.632917,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 72.109,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 71.771625,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 131.196125,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 138.914125,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 260.736666,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 64.53325,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 944.047333
+        },
+        {
+          "block": 1,
+          "elapsedIncludingEventPacingMilliseconds": 1045.141292,
+          "heartbeatSamples": 352,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.171125,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.010375,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 69.30325,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 137.266791,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 73.170875,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 71.735833,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 130.683084,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 137.8125,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 262.137792,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 65.380084,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 947.500584
+        },
+        {
+          "block": 1,
+          "elapsedIncludingEventPacingMilliseconds": 1970.667875,
+          "heartbeatSamples": 41,
+          "maximumMainActorHeartbeatGapMilliseconds": 519.708875,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.000167,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 135.88225,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 268.249959,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 142.833167,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 142.024042,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 258.877042,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 278.943666,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 517.981,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 126.47875,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1871.270043
+        },
+        {
+          "block": 2,
+          "elapsedIncludingEventPacingMilliseconds": 1980.3306659999998,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 524.078917,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.000708,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 137.643959,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 267.84125,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 143.585875,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 143.414708,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 260.887791,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 278.596584,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 522.200083,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 126.291292,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1880.46225
+        },
+        {
+          "block": 2,
+          "elapsedIncludingEventPacingMilliseconds": 1048.85625,
+          "heartbeatSamples": 353,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.192,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.017083,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 70.203042,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 135.259875,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 72.115083,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 71.90625,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 131.0155,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 139.898625,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 263.953,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 65.324625,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 949.693083
+        },
+        {
+          "block": 3,
+          "elapsedIncludingEventPacingMilliseconds": 1048.836833,
+          "heartbeatSamples": 352,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.169458,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.036,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 69.806459,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 135.361333,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 73.094083,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 72.840625,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 130.267375,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 140.499833,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 262.355167,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 64.789209,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 949.050084
+        },
+        {
+          "block": 3,
+          "elapsedIncludingEventPacingMilliseconds": 1977.382,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 519.431625,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 8.3e-05,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 136.493167,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 268.393375,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 144.575791,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 141.97375,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 262.257208,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 278.456042,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 517.68425,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 128.24825,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1878.081916
+        },
+        {
+          "block": 4,
+          "elapsedIncludingEventPacingMilliseconds": 1983.1249579999999,
+          "heartbeatSamples": 39,
+          "maximumMainActorHeartbeatGapMilliseconds": 520.197166,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.00075,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 136.903417,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 268.207625,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 143.598917,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 150.090416,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 262.353916,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 277.854708,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 518.3095,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 126.923209,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1884.2424580000002
+        },
+        {
+          "block": 4,
+          "elapsedIncludingEventPacingMilliseconds": 1066.969333,
+          "heartbeatSamples": 359,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.181875,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.036083,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 70.374208,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 140.403458,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 75.577667,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 73.458083,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 138.075959,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 140.955542,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 263.501042,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 66.454084,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 968.8361259999999
+        }
+      ],
+      "operatingSystem": "Version 27.0.1 (Build 26A434)",
+      "physicalMemoryBytes": 17179869184,
+      "processorCount": 8,
+      "queryEventPacingMilliseconds": 10,
+      "requestedHeartbeatMilliseconds": 2,
+      "schemaVersion": 1,
+      "scope": "Release/debug build as invoked. Fixed 50,000 generated records; exact Foundation path-match semantics. Each query's scan/result time is measured; input creation, digest/equivalence validation and 10 ms simulated input-event pacing are excluded from query work. MainActor heartbeat is a headless scheduling probe, not SwiftUI frame or table-rendering measurement. Background timing includes detached dispatch/await. Cancellation trials may complete before cancellation, reported explicitly. No source image I/O, hashing, engine, cache, debounce, or full-app memory measurement.",
+      "warmupBlocks": 1,
+      "rawReportSHA256": "96ae8e43e837111ba86a5df3133faa216be581d0b3777959a7d591b06090a834"
+    },
+    "debug": {
+      "cancellation": [
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.117417
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.0945
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.176292
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.186667
+        },
+        {
+          "cancelled": true,
+          "millisecondsAfterCancellation": 0.089875
+        }
+      ],
+      "entryCount": 50000,
+      "expectedOutputSHA256": {
+        "": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+        "CAFÉ": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+        "HELLO.TXT": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "missing-file-no-match": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "straße": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+        "หลักฐาน": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+        "東京": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+        "🔎": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78"
+      },
+      "generatedAt": "2026-10-06T14:03:12Z",
+      "inputSHA256": "ad7af289e3c79617e60717a8c4242378554cb1cdf5b69ea09f367a045a8b3419",
+      "locale": "th_TH",
+      "measuredPairedBlocks": 5,
+      "measurements": [
+        {
+          "block": 0,
+          "elapsedIncludingEventPacingMilliseconds": 2050.680333,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 528.350125,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.002583,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 145.531792,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 279.681959,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 154.586458,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 152.346625,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 270.92775,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 286.142291,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 525.820084,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 135.551458,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1950.591
+        },
+        {
+          "block": 0,
+          "elapsedIncludingEventPacingMilliseconds": 1149.941167,
+          "heartbeatSamples": 386,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.166542,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.043583,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 82.009333,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 149.071292,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 86.253417,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 85.407791,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 145.74375,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 152.797375,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 274.200584,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 77.297625,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1052.82475
+        },
+        {
+          "block": 1,
+          "elapsedIncludingEventPacingMilliseconds": 1148.497333,
+          "heartbeatSamples": 386,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.165708,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.032916,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 81.586125,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 148.909458,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 85.902333,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 85.466958,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 145.426417,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 152.806417,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 273.450666,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 77.562916,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1051.1442060000002
+        },
+        {
+          "block": 1,
+          "elapsedIncludingEventPacingMilliseconds": 2054.072042,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 528.013916,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.00325,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 146.795917,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 279.098291,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 154.309875,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 153.410833,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 271.670375,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 287.174792,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 526.362583,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 135.842292,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1954.6682080000003
+        },
+        {
+          "block": 2,
+          "elapsedIncludingEventPacingMilliseconds": 2057.798042,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 528.133,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.006125,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 149.655,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 278.976708,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 154.533583,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 152.490041,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 272.070833,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 287.428583,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 526.304917,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 136.58375,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1958.0495400000002
+        },
+        {
+          "block": 2,
+          "elapsedIncludingEventPacingMilliseconds": 1178.670417,
+          "heartbeatSamples": 398,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.206709,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.037083,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 83.955125,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 156.518542,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 90.046833,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 89.510708,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 149.585667,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 155.663625,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 276.258541,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 77.758042,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1079.3341659999999
+        },
+        {
+          "block": 3,
+          "elapsedIncludingEventPacingMilliseconds": 1152.8395,
+          "heartbeatSamples": 387,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.173375,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.008625,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 82.336541,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 149.919583,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 87.017917,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 85.622916,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 144.441458,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 153.299083,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 274.569833,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 78.341375,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1055.557331
+        },
+        {
+          "block": 3,
+          "elapsedIncludingEventPacingMilliseconds": 2061.321875,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 529.221875,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.003792,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 146.705166,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 281.357208,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 155.122292,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 153.591166,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 272.385166,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 288.565958,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 527.928125,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 136.812917,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1962.4717899999998
+        },
+        {
+          "block": 4,
+          "elapsedIncludingEventPacingMilliseconds": 2072.706208,
+          "heartbeatSamples": 40,
+          "maximumMainActorHeartbeatGapMilliseconds": 529.353,
+          "mode": "baseline-main-actor",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.007459,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 147.792459,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 281.679208,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 156.467834,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 153.9825,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 272.578875,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 298.673917,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 527.564,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 136.093209,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1974.839461
+        },
+        {
+          "block": 4,
+          "elapsedIncludingEventPacingMilliseconds": 1165.90075,
+          "heartbeatSamples": 393,
+          "maximumMainActorHeartbeatGapMilliseconds": 3.186333,
+          "mode": "snapshot-background",
+          "queries": [
+            {
+              "count": 50000,
+              "milliseconds": 0.013042,
+              "outputSHA256": "dbeee116c1de6bf6c079d12b647f069ab98fcb41b1ecad235934b3bac4b759ec",
+              "query": ""
+            },
+            {
+              "count": 6250,
+              "milliseconds": 82.611833,
+              "outputSHA256": "39cb81b7c34f59727df34e999c01230c4b481f9888edf141668f5faca9293d81",
+              "query": "HELLO.TXT"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 150.5075,
+              "outputSHA256": "8bc2c52a2d6341237904397dd607b95e1c6e388ede55bbe97764ec9d1245789f",
+              "query": "หลักฐาน"
+            },
+            {
+              "count": 12500,
+              "milliseconds": 87.551083,
+              "outputSHA256": "5a31e279684b4c2690b5c2f4861bc600522367b77e3a5f6dd18e1cd62cb14863",
+              "query": "CAFÉ"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 86.572542,
+              "outputSHA256": "dc9958db056df8b9d37259c8536c3086946b6a845fc5d1d36377d1d0a5d906f7",
+              "query": "straße"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 146.313542,
+              "outputSHA256": "436ee2a8285c6fd143f1defa0b60cf56cfdedbdbe7b886c603c1cf779e3bffa9",
+              "query": "東京"
+            },
+            {
+              "count": 6250,
+              "milliseconds": 155.728959,
+              "outputSHA256": "02e77c9015f42524f009e4ba050d2f1fd95d9935c6bf79c3e4a3238945b62a78",
+              "query": "🔎"
+            },
+            {
+              "count": 0,
+              "milliseconds": 280.338541,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"
+            },
+            {
+              "count": 0,
+              "milliseconds": 78.244417,
+              "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "query": "missing-file-no-match"
+            }
+          ],
+          "queryWorkMilliseconds": 1067.8814590000002
+        }
+      ],
+      "operatingSystem": "Version 27.0.1 (Build 26A434)",
+      "physicalMemoryBytes": 17179869184,
+      "processorCount": 8,
+      "queryEventPacingMilliseconds": 10,
+      "requestedHeartbeatMilliseconds": 2,
+      "schemaVersion": 1,
+      "scope": "Release/debug build as invoked. Fixed 50,000 generated records; exact Foundation path-match semantics. Each query's scan/result time is measured; input creation, digest/equivalence validation and 10 ms simulated input-event pacing are excluded from query work. MainActor heartbeat is a headless scheduling probe, not SwiftUI frame or table-rendering measurement. Background timing includes detached dispatch/await. Cancellation trials may complete before cancellation, reported explicitly. No source image I/O, hashing, engine, cache, debounce, or full-app memory measurement.",
+      "warmupBlocks": 1,
+      "rawReportSHA256": "22520a9a22b14c7295a474b8cdd48651e9a609b8e3e27501ca0ae78d5a8069e1"
+    }
+  },
+  "limitations": "Headless search/scheduling experiment. No SwiftUI frame timing, debouncing, cache loading, image hashes, extraction or full app memory measurement. Working-tree recipe digests identify candidate at base revision.",
+  "legacyLazyChainDiagnostic": {
+    "scope": "Separate toolchain diagnostic of Array<Int>.lazy.filter.prefix traversal, not a measured filesystem path query.",
+    "swiftSource": "var calls = 0; let items = Array(0..<50_000); let matches = Array(items.lazy.filter { item in calls += 1; return item.isMultiple(of: 8) }.prefix(50_000)); print(\"input=\\(items.count) matches=\\(matches.count) predicateCalls=\\(calls)\")",
+    "command": "swift -e <swiftSource>",
+    "stdout": "input=50000 matches=6250 predicateCalls=100001",
+    "stdoutSHA256": "5512e5bd06fcf55ee670d7031c0e7cb7fef69753965303077263f16528b0b8e7"
+  }
+}

@@ -4,9 +4,11 @@ Scope: Phase 0 foundation and the first Phase 1 filesystem adapter. Host: Apple 
 
 ## Swift core and real helper integration
 
-All 41 Swift Testing test functions in three suites passed locally, covering selected-file hashing/case storage, engine protocol/cache/export handling, and four real helper integration tests. The XCTest compatibility header reports zero XCTest tests; the subsequent Swift Testing suites contain the actual checks. All real helper tests ran with the configured environment; none were skipped in the final run.
+All 45 core Swift Testing test functions in four suites and four workspace-search tests in a separate app-test runner passed locally in debug and release configurations. They cover selected-file hashing/case storage, engine protocol/cache/export handling, path-search semantics, workspace query lifecycle and four real helper integration tests. The XCTest compatibility header reports zero XCTest tests; the subsequent Swift Testing suites contain the actual checks. All real helper tests ran with the configured environment; none were skipped in the final runs.
 
 Regressions include malformed/version/job/sequence frames, repeated/missing terminal records, output bounds, saturated stderr, crash/nonzero exits, partial results, startup/inactivity deadlines, cancellation and owned-process termination. Export checks independently compare SHA-256 and size, reject stale source hashes, preserve existing destinations, and exercise destination/parent/staging replacement races. Cache tests reject unknown schemas, symlinks, foreign evidence IDs and mismatched source scopes.
+
+Search tests compare full entries/order/metadata with Foundation under Thai, canonical/decomposed accents, Turkish I, Straße, Japanese, emoji and case variations. Snapshot bounds, empty queries and pre-cancelled tasks are checked. Workspace tests use actual task handles without timing assertions to check superseded queries, immediate clear, evidence switching, selection invalidation, cancellation cleanup and extraction gating while filtering. Query/evidence observers live in the store; matching-generation cleanup prevents obsolete tasks from changing the newest state.
 
 Real Swift client tests enumerate 20 deterministic image configurations, save/reload filesystem results, and extract 97 known payloads including deleted, empty, fragmented, sparse and named NTFS streams. Exact payload path sets, unique IDs and stream locators are checked. Every payload is checked against independent bytes/SHA-256; all source hashes remain unchanged. The separate timestamp matrix checks per-entry epoch/nanoseconds and omitted invalid fields under UTC, Bangkok and New York where declared. Extraction skips redundant logical-image hashing while retaining cached source-file hash verification and independent output verification.
 
@@ -17,6 +19,8 @@ NFTSK_ENGINE_HELPER="$PWD/.engine/bin/NFTSKEngine" \
 NFTSK_SYNTHETIC_FIXTURES="$PWD/local/ci-native/fixtures" swift test
 ./script/build_and_run.sh --verify
 ```
+
+For optimized-code verification, run the configured real-helper test command with `swift test -c release`. App bundles now use release by default; `./script/build_and_run.sh --debug` retains the debug/LLDB workflow.
 
 ## Native filesystem corpus
 
@@ -40,7 +44,13 @@ App 0.2.2 fixes an inspector that could retain the previous evidence selection: 
 
 Real GUI failure testing forces the previously successful FAT16 source through EWF decoding. The alert reports `INVALID_EWF`, controls become usable again and the old completed cache plus case manifest remain byte-identical. Native cancellation is exercised with an explicitly selected synthetic 8 GiB sparse RAW segment: the GUI shows `hashLogicalImage` at 117,440,512 of 8,592,494,592 bytes before Cancel is clicked. The exact owned helper exits, the UI reports cancellation without a new result and both cache and manifest hashes remain unchanged. Reanalysis of the original single image then completes and the GUI exports its 44-byte `HELLO.TXT`; independent expected bytes, size and SHA-256 match. The observed helper lifetime is not reported as cancellation latency because observation includes work before the click. Fixtures and raw receipts stay under ignored `local/phase1-gui-faults/`.
 
+App 0.2.3 reduces the case header and keeps Analysis Options/provenance behind native disclosures, while validation and partial warnings stay visible. The selected-file inspector leads with path, size/allocation and human plus exact Unix timestamps; hash scopes and extraction receipts remain available. A generated 50,000-row cache marked synthetic-only exercises full-result search and bounded 100-row presentation pages. First/Next/Last ranges reach entries 49,901–50,000; searching Thai paths returns all 6,250 matches and resets the page. Row selection and inspector work without the earlier sustained CPU loop; idle CPU was observed after selection. This is a GUI correctness/stress check, not a latency or native-format benchmark. The generated paths are not evidence from engine analysis.
+
+On the real synthetic FAT case, the redesigned controls reject an out-of-range limit and retain the validation message with Analysis Options collapsed. Limit 1 produces a visible `RESULT_LIMIT` partial result; restoring 50,000 completes all ten rows. The GUI exports `HELLO.TXT` to a new file with the expected 44 bytes and SHA-256 `9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441`; independent payload comparison and the original source SHA-256 match. Raw receipts remain ignored under `local/ui-performance/`.
+
 Cache load/save run outside the UI actor with case/evidence selection guards. Limits bound serialized data and record counts, not total process RAM. The [native-helper concurrency experiment](BENCHMARKS.md) completed 36 batches / 1,080 independently verified exports with 1/2/4 concurrent helper processes. It records five paired measured blocks after warmup, exact child CPU and sampled/kernel-bound RSS. All source/helper hashes matched and there were no sampler errors. The seven harness safety regressions pass and run in CI. This excludes Swift prehash/publication, GUI and cache/index work; there is no full-app speed or RAM claim.
+
+The separate matched search experiment checks 20 measured scenarios / 180 exact-output queries across release/debug. Release median paired query-work reduction is 49.47%; MainActor heartbeat-gap median changes from 519.71 to 3.18 ms. These measure the headless search/scheduling path, not SwiftUI frames or event-to-display latency. See [methods, distributions and limitations](BENCHMARKS.md).
 
 ## Boundaries and delivery state
 

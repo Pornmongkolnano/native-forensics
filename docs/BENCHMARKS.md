@@ -80,3 +80,25 @@ CPU คือผลรวม user/system CPU จาก `wait4` ของ exact o
 Median ของ paired wall ratios เทียบ 1 process: 2 processes ลดเวลา Small NTFS 45.1% และ Large FAT32 46.6%; 4 processes ลด 66.8% และ 60.6% ตามลำดับ ทุกคู่ไปในทิศทางเดียวกัน แต่ 4 processes ใช้ CPU เพิ่มและ aggregate RAM สูงขึ้น ผลนี้สนับสนุนการทดลอง bounded concurrent extraction ต่อไป ยังไม่เปลี่ยน production policy: ต้องวัด Swift source prehash, staging/publication, case/cache/index, GUI responsiveness, cancellation, cold/large/mixed inputs และ battery/thermal workload รวมทั้งเครื่อง M5 จริงก่อนเลือก app defaults
 
 เก็บ distribution, paired differences, batch CPU/RSS receipts, environment และ fixture/build/recipe digests ใน [sanitized JSON](benchmarks/2026-10-06-m2-helper-workers.json) `sourceRevision` คือ base commit ตอนวัด; recipe digests ระบุ working-tree harness ที่ใช้ Raw diagnostics/fixtures อยู่ใน ignored `local/` ชุดก่อนแก้ขอบเขตจับเวลาถูกยกเลิกและไม่ใช้ในตัวเลขนี้ การรัน `--smoke` ใช้ไฟล์ใหญ่เพียง 1 MiB และมี block เดียว จึงเป็น correctness smoke เท่านั้น
+
+## Filesystem search and scheduling — app 0.2.3
+
+การค้นหาเดิมรัน `Array(files.lazy.filter(...).prefix(50_000))` บน MainActor ทุกครั้งที่พิมพ์ สำหรับ collection chain นี้ การตรวจ `Array<Int>` probe แยกจากการจับเวลาบน toolchain นี้พบ predicate 100,001 calls สำหรับ input 50,000 ค่าและ matches 6,250 ค่า Command/output ของ diagnostic เก็บใน JSON ด้านล่าง เป็นการตรวจ traversal ของ collection chain แยกจาก path workload Candidate เก็บ immutable bounded snapshot, คืน array เดิมด้วย copy-on-write เมื่อ query ว่าง และสแกนครั้งเดียวด้วย Foundation `localizedCaseInsensitiveContains` เดิม ตรวจ cancellation ทุก 128 แถว Store debounce 120 ms, ส่ง scan ไป detached task และตรวจ generation/case URL/evidence/query ก่อน publish โดยยกเลิกงานเก่าเมื่อ query/selection เปลี่ยน
+
+```sh
+swift run -c release FilesystemSearchBenchmark --output local/search-release.json
+swift run -c debug FilesystemSearchBenchmark --output local/search-debug.json
+```
+
+Fixed corpus มี 50,000 records รวมภาษาไทย, canonical Unicode accents, Straße, 東京, emoji และ long paths; 9 queries ต่อ scenario มี warmup 1 block และ measured 5 paired blocks สลับลำดับ baseline/candidate ทั้งสอง configurations รวม 20 measured scenarios / 180 queries ตรวจ full row equality, order, metadata และ ID digests นอกช่วงจับเวลา Input SHA-256 ตรงกันระหว่าง release/debug ผล raw และ source recipe digests อยู่ใน [sanitized JSON](benchmarks/2026-10-06-m2-filesystem-search.json)
+
+| Configuration | Baseline query work median (range), ms | Candidate median (range), ms | Median paired time reduction |
+|---|---:|---:|---:|
+| Release | 1,878.08 (1,870.44–1,884.24) | 949.05 (944.05–968.84) | 49.47% |
+| Debug | 1,958.05 (1,950.59–1,974.84) | 1,055.56 (1,051.14–1,079.33) | 46.03% |
+
+ตัวเลข work เป็นผลรวมเวลา scan/result ของ 9 queries รวม dispatch/await ฝั่ง candidate เว้น input generation, validation และ 10 ms simulated event pacing ทุก output ตรงกัน ไม่เปลี่ยน Unicode semantics เป็น ASCII/lowercase matching Release MainActor heartbeat maximum-gap median ต่อ scenario ลด 519.71 → 3.18 ms (ร้องขอ heartbeat ทุก 2 ms) **นี่เป็น headless scheduling probe ไม่ใช่ SwiftUI frame rate หรือ measured interaction latency** ไม่รวม store debounce, cache loading, hashes, engine, exports หรือ full-app RAM Five cancellation trials ต่อ build ถูกยกเลิกก่อน scan เสร็จ; เวลา worker หลัง cancel ที่บันทึกไม่แทน GUI cancellation latency
+
+GUI stress เป็นอีก gate: generated cache 50,000 แถวติดคำเตือน synthetic-only หลัง filter 6,250 Thai paths การเลือกแถวใน unbounded SwiftUI Table ทำให้ CPU สูงต่อเนื่อง และ sample อยู่ใน SwiftUI/AppKit cell layout/tracking จึงจำกัด table presentation ที่ 100 แถวต่อหน้า โดยค้นหาจากทุก saved entry และแสดง exact page range First/Next/Last, query reset, selection/inspector และกลับไป idle หลังเลือกแถวผ่าน ไม่ใช้เวลา tool/AX roundtrip เป็นข้ออ้าง app latency และไม่ใช้ cache สังเคราะห์นี้พิสูจน์ native format coverage
+
+App Run/build bundle ใช้ optimized release ตามปกติ; `--debug` ยังเป็น debug/LLDB ไม่มีข้ออ้างเวลา launch หรือความเร็วทั้งแอปจากการเปลี่ยน configuration นี้ การวัด memory, event-to-frame latency, cold/mixed inputs และเครื่อง M5 ยังเป็นงานต่อไป
