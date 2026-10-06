@@ -6,6 +6,46 @@ import Testing
 
 @Suite("Codex analysis adapter")
 struct CodexClientTests {
+    @Test("Spawn cannot inherit an unrelated parent pipe without FD_CLOEXEC")
+    func unrelatedDescriptorIsNotInherited() async throws {
+        let fixture = try CodexMockFixture()
+        defer { fixture.remove() }
+        var pipe: [Int32] = [-1, -1]
+        try #require(Darwin.pipe(&pipe) == 0)
+        defer { for descriptor in pipe { Darwin.close(descriptor) } }
+        // Use a high descriptor to avoid an interpreter reusing the same
+        // numeric slot while starting. The canary is explicitly inheritable.
+        let canary = fcntl(pipe[1], F_DUPFD, 128)
+        try #require(canary >= 0)
+        defer { Darwin.close(canary) }
+        try #require(fcntl(canary, F_SETFD, 0) == 0)
+        #expect(fcntl(canary, F_GETFD) == 0)
+        var identity = stat()
+        try #require(Darwin.fstat(canary, &identity) == 0)
+        let record = fixture.root.appendingPathComponent("descriptor-state.json")
+        let helper = try fixture.helper(body: """
+        import errno
+        try:
+            metadata = os.fstat(\(canary))
+            state = dict(open=True, device=metadata.st_dev, inode=metadata.st_ino)
+        except OSError as error:
+            state = dict(open=False, closed=(error.errno == errno.EBADF))
+        with open(\(CodexMockFixture.literal(record.path)), 'x') as output:
+            json.dump(state, output)
+        success()
+        """)
+        let result = try await CodexAnalysisClient(executableURL: helper).analyze(prompt: "Synthetic descriptor isolation probe")
+        #expect(result.response.summary == "Synthetic observation.")
+        let state = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any])
+        #expect(state["open"] as? Bool == false)
+        #expect(state["closed"] as? Bool == true)
+        // The parent's descriptor remains valid and belongs to the same pipe;
+        // only the spawned child loses access to it.
+        var after = stat()
+        #expect(Darwin.fstat(canary, &after) == 0)
+        #expect(after.st_dev == identity.st_dev && after.st_ino == identity.st_ino)
+    }
+
     @Test("Only stdin contains the approved prompt; workspace is private and cleaned")
     func isolatedSuccess() async throws {
         let fixture = try CodexMockFixture()

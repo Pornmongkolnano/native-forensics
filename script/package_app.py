@@ -46,7 +46,7 @@ def stage_bundle(binary: Path) -> Path:
             "CFBundleExecutable": NAME, "CFBundleIdentifier": identifier,
             "CFBundleName": NAME, "CFBundleDisplayName": "Native Forensics",
             "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.3.0",
-            "CFBundleVersion": "8", "CFBundleIconFile": "AppIcon",
+            "CFBundleVersion": "9", "CFBundleIconFile": "AppIcon",
             "LSMinimumSystemVersion": receipt["toolchain"]["minimumMacOS"],
             "NSPrincipalClass": "NSApplication", "NSHighResolutionCapable": True,
             "CFBundleDocumentTypes": [{"CFBundleTypeName": "Native Forensics Case",

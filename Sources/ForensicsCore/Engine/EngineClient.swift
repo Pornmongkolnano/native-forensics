@@ -547,6 +547,16 @@ private struct EngineRunner {
         guard outgoing.count <= EngineValidation.frameLimit else { throw EngineError.limitExceeded("The engine request exceeds 1 MiB.") }
         outgoing.append(10)
         let input = Pipe(), output = Pipe(), errors = Pipe()
+        // Foundation's pipe endpoints may be inheritable. A concurrently
+        // spawned child must not retain an engine writer and withhold EOF.
+        // The helper's explicit standard-stream duplication remains intact.
+        for handle in [input.fileHandleForReading, input.fileHandleForWriting,
+                       output.fileHandleForReading, output.fileHandleForWriting,
+                       errors.fileHandleForReading, errors.fileHandleForWriting] {
+            guard fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC) == 0 else {
+                throw FileAccess.posixError("Cannot protect engine pipe inheritance")
+            }
+        }
         let process = Process()
         process.executableURL = helper
         process.arguments = []
@@ -608,9 +618,6 @@ private struct EngineRunner {
                 _ = Darwin.kill(process.processIdentifier, SIGKILL)
             }
             if outputEOF && errorEOF && !isRunning { break }
-            if let exitedAt, now - exitedAt >= 2, !(outputEOF && errorEOF) {
-                throw EngineError.protocolViolation("The helper exited while a descendant kept its output pipes open.")
-            }
             var polling = [
                 pollfd(fd: outputEOF ? -1 : stdoutFD, events: Int16(POLLIN), revents: 0),
                 pollfd(fd: errorEOF ? -1 : stderrFD, events: Int16(POLLIN), revents: 0),
@@ -650,6 +657,15 @@ private struct EngineRunner {
                     }
                 }
             }
+            // A worker can be descheduled after observing process exit while
+            // the final bytes/EOF are already waiting in its pipes. Drain them
+            // before applying the descendant guard; elapsed wall time alone
+            // cannot establish that an output writer is still alive.
+            try EnginePipeExitDeadline.validate(
+                exitedAt: exitedAt, now: uptime(),
+                stdoutFD: outputEOF ? nil : stdoutFD,
+                stderrFD: errorEOF ? nil : stderrFD
+            )
             if !inputClosed && polling[2].revents != 0 {
                 if polling[2].revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
                     try? input.fileHandleForWriting.close(); inputClosed = true
@@ -689,5 +705,30 @@ private struct EngineRunner {
         }
         if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
         process.waitUntilExit()
+    }
+}
+
+/// Keeps the original two-second post-exit bound for live output writers, but
+/// permits a finite buffered tail from pipes whose writers have all closed.
+/// This narrow probe is separate from the protocol reader so scheduler stalls
+/// can be tested deterministically against real pipe readiness.
+enum EnginePipeExitDeadline {
+    static func validate(exitedAt: Double?, now: Double, stdoutFD: Int32?, stderrFD: Int32?) throws {
+        guard let exitedAt, now - exitedAt >= 2 else { return }
+        let descriptors = [stdoutFD, stderrFD].compactMap { $0 }
+        guard !descriptors.isEmpty else { return }
+        var readiness = descriptors.map { pollfd(fd: $0, events: Int16(POLLIN), revents: 0) }
+        let status = Darwin.poll(&readiness, nfds_t(readiness.count), 0)
+        if status < 0 {
+            if errno == EINTR { return }
+            throw FileAccess.posixError("Cannot inspect exited engine pipes")
+        }
+        // POLLIN alone is insufficient: a descendant can continuously flood
+        // discarded stderr and otherwise evade a readiness-based deadline.
+        // POLLHUP proves no writer remains; any buffered tail is finite and
+        // the next normal read pass can consume it or observe EOF.
+        guard readiness.allSatisfy({ $0.revents & Int16(POLLHUP) != 0 }) else {
+            throw EngineError.protocolViolation("The helper exited while a descendant kept its output pipes open.")
+        }
     }
 }

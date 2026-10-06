@@ -56,8 +56,12 @@ struct CodexProcessRunner {
         sigemptyset(&signalDefaults)
         sigemptyset(&signalMask)
         for signal in [SIGTERM, SIGINT, SIGQUIT, SIGHUP, SIGPIPE, SIGCHLD] { sigaddset(&signalDefaults, signal) }
+        // Close every unrelated parent descriptor atomically at spawn, even
+        // descriptors created concurrently before their FD_CLOEXEC is set.
+        // The explicit dup2 actions retain only this request's three stdio
+        // channels; another engine job's pipe writers must never leak here.
         guard posix_spawn_file_actions_addchdir_np(&actions, workspace.path) == 0,
-              posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0,
+              posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0,
               posix_spawnattr_setsigdefault(&attributes, &signalDefaults) == 0,
               posix_spawnattr_setsigmask(&attributes, &signalMask) == 0,
               posix_spawnattr_setpgroup(&attributes, 0) == 0 else { throw CodexAnalysisError.launchFailed }
