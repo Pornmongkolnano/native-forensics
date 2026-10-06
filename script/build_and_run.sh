@@ -46,6 +46,7 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 cp "$ROOT_DIR/.engine/bin/NFTSKEngine" "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
 cp "$ROOT_DIR/.engine/manifest.json" "$APP_BUNDLE/Contents/Resources/engine-manifest.json"
+cp "$ROOT_DIR/Assets/AppIcon/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 cp -R "$ROOT_DIR/NativeEngine/licenses/." "$APP_BUNDLE/Contents/Resources/EngineLicenses/"
 /usr/bin/codesign --force --sign - "$APP_BUNDLE/Contents/Helpers/NFTSKEngine"
 
@@ -58,8 +59,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>NativeForensics</string>
   <key>CFBundleDisplayName</key><string>Native Forensics</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2.3</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleShortVersionString</key><string>0.2.4</string>
+  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
