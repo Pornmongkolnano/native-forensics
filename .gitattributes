@@ -1,0 +1,2 @@
+# Preserve reviewed diff artifacts byte-for-byte, including upstream context.
+patches/**/*.patch whitespace=-trailing-space

@@ -1,0 +1,53 @@
+import SwiftUI
+
+private struct WorkspaceFocusedValueKey: FocusedValueKey {
+    typealias Value = WorkspaceStore
+}
+
+extension FocusedValues {
+    var forensicWorkspace: WorkspaceStore? {
+        get { self[WorkspaceFocusedValueKey.self] }
+        set { self[WorkspaceFocusedValueKey.self] = newValue }
+    }
+}
+
+struct ForensicCommands: Commands {
+    @FocusedValue(\.forensicWorkspace) private var workspace
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Case…") {
+                if let workspace { workspace.createCase() }
+                else { openWindow(id: "workbench") }
+            }
+            .keyboardShortcut("n")
+            .disabled(workspace?.isBusy == true)
+
+            Button("Open Case…") { workspace?.chooseCase() }
+                .keyboardShortcut("o")
+                .disabled(workspace == nil || workspace?.isBusy == true)
+
+            Button("New Workbench Window") { openWindow(id: "workbench") }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+
+        CommandMenu("Evidence") {
+            Button("Inspect Disk Image…") { workspace?.chooseImage() }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(workspace?.canInspectImage != true)
+
+            Button("Cancel Inspection") { workspace?.cancelInspection() }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(workspace?.isInspecting != true)
+        }
+
+        CommandGroup(after: .sidebar) {
+            Button("Toggle Evidence Inspector") {
+                workspace?.showInspector.toggle()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .disabled(workspace == nil)
+        }
+    }
+}

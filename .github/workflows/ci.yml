@@ -1,0 +1,28 @@
+name: Native foundation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: swift --version
+      - name: Synthetic correctness tests
+        run: swift test
+      - name: Build native app bundle
+        run: ./script/build_and_run.sh --build-only

@@ -1,0 +1,85 @@
+--- a/tsk/fs/exfatfs_meta.c
++++ b/tsk/fs/exfatfs_meta.c
+@@ -30,6 +30,47 @@
+ #include "tsk_fs_i.h"
+ #include "tsk_fatfs.h"
+ #include <assert.h>
++
++/**
++ * Convert an exFAT local DOS timestamp using its per-entry UTC offset.
++ * Offset bit 7 indicates validity; the other seven bits are a signed count
++ * of 15-minute increments. Unknown offsets retain the FAT timezone fallback.
++ * This civil-date conversion does not mutate process-global TZ or use DST.
++ */
++static time_t
++exfatfs_dos_2_unix_time(uint16_t date, uint16_t time, uint8_t timetens,
++    uint8_t utc_offset)
++{
++    static const int month_days[] = {0,31,59,90,120,151,181,212,243,273,304,334};
++    int year, month, day, hour, minute, second, offset;
++    int64_t days;
++
++    if ((utc_offset & 0x80) == 0)
++        return fatfs_dos_2_unix_time(date, time, timetens);
++    if (date == 0)
++        return 0;
++    year = ((date & FATFS_YEAR_MASK) >> FATFS_YEAR_SHIFT) + 1980;
++    month = (date & FATFS_MON_MASK) >> FATFS_MON_SHIFT;
++    day = (date & FATFS_DAY_MASK) >> FATFS_DAY_SHIFT;
++    hour = (time & FATFS_HOUR_MASK) >> FATFS_HOUR_SHIFT;
++    minute = (time & FATFS_MIN_MASK) >> FATFS_MIN_SHIFT;
++    second = ((time & FATFS_SEC_MASK) >> FATFS_SEC_SHIFT) * 2;
++    if (month < 1 || month > 12 || day < 1 || day > 31 ||
++        hour > 23 || minute > 59 || second > 59 || timetens > 199)
++        return 0;
++    days = (int64_t)(year - 1970) * 365 +
++        (year - 1) / 4 - 1969 / 4 -
++        (year - 1) / 100 + 1969 / 100 +
++        (year - 1) / 400 - 1969 / 400;
++    days += month_days[month - 1] + day - 1;
++    if (month > 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))
++        days++;
++    offset = utc_offset & 0x7f;
++    if (offset & 0x40)
++        offset -= 128;
++    return (time_t)(days * 86400 + hour * 3600 + minute * 60 + second +
++        timetens / 100 - offset * 900);
++}
+ 
+ /**
+  * \internal
+@@ -1151,9 +1192,9 @@
+     /* Copy the last modified time, converted to UNIX date format. */
+     if (FATFS_ISDATE(tsk_getu16(fs->endian, file_dentry->modified_date))) {
+         fs_meta->mtime =
+-            fatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->modified_date),
++            exfatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->modified_date),
+                 tsk_getu16(fs->endian, file_dentry->modified_time), 
+-                file_dentry->modified_time_tenths_of_sec);
++                file_dentry->modified_time_tenths_of_sec, file_dentry->modified_time_time_zone_offset);
+         fs_meta->mtime_nano = fatfs_dos_2_nanosec(file_dentry->modified_time_tenths_of_sec);
+     }
+     else {
+@@ -1164,8 +1205,8 @@
+     /* Copy the last accessed time, converted to UNIX date format. */
+     if (FATFS_ISDATE(tsk_getu16(fs->endian, file_dentry->accessed_date))) {
+         fs_meta->atime =
+-            fatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->accessed_date), 
+-                tsk_getu16(fs->endian, file_dentry->accessed_time), 0);
++            exfatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->accessed_date), 
++                tsk_getu16(fs->endian, file_dentry->accessed_time), 0, file_dentry->accessed_time_time_zone_offset);
+     }
+     else {
+         fs_meta->atime = 0;
+@@ -1179,9 +1220,9 @@
+     /* Copy the created time, converted to UNIX date format. */
+     if (FATFS_ISDATE(tsk_getu16(fs->endian, file_dentry->created_date))) {
+         fs_meta->crtime =
+-            fatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->created_date),
++            exfatfs_dos_2_unix_time(tsk_getu16(fs->endian, file_dentry->created_date),
+                 tsk_getu16(fs->endian, file_dentry->created_time), 
+-                file_dentry->created_time_tenths_of_sec);
++                file_dentry->created_time_tenths_of_sec, file_dentry->created_time_time_zone_offset);
+         fs_meta->crtime_nano = fatfs_dos_2_nanosec(file_dentry->created_time_tenths_of_sec);
+     }
+     else {
