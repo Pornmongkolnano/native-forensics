@@ -52,3 +52,31 @@ Machine setup ต้องคงเดิมระหว่างคู่ ห�
 เก็บ sanitized JSON summary, environment class, version/build identifiers, fixture recipe/digests และ commands ที่ใช้ repository-relative paths ไม่เก็บ cases, user evidence, private local paths, secrets, compiled runtimes หรือ raw diagnostics ที่มีชื่อไฟล์จริง
 
 ข้ออ้าง M5 ต้องมีผลจากเครื่อง M5 จริง การผ่าน tests บน Apple Silicon รุ่นอื่นไม่เท่ากับ performance, thermal หรือ complete GUI validation บน M5
+
+## Native helper concurrency experiment — 6 October 2026
+
+ชุดแรกวัด **จำนวน helper processes ที่ทำงานพร้อมกันสูงสุด 1/2/4** ผ่าน bounded Python queue ไม่ใช่จำนวน threads ของ Autopsy หรือ worker scheduler ในแอป ใช้ helper `0.1.1-tsk4.15.0` เดียวกันและ jobs/bytes/outputs เดียวกันทุกจำนวน processes เครื่องคือ M2 arm64, RAM 16 GiB, macOS 27.0.1, APFS บน SSD, AC และ low-power mode ปิด เก็บ environment ก่อน/หลังไว้ ไม่มี thermal/performance warning ที่ระบบบันทึก แต่ไม่ได้วัดอุณหภูมิจริง Background load 1 นาทีเปลี่ยนจาก 2.19 เป็น 3.15 จึงเป็นผลจากเครื่องใช้งานปกติหนึ่งเครื่อง
+
+```sh
+PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine
+python3 script/benchmark_native_engine.py --output local/worker-benchmark
+```
+
+Seed `20261006` สลับลำดับ workload/process-count มี warmup 1 block แยกออก และ measured 5 paired blocks ต่อจำนวน processes รวม 36 batches และ independently verified exports 1,080 ไฟล์ วัดตั้งแต่เริ่ม queue ถึง helper ทุกตัวถูก reap และ pipe อ่านถึง EOF รวม startup, filesystem reads, content hash, writes/fsync และ queue/pump overhead ตรวจ exact bytes/SHA-256/size นอกช่วงจับเวลา และตรวจ source/helper hashes ก่อน/หลังทุก batch ผล partial/failed ไม่ถูกนับเป็น completed throughput Harness safety regressions 7 tests ครอบคลุม timeout, pipe overflow, exact child CPU receipts, symlink rejection และ wrong content
+
+นี่เป็น **warm-cache** experiment: การ prehash ก่อน batch อ่าน source ทั้งไฟล์ ไม่มี purge หรือ cold-cache claim Small NTFS เป็น 13 streams วน 4 รอบ รวม 52 jobs/142,452 bytes ต่อ batch; เน้น startup/dispatch และ repeated reads Large FAT32 เป็นไฟล์ known payload 128 MiB อ่านออก 8 ครั้ง รวม 1 GiB ต่อ batch ไม่ใช่ 8 independent disk images
+
+| Workload | Processes | Wall median (range), s | Helper CPU median, s | Sampled aggregate RSS max, MiB | Kernel-derived RSS upper bound, MiB |
+|---|---:|---:|---:|---:|---:|
+| Small NTFS | 1 | 0.348834 (0.344094–0.358222) | 0.252423 | 9.08 | 9.09 |
+| Small NTFS | 2 | 0.191603 (0.189947–0.201457) | 0.264933 | 17.05 | 18.19 |
+| Small NTFS | 4 | 0.115336 (0.114376–0.118587) | 0.299721 | 20.23 | 36.48 |
+| Large FAT32 | 1 | 0.699042 (0.694016–0.707312) | 0.652388 | 8.72 | 8.75 |
+| Large FAT32 | 2 | 0.372212 (0.370474–0.376579) | 0.678008 | 17.42 | 17.48 |
+| Large FAT32 | 4 | 0.274837 (0.273965–0.278948) | 0.724981 | 34.83 | 34.95 |
+
+CPU คือผลรวม user/system CPU จาก `wait4` ของ exact owned helper PIDs ต่อ batch Sampled RSS ใช้ macOS libproc ทุก 2 ms ที่ร้องขอ; actual interval medians ต่อ batch อยู่ 2.52–3.20 ms การอ่านแต่ละ PID ไม่ atomic และอาจพลาด short-lived peaks โดยเฉพาะ Small NTFS Upper bound เป็นผลรวม kernel individual peaks ที่มากที่สุดตาม concurrency cap ซึ่งไม่ใช่ simultaneous sample จึงแสดงทั้งสองค่า ไม่อ้างค่า 20.23 MiB เป็นข้อรับรอง RAM สูงสุดของ 4 processes Parent Python, Swift และ GUI ไม่อยู่ใน CPU/RSS เหล่านี้ Disk counters เป็น block operations ไม่ใช่ disk bytes
+
+Median ของ paired wall ratios เทียบ 1 process: 2 processes ลดเวลา Small NTFS 45.1% และ Large FAT32 46.6%; 4 processes ลด 66.8% และ 60.6% ตามลำดับ ทุกคู่ไปในทิศทางเดียวกัน แต่ 4 processes ใช้ CPU เพิ่มและ aggregate RAM สูงขึ้น ผลนี้สนับสนุนการทดลอง bounded concurrent extraction ต่อไป ยังไม่เปลี่ยน production policy: ต้องวัด Swift source prehash, staging/publication, case/cache/index, GUI responsiveness, cancellation, cold/large/mixed inputs และ battery/thermal workload รวมทั้งเครื่อง M5 จริงก่อนเลือก app defaults
+
+เก็บ distribution, paired differences, batch CPU/RSS receipts, environment และ fixture/build/recipe digests ใน [sanitized JSON](benchmarks/2026-10-06-m2-helper-workers.json) `sourceRevision` คือ base commit ตอนวัด; recipe digests ระบุ working-tree harness ที่ใช้ Raw diagnostics/fixtures อยู่ใน ignored `local/` ชุดก่อนแก้ขอบเขตจับเวลาถูกยกเลิกและไม่ใช้ในตัวเลขนี้ การรัน `--smoke` ใช้ไฟล์ใหญ่เพียง 1 MiB และมี block เดียว จึงเป็น correctness smoke เท่านั้น

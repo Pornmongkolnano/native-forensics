@@ -38,7 +38,7 @@ Swift client เปิด helper หนึ่ง process ต่อหนึ่�
 
 NDJSON frame จำกัด 1 MiB, file batches ไม่เกิน 128 rows, listing ceiling 50,000 records และ serialized response/cache ceiling 64 MiB พร้อม bounded stderr capture Limits ทำให้ได้ explicit partial/failure แทน silent truncation ตัวเลขนี้จำกัด serialized data ไม่ใช่ hard RSS cap หรือ measured peak RAM
 
-Cancellation เริ่มจาก protocol request และตามด้วย SIGTERM/SIGKILL เฉพาะ owned helper PID หลัง grace periods Client มี startup/inactivity deadlines และตรวจ source identity ที่ held descriptors/canonical paths ก่อนและหลังงาน ยังไม่มี parallel worker scheduler หรือผล worker 1/2/4 benchmark
+Cancellation เริ่มจาก protocol request และตามด้วย SIGTERM/SIGKILL เฉพาะ owned helper PID หลัง grace periods Client มี startup/inactivity deadlines และตรวจ source identity ที่ held descriptors/canonical paths ก่อนและหลังงาน ยังไม่มี parallel worker scheduler ในแอป มี [helper concurrency experiment 1/2/4](BENCHMARKS.md) แยกจาก Swift/GUI สำหรับใช้ตัดสินใจงานต่อไป
 
 ## Hash scopes และ split images
 

@@ -28,14 +28,14 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 - RAW/EWF readers, byte-zero filesystem และ MBR/GPT partitions, allocated/deleted listing, NTFS attribute references และ extract-to-new-file SHA-256
 - [Protocol v1](ENGINE-PROTOCOL.md), helper หนึ่ง process ต่อ job, progress, cancel/timeout/crash/protocol checks และ explicit partial states
 - Swift client/cache/UI; 1 MiB frames, 128-row batches, 50,000 records และ 64 MiB serialized response/cache limits
-- เลือก image type, sector size และ IANA evidence timezone พร้อม display timezone แยกต่างหาก
+- เลือก image type, sector size, listing limit 1–50,000 และ IANA evidence timezone พร้อม display timezone แยกต่างหาก
 - Explicit ordered segments: no sibling discovery, intrinsic EWF order/completeness และ actual-opened-path validation
 - Selected-file/container-segment hashes, hashes ของทุก ordered inputs, logical-image SHA-256 และ extracted-file SHA-256 เป็นคนละ scopes
 - Atomic versioned JSON cache ที่เปิดเป็น historical result; extraction bytes ตรวจอิสระก่อน exclusive publication
 - Portable NTFS corpus สร้างด้วย Python stdlib: resident/nonresident, allocated/deleted, fragmented runs, sparse hole, hardlinks, Unicode, file/directory ADS พร้อม exact bytes/locators และ 100 ns timestamps
 - exFAT per-field offsets, unknown-offset IANA/DST interpretation, Gregorian date validation และ missing-time handling; valid-offset timestamps ตรวจภายใต้หลาย host timezones
 
-ชุด correctness ล่าสุดผ่าน native 87 checks และ Swift 41 tests รวม 20 image configurations ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
+ชุด correctness ล่าสุดผ่าน native 87 checks, Swift 41 tests รวม 20 image configurations และ benchmark harness 7 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:
 
@@ -43,8 +43,8 @@ Acceptance gates ที่ยังต้องปิดก่อน Phase 1 com
 - Unknown-offset DST overlap/gap policy และ classic FAT invalid-calendar handling; offset ที่ไม่ทราบค่าต้องคง timezone assumption
 - Fragmented deleted FAT recovery เมื่อ chain ถูกล้าง และ differential references ของ damaged/reallocated files; known intact NTFS deleted runs และ allocated fragmented FAT ผ่าน exact-byte checks แล้ว
 - Negative input/protocol/cancel coverage พร้อม retained partial/error state และ safe export races; ผลที่ผ่านจริงระบุใน Validation ไม่อนุมานจาก code
-- Worker 1/2/4 experiment และ profiler ก่อนสร้าง measured worker policy; 50,000/64 MiB limits ไม่แทน peak-RAM measurement หรือ memory scheduler
-- Full GUI create → inspect → analyze → browse → extract → reopen ทั้ง success, partial, cancel และ failure พร้อม hash/receipt readback
+- วัด worker policy ทั้งแอปต่อจาก helper 1/2/4 experiment ที่ผ่านแล้ว: Swift prehash/publication, mixed/cold/large inputs, battery/thermal และ GUI RAM; 50,000/64 MiB limits ไม่แทน memory scheduler
+- Full GUI flow เพิ่ม create/inspect cancellation, fresh unsupported input, partition-open partial results และ cancel/save/publication races; success, listing-limit partial reopen/export, native hash cancellation และ retained-cache failure ผ่านพร้อม hash/receipt readback แล้ว
 - Independent fixture outputs และ differential reference ตรงกันภายใน advertised capability ไม่ประกาศรองรับจาก compiled generic TSK formats เพียงอย่างเดียว
 
 **UDF ไม่มีใน TSK adapter ที่เลือก** ต้องมี adapter และ independent corpus แยกเพื่อรองรับงาน UDF; เป็น extension ที่ยังไม่ได้ implement APFS/FileVault/encrypted filesystems ถูกปิดไว้สำหรับ Phase 3 ส่วน SQLite result store/migrations ยังเป็นทางเลือกหลัง bounded JSON และ workload จำเป็นต้องใช้
@@ -79,7 +79,7 @@ Acceptance gate:
 
 ## เงื่อนไขเพิ่มประสิทธิภาพ
 
-ยังไม่มี matched benchmark claim ของระบบใหม่ ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
+มี matched native-helper concurrency experiment แล้ว แต่ยังไม่มี full-app หรือ Autopsy comparison claim ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
 
 งานตัวอย่างที่ควรทดลองคือ fewer rereads, bounded streaming buffers, batched DB/index writes, export/hash pipeline และ preview caching Worker defaults ต้องมาจากผลบนหลาย workload/power policies ไม่ใช้ชื่อรุ่น CPU กำหนดจำนวน threads เพียงอย่างเดียว
 

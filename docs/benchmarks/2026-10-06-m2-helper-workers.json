@@ -1,0 +1,1758 @@
+{
+  "schemaVersion": 1,
+  "status": "completed",
+  "smokeOnly": false,
+  "comparisonEligible": true,
+  "startedUTC": "20261006T134536Z",
+  "finishedUTC": "2026-10-06T13:46:38.508636+00:00",
+  "environmentBefore": {
+    "architecture": "arm64",
+    "system": "Darwin",
+    "kernel": "27.0.0",
+    "python": "3.14.8",
+    "backgroundLoadAverage1m5m15m": [
+      2.18994140625,
+      2.0419921875,
+      2.1181640625
+    ],
+    "macOS": "27.0.1",
+    "osBuild": "26A434",
+    "machineClass": "Mac14,2",
+    "ramBytes": "17179869184",
+    "cpuClass": "Apple M2",
+    "logicalCPUCount": "8",
+    "physicalCPUCount": "8",
+    "powerSource": "AC",
+    "batteryState": "charged;0:00 remaining present: true",
+    "lowPowerModeSettings": [
+      "lowpowermode         0",
+      "lowpowermode         0"
+    ],
+    "thermalStatus": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "sourceOutputFilesystem": "apfs",
+    "sourceOutputSolidState": true
+  },
+  "environmentAfter": {
+    "architecture": "arm64",
+    "system": "Darwin",
+    "kernel": "27.0.0",
+    "python": "3.14.8",
+    "backgroundLoadAverage1m5m15m": [
+      3.154296875,
+      2.35986328125,
+      2.2314453125
+    ],
+    "macOS": "27.0.1",
+    "osBuild": "26A434",
+    "machineClass": "Mac14,2",
+    "ramBytes": "17179869184",
+    "cpuClass": "Apple M2",
+    "logicalCPUCount": "8",
+    "physicalCPUCount": "8",
+    "powerSource": "AC",
+    "batteryState": "charged;0:00 remaining present: true",
+    "lowPowerModeSettings": [
+      "lowpowermode         0",
+      "lowpowermode         0"
+    ],
+    "thermalStatus": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "sourceOutputFilesystem": "apfs",
+    "sourceOutputSolidState": true
+  },
+  "method": {
+    "scope": "instrumented native-helper extraction queue including helper startup, filesystem reads, content SHA-256, writes, fsync and Python queue dispatch/pipe-pump overhead",
+    "excluded": [
+      "Swift selected-container prehash",
+      "Swift client staging/publication",
+      "GUI",
+      "case/cache/index",
+      "independent export validation",
+      "setup enumeration/logical-image hash",
+      "before/after source hashes"
+    ],
+    "cacheRegime": "warmed OS/filesystem caches; before-batch streaming input prehash warms all source bytes. No global purge or cold-cache claim",
+    "cpu": "sum of exact owned helper wait4 user/system CPU",
+    "diskCounters": "wait4 block operations, NOT byte counts; unavailable/zero counters do not imply zero disk I/O",
+    "workerMeaning": "maximum concurrent single-job helper processes, not threads or production app policy",
+    "seed": 20261006,
+    "workers": [
+      1,
+      2,
+      4
+    ],
+    "runsPerCount": 5,
+    "warmupsPerCount": 1,
+    "maximumBufferBytesPerPipe": 2097152,
+    "samplingSeconds": 0.002,
+    "perJobTimeoutSeconds": 180,
+    "retention": "delete only exact newly created, independently verified export files after each batch"
+  },
+  "sourceRevision": "6a6cdc53bf14e736e768a0d2f43685ce8b8e2ff3",
+  "recipeDigests": {
+    "script/benchmark_native_engine.py": "db324df903f8b3344e3c1601479e3afc0ab2ff126c9f77159e278078a97d390c",
+    "Tests/NativeEngine/benchmark_fixtures.py": "61ce351788872aeb2f2884dd9fd165a7c04294ebd298a188831d44ce2198f875",
+    "Tests/NativeEngine/fixtures.py": "39a0bd0d79c87f2df50fab45309bf6a9b5b183227c194e8076449eed7f9681ad",
+    "Tests/NativeEngine/ntfs_fixtures.py": "f8ff1b4c9ff2cbf08b9f58c82ee235a3cb107d92edb7eef2729462a660dd3054"
+  },
+  "inputHashes": [
+    {
+      "name": "NFTSKEngine",
+      "size": 2406864,
+      "sha256": "5c6208eb267daca21670d58bc86c36b11f6fd633b4c8021f04ee16a584049156"
+    },
+    {
+      "name": "small-ntfs-streams.raw",
+      "size": 16777216,
+      "sha256": "972e11ec14598d55a2f0da7def7db832f08530951e5d7301387173d854990c0d"
+    },
+    {
+      "name": "large-fat32.raw",
+      "size": 286720000,
+      "sha256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+    }
+  ],
+  "buildReceiptSHA256": "bcc63f162d6c510d49608dcc182f0562035bcff4858c83cac916530731ec024a",
+  "nativeBuild": {
+    "engineSha256": "5c6208eb267daca21670d58bc86c36b11f6fd633b4c8021f04ee16a584049156",
+    "engineVersion": "0.1.1-tsk4.15.0",
+    "patchDigest": "ccdacadbd5238c63c3c6710fff5e73eab1799a3ff00e67289b48aa9505b754f2",
+    "architecture": "arm64",
+    "buildFingerprint": "d9160b6f79de8c8a7c52f6ad2d5fdb92601ab2be728562607d26efa31228aa50",
+    "toolchain": {
+      "architecture": "arm64",
+      "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+      "minimumMacOS": "14.0",
+      "sdkVersion": "27.0"
+    },
+    "compiledImageCapabilities": [
+      "RAW",
+      "EWF"
+    ],
+    "linking": "static libtsk + libewf, header-only nlohmann/json; system-only dynamic libraries"
+  },
+  "helperProvenance": {
+    "engineVersion": "0.1.1-tsk4.15.0",
+    "patchDigest": "ccdacadbd5238c63c3c6710fff5e73eab1799a3ff00e67289b48aa9505b754f2",
+    "capabilities": [
+      "raw",
+      "ewf",
+      "mbr",
+      "gpt",
+      "filesystem-enumeration",
+      "deleted-file-entries",
+      "ntfs-data-streams",
+      "logical-image-sha256",
+      "file-extraction-sha256"
+    ]
+  },
+  "workloads": [
+    {
+      "name": "small-ntfs-streams",
+      "jobCount": 52,
+      "byteCount": 142452,
+      "imageName": "small-ntfs-streams.raw",
+      "logicalSize": 16777216,
+      "logicalSHA256": "972e11ec14598d55a2f0da7def7db832f08530951e5d7301387173d854990c0d"
+    },
+    {
+      "name": "large-fat32-extraction",
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "imageName": "large-fat32.raw",
+      "logicalSize": 286720000,
+      "logicalSHA256": "4d7330cf858b7e0a9722809c343dfa54da199fd2907244a557561fe6d122615d"
+    }
+  ],
+  "summary": {
+    "small-ntfs-streams": {
+      "workers": {
+        "1": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.3488343750068452,
+          "wallMinimumSeconds": 0.3440944160101935,
+          "wallMaximumSeconds": 0.35822216598899104,
+          "wallSamplesSeconds": [
+            0.35139258300478105,
+            0.34474462500656955,
+            0.3440944160101935,
+            0.35822216598899104,
+            0.3488343750068452
+          ],
+          "userCPUMedianSeconds": 0.10725699999999999,
+          "systemCPUMedianSeconds": 0.144839,
+          "sampledAggregateRSSMaximumBytes": 9519104,
+          "individualKernelRSSMaximumBytes": 9535488,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 9535488,
+          "jobsPerSecondAtMedian": 149.06787784024897,
+          "throughputMiBPerSecondAtMedian": 0.389447896922536
+        },
+        "2": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.1916034580062842,
+          "wallMinimumSeconds": 0.18994741700589657,
+          "wallMaximumSeconds": 0.20145704101014417,
+          "wallSamplesSeconds": [
+            0.19211445900145918,
+            0.20145704101014417,
+            0.18994741700589657,
+            0.19110837500193156,
+            0.1916034580062842
+          ],
+          "userCPUMedianSeconds": 0.112618,
+          "systemCPUMedianSeconds": 0.152136,
+          "sampledAggregateRSSMaximumBytes": 17874944,
+          "individualKernelRSSMaximumBytes": 9535488,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 19070976,
+          "jobsPerSecondAtMedian": 271.3938492607712,
+          "throughputMiBPerSecondAtMedian": 0.7090311163186179
+        },
+        "4": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.11533562499971595,
+          "wallMinimumSeconds": 0.11437587499676738,
+          "wallMaximumSeconds": 0.11858691700035706,
+          "wallSamplesSeconds": [
+            0.11858691700035706,
+            0.11456633399939165,
+            0.11533562499971595,
+            0.11437587499676738,
+            0.11569095800223295
+          ],
+          "userCPUMedianSeconds": 0.12203599999999999,
+          "systemCPUMedianSeconds": 0.17768499999999998,
+          "sampledAggregateRSSMaximumBytes": 21217280,
+          "individualKernelRSSMaximumBytes": 9568256,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 38256640,
+          "jobsPerSecondAtMedian": 450.8580934999751,
+          "throughputMiBPerSecondAtMedian": 1.1778911652062207
+        }
+      },
+      "pairedWithOneWorker": {
+        "2": {
+          "pairs": [
+            {
+              "block": 0,
+              "differenceSeconds": -0.15927812400332186,
+              "ratioToOneWorker": 0.5467231475367973
+            },
+            {
+              "block": 1,
+              "differenceSeconds": -0.14328758399642538,
+              "ratioToOneWorker": 0.584366010075734
+            },
+            {
+              "block": 2,
+              "differenceSeconds": -0.15414699900429696,
+              "ratioToOneWorker": 0.5520212132715038
+            },
+            {
+              "block": 3,
+              "differenceSeconds": -0.16711379098705947,
+              "ratioToOneWorker": 0.5334912050300225
+            },
+            {
+              "block": 4,
+              "differenceSeconds": -0.15723091700056102,
+              "ratioToOneWorker": 0.5492677090740393
+            }
+          ],
+          "ratioMedian": 0.5492677090740393
+        },
+        "4": {
+          "pairs": [
+            {
+              "block": 0,
+              "differenceSeconds": -0.23280566600442398,
+              "ratioToOneWorker": 0.3374770064476391
+            },
+            {
+              "block": 1,
+              "differenceSeconds": -0.2301782910071779,
+              "ratioToOneWorker": 0.33232232118835336
+            },
+            {
+              "block": 2,
+              "differenceSeconds": -0.22875879101047758,
+              "ratioToOneWorker": 0.3351859827806657
+            },
+            {
+              "block": 3,
+              "differenceSeconds": -0.24384629099222366,
+              "ratioToOneWorker": 0.31928754235795226
+            },
+            {
+              "block": 4,
+              "differenceSeconds": -0.23314341700461227,
+              "ratioToOneWorker": 0.3316501075903507
+            }
+          ],
+          "ratioMedian": 0.33232232118835336
+        }
+      }
+    },
+    "large-fat32-extraction": {
+      "workers": {
+        "1": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.6990415830077836,
+          "wallMinimumSeconds": 0.6940155000047525,
+          "wallMaximumSeconds": 0.7073124589951476,
+          "wallSamplesSeconds": [
+            0.6940155000047525,
+            0.7073124589951476,
+            0.7009737089974806,
+            0.6990415830077836,
+            0.6970295830105897
+          ],
+          "userCPUMedianSeconds": 0.439697,
+          "systemCPUMedianSeconds": 0.21326399999999998,
+          "sampledAggregateRSSMaximumBytes": 9142272,
+          "individualKernelRSSMaximumBytes": 9175040,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 9175040,
+          "jobsPerSecondAtMedian": 11.444240506520657,
+          "throughputMiBPerSecondAtMedian": 1464.8627848346441
+        },
+        "2": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.3722122920007678,
+          "wallMinimumSeconds": 0.3704737920052139,
+          "wallMaximumSeconds": 0.376578832991072,
+          "wallSamplesSeconds": [
+            0.3727505000133533,
+            0.3704737920052139,
+            0.3712295409932267,
+            0.376578832991072,
+            0.3722122920007678
+          ],
+          "userCPUMedianSeconds": 0.458468,
+          "systemCPUMedianSeconds": 0.219362,
+          "sampledAggregateRSSMaximumBytes": 18268160,
+          "individualKernelRSSMaximumBytes": 9175040,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 18333696,
+          "jobsPerSecondAtMedian": 21.49311071108715,
+          "throughputMiBPerSecondAtMedian": 2751.1181710191554
+        },
+        "4": {
+          "sampleCount": 5,
+          "wallMedianSeconds": 0.27483670799119864,
+          "wallMinimumSeconds": 0.273965499989572,
+          "wallMaximumSeconds": 0.27894783299416304,
+          "wallSamplesSeconds": [
+            0.27440075000049546,
+            0.27894783299416304,
+            0.27483670799119864,
+            0.27597241700277664,
+            0.273965499989572
+          ],
+          "userCPUMedianSeconds": 0.465213,
+          "systemCPUMedianSeconds": 0.259768,
+          "sampledAggregateRSSMaximumBytes": 36519936,
+          "individualKernelRSSMaximumBytes": 9175040,
+          "aggregateRSSKernelUpperBoundMaximumBytes": 36651008,
+          "jobsPerSecondAtMedian": 29.10819321943047,
+          "throughputMiBPerSecondAtMedian": 3725.8487320871
+        }
+      },
+      "pairedWithOneWorker": {
+        "2": {
+          "pairs": [
+            {
+              "block": 0,
+              "differenceSeconds": -0.32126499999139924,
+              "ratioToOneWorker": 0.5370924712932215
+            },
+            {
+              "block": 1,
+              "differenceSeconds": -0.3368386669899337,
+              "ratioToOneWorker": 0.5237767089972262
+            },
+            {
+              "block": 2,
+              "differenceSeconds": -0.3297441680042539,
+              "ratioToOneWorker": 0.5295912474722514
+            },
+            {
+              "block": 3,
+              "differenceSeconds": -0.32246275001671165,
+              "ratioToOneWorker": 0.538707341801838
+            },
+            {
+              "block": 4,
+              "differenceSeconds": -0.32481729100982193,
+              "ratioToOneWorker": 0.5339978403687249
+            }
+          ],
+          "ratioMedian": 0.5339978403687249
+        },
+        "4": {
+          "pairs": [
+            {
+              "block": 0,
+              "differenceSeconds": -0.4196147500042571,
+              "ratioToOneWorker": 0.39538129911884734
+            },
+            {
+              "block": 1,
+              "differenceSeconds": -0.42836462600098457,
+              "ratioToOneWorker": 0.39437709522387576
+            },
+            {
+              "block": 2,
+              "differenceSeconds": -0.42613700100628193,
+              "ratioToOneWorker": 0.392078482350308
+            },
+            {
+              "block": 3,
+              "differenceSeconds": -0.423069166005007,
+              "ratioToOneWorker": 0.39478683916819834
+            },
+            {
+              "block": 4,
+              "differenceSeconds": -0.4230640830210177,
+              "ratioToOneWorker": 0.39304716279941554
+            }
+          ],
+          "ratioMedian": 0.39437709522387576
+        }
+      }
+    }
+  },
+  "finalInputHashesMatched": true,
+  "rawReportSHA256": "5b572b71c65fd8135c2e814b337292ee59f587129f7dccbe61f061ca5d8bd1a2",
+  "verifiedExports": 1080,
+  "sanitization": "Omitted absolute paths, output identities and per-job process objects; preserved batch measurement receipts and synthetic provenance. Source revision is the base commit; recipe digests identify the working-tree harness used.",
+  "batches": [
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11572599998908117,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.123013,
+      "systemCPUSeconds": 0.17990399999999998,
+      "largestIndividualKernelPeakRSSBytes": 9568256,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38207488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 42997,
+        "voluntaryContextSwitches": 48,
+        "involuntaryContextSwitches": 934
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 37,
+        "aggregatePeakRSSSampledBytes": 17006592,
+        "maximumObservedHelperCount": 3,
+        "actualIntervalMedianSeconds": 0.002883916997234337,
+        "actualIntervalMaximumSeconds": 0.00522908300627023,
+        "rssSampleReadWallSeconds": 0.006937292026123032,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.19533754199801479,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.113747,
+      "systemCPUSeconds": 0.15562399999999998,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43043,
+        "voluntaryContextSwitches": 48,
+        "involuntaryContextSwitches": 702
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 60,
+        "aggregatePeakRSSSampledBytes": 17842176,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.00257574999704957,
+        "actualIntervalMaximumSeconds": 0.006217250003828667,
+        "rssSampleReadWallSeconds": 0.004666544060455635,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.3665965830005007,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.10894,
+      "systemCPUSeconds": 0.148058,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43011,
+        "voluntaryContextSwitches": 52,
+        "involuntaryContextSwitches": 554
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 95,
+        "aggregatePeakRSSSampledBytes": 9469952,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025555210013408214,
+        "actualIntervalMaximumSeconds": 0.012271333005628549,
+        "rssSampleReadWallSeconds": 0.0024985490017570555,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.27482979200431146,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.469732,
+      "systemCPUSeconds": 0.288394,
+      "largestIndividualKernelPeakRSSBytes": 9191424,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36683776,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 32,
+        "minorFaults": 6435,
+        "voluntaryContextSwitches": 580,
+        "involuntaryContextSwitches": 1983
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 104,
+        "aggregatePeakRSSSampledBytes": 36487168,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.002554792008595541,
+        "actualIntervalMaximumSeconds": 0.006442957994295284,
+        "rssSampleReadWallSeconds": 0.006495000023278408,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.7088528750027763,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.435816,
+      "systemCPUSeconds": 0.211858,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9158656,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6446,
+        "voluntaryContextSwitches": 132,
+        "involuntaryContextSwitches": 149
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 274,
+        "aggregatePeakRSSSampledBytes": 9109504,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.002515291009331122,
+        "actualIntervalMaximumSeconds": 0.010156292002648115,
+        "rssSampleReadWallSeconds": 0.0022866629296913743,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "warmup",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.3692825409962097,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.45730899999999997,
+      "systemCPUSeconds": 0.21817299999999998,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18317312,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6455,
+        "voluntaryContextSwitches": 67,
+        "involuntaryContextSwitches": 838
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 143,
+        "aggregatePeakRSSSampledBytes": 18235392,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.002523562499845866,
+        "actualIntervalMaximumSeconds": 0.005233375006355345,
+        "rssSampleReadWallSeconds": 0.002513253057259135,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.3727505000133533,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.45797299999999996,
+      "systemCPUSeconds": 0.219362,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18317312,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6459,
+        "voluntaryContextSwitches": 80,
+        "involuntaryContextSwitches": 811
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 144,
+        "aggregatePeakRSSSampledBytes": 18251776,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.002522750000935048,
+        "actualIntervalMaximumSeconds": 0.006084542008466087,
+        "rssSampleReadWallSeconds": 0.00220266699034255,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.6940155000047525,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.43702799999999997,
+      "systemCPUSeconds": 0.21126499999999998,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9175040,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6454,
+        "voluntaryContextSwitches": 64,
+        "involuntaryContextSwitches": 150
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 266,
+        "aggregatePeakRSSSampledBytes": 9142272,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025162079982692376,
+        "actualIntervalMaximumSeconds": 0.010926125003607012,
+        "rssSampleReadWallSeconds": 0.0023444160033250228,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.27440075000049546,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.465213,
+      "systemCPUSeconds": 0.259768,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36618240,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6456,
+        "voluntaryContextSwitches": 643,
+        "involuntaryContextSwitches": 1553
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 105,
+        "aggregatePeakRSSSampledBytes": 36421632,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.002545979499700479,
+        "actualIntervalMaximumSeconds": 0.0063898750086082146,
+        "rssSampleReadWallSeconds": 0.0037221698876237497,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.19211445900145918,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.112202,
+      "systemCPUSeconds": 0.153776,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 76,
+        "minorFaults": 43114,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 584
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 55,
+        "aggregatePeakRSSSampledBytes": 17022976,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025910000040312298,
+        "actualIntervalMaximumSeconds": 0.00621191700338386,
+        "rssSampleReadWallSeconds": 0.004268619988579303,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11858691700035706,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.12203599999999999,
+      "systemCPUSeconds": 0.17768499999999998,
+      "largestIndividualKernelPeakRSSBytes": 9568256,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38207488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43077,
+        "voluntaryContextSwitches": 48,
+        "involuntaryContextSwitches": 927
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 35,
+        "aggregatePeakRSSSampledBytes": 15663104,
+        "maximumObservedHelperCount": 3,
+        "actualIntervalMedianSeconds": 0.0031356670006061904,
+        "actualIntervalMaximumSeconds": 0.003921875002561137,
+        "rssSampleReadWallSeconds": 0.006472544962889515,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 0,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.35139258300478105,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.107218,
+      "systemCPUSeconds": 0.14346799999999998,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43125,
+        "voluntaryContextSwitches": 53,
+        "involuntaryContextSwitches": 495
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 91,
+        "aggregatePeakRSSSampledBytes": 9502720,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025759380077943206,
+        "actualIntervalMaximumSeconds": 0.010530416999245062,
+        "rssSampleReadWallSeconds": 0.0023357020399998873,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.3704737920052139,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.458685,
+      "systemCPUSeconds": 0.219323,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18317312,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6455,
+        "voluntaryContextSwitches": 68,
+        "involuntaryContextSwitches": 767
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 143,
+        "aggregatePeakRSSSampledBytes": 18268160,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.002524937503039837,
+        "actualIntervalMaximumSeconds": 0.0058814169897232205,
+        "rssSampleReadWallSeconds": 0.0025983740342780948,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.27894783299416304,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.46671199999999996,
+      "systemCPUSeconds": 0.265901,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36634624,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6470,
+        "voluntaryContextSwitches": 557,
+        "involuntaryContextSwitches": 1840
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 106,
+        "aggregatePeakRSSSampledBytes": 36519936,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.0025639999948907644,
+        "actualIntervalMaximumSeconds": 0.0035134170029778033,
+        "rssSampleReadWallSeconds": 0.005046874022809789,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.7073124589951476,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.439697,
+      "systemCPUSeconds": 0.211081,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9158656,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6457,
+        "voluntaryContextSwitches": 64,
+        "involuntaryContextSwitches": 118
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 267,
+        "aggregatePeakRSSSampledBytes": 9125888,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025157080017379485,
+        "actualIntervalMaximumSeconds": 0.010354665995691903,
+        "rssSampleReadWallSeconds": 0.002458128030411899,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.34474462500656955,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.107012,
+      "systemCPUSeconds": 0.14355099999999998,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43119,
+        "voluntaryContextSwitches": 50,
+        "involuntaryContextSwitches": 493
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 89,
+        "aggregatePeakRSSSampledBytes": 9453568,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0026700629969127476,
+        "actualIntervalMaximumSeconds": 0.01088299999537412,
+        "rssSampleReadWallSeconds": 0.0023147890460677445,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.20145704101014417,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.117339,
+      "systemCPUSeconds": 0.163605,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43185,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 771
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 59,
+        "aggregatePeakRSSSampledBytes": 17874944,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025974579984904267,
+        "actualIntervalMaximumSeconds": 0.006257957997149788,
+        "rssSampleReadWallSeconds": 0.0035785040381597355,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 1,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11456633399939165,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.12255899999999999,
+      "systemCPUSeconds": 0.178949,
+      "largestIndividualKernelPeakRSSBytes": 9551872,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38158336,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43144,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 925
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 34,
+        "aggregatePeakRSSSampledBytes": 20185088,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.003199291997589171,
+        "actualIntervalMaximumSeconds": 0.00447054099640809,
+        "rssSampleReadWallSeconds": 0.010678041027858853,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.3440944160101935,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.10725699999999999,
+      "systemCPUSeconds": 0.145166,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43153,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 512
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 93,
+        "aggregatePeakRSSSampledBytes": 9519104,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.002555062499595806,
+        "actualIntervalMaximumSeconds": 0.005931417006650008,
+        "rssSampleReadWallSeconds": 0.002153005058062263,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.18994741700589657,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.112497,
+      "systemCPUSeconds": 0.150541,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43184,
+        "voluntaryContextSwitches": 51,
+        "involuntaryContextSwitches": 595
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 56,
+        "aggregatePeakRSSSampledBytes": 17776640,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025657499936642125,
+        "actualIntervalMaximumSeconds": 0.006156250005005859,
+        "rssSampleReadWallSeconds": 0.002967002088553272,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11533562499971595,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.12274199999999999,
+      "systemCPUSeconds": 0.18026699999999998,
+      "largestIndividualKernelPeakRSSBytes": 9568256,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38256640,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43197,
+        "voluntaryContextSwitches": 52,
+        "involuntaryContextSwitches": 951
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 35,
+        "aggregatePeakRSSSampledBytes": 21217280,
+        "maximumObservedHelperCount": 3,
+        "actualIntervalMedianSeconds": 0.003196583507815376,
+        "actualIntervalMaximumSeconds": 0.004367458997876383,
+        "rssSampleReadWallSeconds": 0.008903626032406464,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.27483670799119864,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.464761,
+      "systemCPUSeconds": 0.257897,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36618240,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6458,
+        "voluntaryContextSwitches": 462,
+        "involuntaryContextSwitches": 1991
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 105,
+        "aggregatePeakRSSSampledBytes": 36487168,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.002546000003349036,
+        "actualIntervalMaximumSeconds": 0.006930999996257015,
+        "rssSampleReadWallSeconds": 0.004100332938833162,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.7009737089974806,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.440675,
+      "systemCPUSeconds": 0.213696,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9158656,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 24,
+        "minorFaults": 6433,
+        "voluntaryContextSwitches": 64,
+        "involuntaryContextSwitches": 157
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 266,
+        "aggregatePeakRSSSampledBytes": 9142272,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025163329992210492,
+        "actualIntervalMaximumSeconds": 0.011151333994348533,
+        "rssSampleReadWallSeconds": 0.0024974209954962134,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 2,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.3712295409932267,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.458468,
+      "systemCPUSeconds": 0.21875899999999998,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18317312,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6458,
+        "voluntaryContextSwitches": 70,
+        "involuntaryContextSwitches": 887
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 143,
+        "aggregatePeakRSSSampledBytes": 18268160,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025255205036955886,
+        "actualIntervalMaximumSeconds": 0.006125166997662745,
+        "rssSampleReadWallSeconds": 0.0027038260450353846,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.376578832991072,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.46296899999999996,
+      "systemCPUSeconds": 0.22429999999999997,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18333696,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6457,
+        "voluntaryContextSwitches": 69,
+        "involuntaryContextSwitches": 955
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 146,
+        "aggregatePeakRSSSampledBytes": 18235392,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.002523708011722192,
+        "actualIntervalMaximumSeconds": 0.006420541001716629,
+        "rssSampleReadWallSeconds": 0.0036661250778706744,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.27597241700277664,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.46485099999999996,
+      "systemCPUSeconds": 0.259021,
+      "largestIndividualKernelPeakRSSBytes": 9175040,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36651008,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6462,
+        "voluntaryContextSwitches": 658,
+        "involuntaryContextSwitches": 1599
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 106,
+        "aggregatePeakRSSSampledBytes": 36519936,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.002551917001255788,
+        "actualIntervalMaximumSeconds": 0.0037532080023083836,
+        "rssSampleReadWallSeconds": 0.005113340928801335,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.6990415830077836,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.43912399999999996,
+      "systemCPUSeconds": 0.21326399999999998,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9158656,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 24,
+        "minorFaults": 6441,
+        "voluntaryContextSwitches": 64,
+        "involuntaryContextSwitches": 173
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 266,
+        "aggregatePeakRSSSampledBytes": 9142272,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025167080020764843,
+        "actualIntervalMaximumSeconds": 0.010437457996886224,
+        "rssSampleReadWallSeconds": 0.0024095758417388424,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11437587499676738,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.12120099999999999,
+      "systemCPUSeconds": 0.173944,
+      "largestIndividualKernelPeakRSSBytes": 9551872,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38174720,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43175,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 931
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 35,
+        "aggregatePeakRSSSampledBytes": 18464768,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.0030129579972708598,
+        "actualIntervalMaximumSeconds": 0.0043312909983797,
+        "rssSampleReadWallSeconds": 0.010712957984651439,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.35822216598899104,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.10808599999999999,
+      "systemCPUSeconds": 0.145234,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43187,
+        "voluntaryContextSwitches": 50,
+        "involuntaryContextSwitches": 504
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 93,
+        "aggregatePeakRSSSampledBytes": 9502720,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.002566312497947365,
+        "actualIntervalMaximumSeconds": 0.011239749990636483,
+        "rssSampleReadWallSeconds": 0.002486880053766072,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 3,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.19110837500193156,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.112618,
+      "systemCPUSeconds": 0.15168299999999998,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43145,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 582
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 57,
+        "aggregatePeakRSSSampledBytes": 16105472,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025867710064630955,
+        "actualIntervalMaximumSeconds": 0.006803832991863601,
+        "rssSampleReadWallSeconds": 0.003330579027533531,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "large-fat32-extraction",
+      "workers": 2,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.3722122920007678,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.457723,
+      "systemCPUSeconds": 0.220626,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 18317312,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6454,
+        "voluntaryContextSwitches": 73,
+        "involuntaryContextSwitches": 859
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 144,
+        "aggregatePeakRSSSampledBytes": 18268160,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025249580066883937,
+        "actualIntervalMaximumSeconds": 0.005607833998510614,
+        "rssSampleReadWallSeconds": 0.002528159035136923,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "large-fat32-extraction",
+      "workers": 4,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.273965499989572,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.466812,
+      "systemCPUSeconds": 0.266244,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 36618240,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6458,
+        "voluntaryContextSwitches": 522,
+        "involuntaryContextSwitches": 1808
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 106,
+        "aggregatePeakRSSSampledBytes": 36470784,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.0025655000063125044,
+        "actualIntervalMaximumSeconds": 0.0027344170084688812,
+        "rssSampleReadWallSeconds": 0.004404165025334805,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "large-fat32-extraction",
+      "workers": 1,
+      "jobCount": 8,
+      "byteCount": 1073741824,
+      "wallSeconds": 0.6970295830105897,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.44509,
+      "systemCPUSeconds": 0.215327,
+      "largestIndividualKernelPeakRSSBytes": 9158656,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9158656,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 8,
+        "minorFaults": 6456,
+        "voluntaryContextSwitches": 64,
+        "involuntaryContextSwitches": 228
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 269,
+        "aggregatePeakRSSSampledBytes": 9142272,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025174999973387457,
+        "actualIntervalMaximumSeconds": 0.006087667003157549,
+        "rssSampleReadWallSeconds": 0.002587913942988962,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "small-ntfs-streams",
+      "workers": 1,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.3488343750068452,
+      "maximumLiveHelpers": 1,
+      "userCPUSeconds": 0.107624,
+      "systemCPUSeconds": 0.144839,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 9535488,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43123,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 490
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 95,
+        "aggregatePeakRSSSampledBytes": 9502720,
+        "maximumObservedHelperCount": 1,
+        "actualIntervalMedianSeconds": 0.0025535005042911507,
+        "actualIntervalMaximumSeconds": 0.010132208000868559,
+        "rssSampleReadWallSeconds": 0.002365416061365977,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "small-ntfs-streams",
+      "workers": 2,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.1916034580062842,
+      "maximumLiveHelpers": 2,
+      "userCPUSeconds": 0.112797,
+      "systemCPUSeconds": 0.152136,
+      "largestIndividualKernelPeakRSSBytes": 9535488,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 19070976,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43149,
+        "voluntaryContextSwitches": 49,
+        "involuntaryContextSwitches": 615
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 58,
+        "aggregatePeakRSSSampledBytes": 15122432,
+        "maximumObservedHelperCount": 2,
+        "actualIntervalMedianSeconds": 0.0025891249970300123,
+        "actualIntervalMaximumSeconds": 0.006440834011300467,
+        "rssSampleReadWallSeconds": 0.0050479159981478006,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    },
+    {
+      "phase": "measured",
+      "block": 4,
+      "workload": "small-ntfs-streams",
+      "workers": 4,
+      "jobCount": 52,
+      "byteCount": 142452,
+      "wallSeconds": 0.11569095800223295,
+      "maximumLiveHelpers": 4,
+      "userCPUSeconds": 0.121256,
+      "systemCPUSeconds": 0.174811,
+      "largestIndividualKernelPeakRSSBytes": 9568256,
+      "sumLargestWorkerCountKernelPeaksUpperBoundBytes": 38174720,
+      "ioCounters": {
+        "blockInputOperations": 0,
+        "blockOutputOperations": 0,
+        "majorFaults": 52,
+        "minorFaults": 43192,
+        "voluntaryContextSwitches": 48,
+        "involuntaryContextSwitches": 864
+      },
+      "rssSampler": {
+        "method": "macOS libproc PROC_PIDTASKINFO resident bytes",
+        "requestedIntervalSeconds": 0.002,
+        "sampleCount": 36,
+        "aggregatePeakRSSSampledBytes": 18825216,
+        "maximumObservedHelperCount": 4,
+        "actualIntervalMedianSeconds": 0.003078541994909756,
+        "actualIntervalMaximumSeconds": 0.005143917005625553,
+        "rssSampleReadWallSeconds": 0.008061748027103022,
+        "failedSamples": [],
+        "limitations": "RSS summed across exact live owned helper PIDs. Samples read PIDs sequentially, not atomically; short jobs/peaks can be missed. Sampler/queue overhead is present in all instrumented batches. Parent, GUI and non-owned processes are excluded."
+      },
+      "sourceHashesBeforeAfterMatched": true,
+      "helperHashBeforeAfterMatched": true,
+      "validationOutsideTimedInterval": true
+    }
+  ]
+}
