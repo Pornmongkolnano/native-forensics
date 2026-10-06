@@ -20,7 +20,8 @@ struct EvidenceTableView: View {
             } else {
                 Table(workspace.rows, selection: $workspace.selectedEvidenceID) {
                     TableColumn("Source File") { row in
-                        Label(row.filename, systemImage: "doc")
+                        Label(row.filename, systemImage: "externaldrive.fill")
+                            .symbolRenderingMode(.hierarchical)
                             .lineLimit(1)
                             .help(row.record.sourcePath)
                     }
@@ -49,12 +50,16 @@ struct EvidenceTableView: View {
                 .contextMenu(forSelectionType: UUID.self) { selection in
                     if let id = selection.first,
                        let record = workspace.currentCase?.manifest.evidence.first(where: { $0.id == id }) {
-                        Button("Copy SHA-256") {
+                        Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(record.sha256, forType: .string)
+                        } label: {
+                            Label("Copy SHA-256", systemImage: "doc.on.doc")
                         }
-                        Button("Analyze Filesystem") {
+                        Button {
                             workspace.selectAndAnalyzeEvidence(id)
+                        } label: {
+                            Label("Analyze Filesystem", systemImage: "list.bullet.rectangle")
                         }
                         .disabled(workspace.isBusy)
                     }

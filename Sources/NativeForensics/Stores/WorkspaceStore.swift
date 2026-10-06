@@ -10,8 +10,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .evidence: "Evidence"
-        case .filesystem: "Filesystem"
+        case .evidence: "Data Sources"
+        case .filesystem: "File Views"
         case .caseDetails: "Case Details"
         }
     }
@@ -54,6 +54,10 @@ final class WorkspaceStore {
     var filesystemSearchText = "" {
         didSet { if oldValue != filesystemSearchText { refreshFilesystemRows() } }
     }
+    var filesystemCategory: FilesystemCategory = .all {
+        didSet { if oldValue != filesystemCategory { refreshFilesystemRows() } }
+    }
+    var filesystemNavigationShowsCategory = true
     var isFilteringFilesystem = false
     var engineImageType = "auto"
     var engineSectorSize = 0
@@ -206,6 +210,8 @@ final class WorkspaceStore {
         filesystemFilesByID = [:]
         selectedFileID = nil
         filesystemSearchText = ""
+        filesystemCategory = .all
+        filesystemNavigationShowsCategory = true
         additionalImageSegments = []
         extractionReceipt = nil
         extractionReceiptIsVerified = false

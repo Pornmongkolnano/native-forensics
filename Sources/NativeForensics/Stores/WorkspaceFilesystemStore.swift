@@ -2,6 +2,45 @@ import Foundation
 import ForensicsCore
 
 extension WorkspaceStore {
+    var navigationSelection: WorkspaceNavigationSelection? {
+        switch section {
+        case .evidence: return .overview
+        case .caseDetails: return .caseDetails
+        case .filesystem:
+            if !filesystemNavigationShowsCategory, let selectedEvidenceID {
+                return .dataSource(selectedEvidenceID)
+            }
+            return .fileView(filesystemCategory)
+        case nil: return nil
+        }
+    }
+
+    func navigate(to selection: WorkspaceNavigationSelection) {
+        guard !isBusy else { return }
+        switch selection {
+        case .overview: section = .evidence
+        case .caseDetails: section = .caseDetails
+        case .dataSource(let evidenceID): chooseDataSource(evidenceID)
+        case .fileView(let category): chooseFileView(category)
+        }
+    }
+
+    func chooseDataSource(_ evidenceID: UUID) {
+        guard !isBusy, currentCase?.manifest.evidence.contains(where: { $0.id == evidenceID }) == true else { return }
+        selectedEvidenceID = evidenceID
+        filesystemSearchText = ""
+        filesystemCategory = .all
+        filesystemNavigationShowsCategory = false
+        section = .filesystem
+    }
+
+    func chooseFileView(_ category: FilesystemCategory) {
+        guard !isBusy, currentCase != nil, selectedEvidence != nil else { return }
+        filesystemCategory = category
+        filesystemNavigationShowsCategory = true
+        section = .filesystem
+    }
+
     var selectedFilesystemResult: EnumerationResult? {
         guard let selectedEvidenceID else { return nil }
         return filesystemResults[selectedEvidenceID]
@@ -45,8 +84,10 @@ extension WorkspaceStore {
         cancelFilesystemSearch()
         let index = filesystemSearchIndex
         let query = filesystemSearchText
-        guard !query.isEmpty else {
+        let category = filesystemCategory
+        guard !query.isEmpty || category != .all else {
             filesystemRows = (try? index.rows(matching: "")) ?? []
+            clearInvisibleFilesystemSelection(in: filesystemRows)
             return
         }
         let searchID = UUID()
@@ -67,7 +108,7 @@ extension WorkspaceStore {
                 try await Task.sleep(for: .milliseconds(120))
                 try Task.checkCancellation()
                 let worker = Task.detached(priority: .userInitiated) {
-                    try index.rows(matching: query)
+                    try FilesystemCategory.rows(in: index, matching: query, category: category)
                 }
                 let rows = try await withTaskCancellationHandler {
                     try await worker.value
@@ -79,11 +120,10 @@ extension WorkspaceStore {
                       self.selectedEvidenceID == evidenceID,
                       self.currentCase?.manifest.id == caseID,
                       self.currentCase?.bundleURL == caseURL,
-                      self.filesystemSearchText == query else { return }
+                      self.filesystemSearchText == query,
+                      self.filesystemCategory == category else { return }
                 self.filesystemRows = rows
-                if let selected = self.selectedFileID, !rows.contains(where: { $0.id == selected }) {
-                    self.selectedFileID = nil
-                }
+                self.clearInvisibleFilesystemSelection(in: rows)
             } catch {
                 // Superseded queries are cancelled; the matching generation's
                 // defer releases its activity state without publishing old rows.
@@ -98,6 +138,12 @@ extension WorkspaceStore {
         isFilteringFilesystem = false
     }
 
+    private func clearInvisibleFilesystemSelection(in rows: [FilesystemEntry]) {
+        if let selected = selectedFileID, !rows.contains(where: { $0.id == selected }) {
+            selectedFileID = nil
+        }
+    }
+
     func refreshFilesystemSelection() {
         let selectedCaseID = currentCase?.manifest.id
         guard filesystemSelectionID != selectedEvidenceID || filesystemSelectionCaseID != selectedCaseID else { return }
@@ -110,6 +156,8 @@ extension WorkspaceStore {
         extractionReceipt = nil
         extractionReceiptIsVerified = false
         filesystemSearchText = ""
+        filesystemCategory = .all
+        filesystemNavigationShowsCategory = false
         additionalImageSegments = []
         filesystemRows = []
         filesystemFilesByID = [:]
@@ -323,6 +371,7 @@ extension WorkspaceStore {
     func cancelCurrentJob() {
         if isFilteringFilesystem {
             filesystemSearchText = ""
+            filesystemCategory = .all
         } else {
             cancelFilesystemSearch()
         }

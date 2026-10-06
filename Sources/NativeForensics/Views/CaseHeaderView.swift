@@ -2,29 +2,52 @@ import ForensicsCore
 import SwiftUI
 
 struct CaseHeaderView: View {
-    let forensicCase: ForensicCase
+    let workspace: WorkspaceStore
+
+    private var title: String {
+        workspace.section == .filesystem ? workspace.filesystemCategory.title
+            : workspace.section == .caseDetails ? "Case Details" : "Data Sources"
+    }
+
+    private var symbol: String {
+        workspace.section == .filesystem ? workspace.filesystemCategory.symbol
+            : workspace.section == .caseDetails ? "folder.badge.gearshape" : "externaldrive.fill"
+    }
+
+    private var sourceCount: String {
+        let count = workspace.currentCase?.manifest.evidence.count ?? 0
+        return "\(count.formatted()) \(count == 1 ? "source" : "sources")"
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "folder")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(forensicCase.manifest.name)
-                    .font(.headline)
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
                     .lineLimit(1)
-                    .help(forensicCase.manifest.name)
-                    .textSelection(.enabled)
-                Text("Created \(forensicCase.manifest.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Text(workspace.currentCase?.manifest.name ?? "Case")
+                    if workspace.section == .filesystem, let source = workspace.selectedEvidence {
+                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                        Text(URL(fileURLWithPath: source.sourcePath).lastPathComponent)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
             Spacer(minLength: 12)
-            Text("\(forensicCase.manifest.evidence.count.formatted()) evidence \(forensicCase.manifest.evidence.count == 1 ? "record" : "records")")
+            Label(sourceCount, systemImage: "externaldrive")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.vertical, 13)
     }
 }

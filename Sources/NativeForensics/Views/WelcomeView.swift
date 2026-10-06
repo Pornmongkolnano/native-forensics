@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct WelcomeView: View {
@@ -6,18 +7,17 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 14) {
-                Image(systemName: "externaldrive.badge.checkmark")
-                    .font(.system(size: 42, weight: .light))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(20)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 22))
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 112, height: 112)
                     .accessibilityHidden(true)
                 Text("Native Forensics")
                     .font(.largeTitle.weight(.semibold))
-                Text("A workspace for your evidence")
+                Text("Follow the evidence")
                     .font(.title3)
                     .foregroundStyle(.secondary)
-                Text("Record image hashes, explore filesystems and verify extracted files in a saved case.")
+                Text("Create a case, add your disk image and explore its files. Keep source hashes and extracted bytes together.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
@@ -33,7 +33,7 @@ struct WelcomeView: View {
             .disabled(workspace.isBusy)
             HStack(alignment: .top, spacing: 28) {
                 step("Create a case", detail: "Keep your work together", symbol: "folder.badge.plus")
-                step("Inspect an image", detail: "Record size and SHA-256", symbol: "externaldrive")
+                step("Add a data source", detail: "Record size and SHA-256", symbol: "externaldrive")
                 step("Explore files", detail: "Analyze and extract", symbol: "doc.text.magnifyingglass")
             }
             .padding(.top, 12)

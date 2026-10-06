@@ -72,7 +72,7 @@ struct InspectionStatusView: View {
                 }
             } else {
                 HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
+                    Image(systemName: "lock.shield")
                         .foregroundStyle(.secondary)
                     Text(workspace.statusMessage)
                         .foregroundStyle(.secondary)
@@ -86,5 +86,6 @@ struct InspectionStatusView: View {
         .controlSize(.small)
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
+        .background(.bar)
     }
 }

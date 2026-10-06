@@ -28,10 +28,14 @@ struct FilesystemTableView: View {
     private var rowCount: String {
         if workspace.isFilteringFilesystem { return "Filtering…" }
         let total = workspace.selectedFilesystemResult?.files.count ?? 0
-        if workspace.filesystemSearchText.isEmpty {
+        if workspace.filesystemSearchText.isEmpty && workspace.filesystemCategory == .all {
             return "\(total.formatted()) entries"
         }
         return "\(workspace.filesystemRows.count.formatted()) of \(total.formatted())"
+    }
+
+    private var isRestrictedView: Bool {
+        !workspace.filesystemSearchText.isEmpty || workspace.filesystemCategory != .all
     }
 
     var body: some View {
@@ -75,20 +79,34 @@ struct FilesystemTableView: View {
             .padding(.vertical, 10)
 
             Table(pageRows, selection: $workspace.selectedFileID) {
-                TableColumn("Path") { file in
-                    Label(file.path, systemImage: file.isDirectory ? "folder" : "doc")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(file.path)
+                TableColumn("Name") { file in
+                    HStack(spacing: 9) {
+                        ForensicFileIcon(file: file, isSelected: workspace.selectedFileID == file.id)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.name.isEmpty ? file.path : file.name)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(file.path)
+                                .font(.caption2)
+                                .foregroundStyle(workspace.selectedFileID == file.id
+                                    ? Color(nsColor: .alternateSelectedControlTextColor).opacity(0.8) : .secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                    .help(file.path)
                 }
-                .width(min: 130, ideal: 290, max: 320)
+                .width(min: 160, ideal: 270, max: 400)
 
                 TableColumn("State") { file in
-                    Text(file.isDeleted ? "Deleted" : "Allocated")
+                    Label(file.isDeleted ? "Deleted" : "Allocated", systemImage: file.isDeleted ? "trash" : "checkmark.circle")
                         .font(.caption)
-                        .foregroundStyle(file.isDeleted ? Color.orange : Color.secondary)
+                        .foregroundStyle(workspace.selectedFileID == file.id
+                            ? Color(nsColor: .alternateSelectedControlTextColor)
+                            : file.isDeleted ? Color.orange : Color.secondary)
                 }
-                .width(72)
+                .width(82)
 
                 TableColumn("Size") { file in
                     Text(EvidenceFormatting.bytes(file.size))
@@ -112,18 +130,24 @@ struct FilesystemTableView: View {
                    selection.count == 1, let id = selection.first,
                    pageRows.contains(where: { $0.id == id }),
                    let file = workspace.filesystemFilesByID[id] {
-                    Button("Show File Details") {
+                    Button {
                         workspace.selectedFileID = id
                         workspace.showInspector = true
+                    } label: {
+                        Label("Show File Details", systemImage: "sidebar.right")
                     }
-                    Button("Copy Full Path") {
+                    Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(file.path, forType: .string)
+                    } label: {
+                        Label("Copy Full Path", systemImage: "doc.on.doc")
                     }
                     Divider()
-                    Button("Extract File…") {
+                    Button {
                         workspace.selectedFileID = id
                         workspace.chooseExtractionDestination()
+                    } label: {
+                        Label("Extract File…", systemImage: "square.and.arrow.up")
                     }
                     .disabled(workspace.isBusy || workspace.isFilteringFilesystem || file.isDirectory)
                 }
@@ -131,9 +155,9 @@ struct FilesystemTableView: View {
             .overlay {
                 if workspace.filesystemRows.isEmpty && !workspace.isFilteringFilesystem {
                     ContentUnavailableView {
-                        Label(workspace.filesystemSearchText.isEmpty ? "No Entries Recorded" : "No Matching Paths", systemImage: "doc.text.magnifyingglass")
+                        Label(isRestrictedView ? "No Matching Files" : "No Entries Recorded", systemImage: "doc.text.magnifyingglass")
                     } description: {
-                        Text(workspace.filesystemSearchText.isEmpty ? "Review the analysis status and warnings. An empty result does not establish that the image contains no files." : "Try another filename or path.")
+                        Text(isRestrictedView ? "Try another filename or path, or select All Files. File categories use filename extensions." : "Review the analysis status and warnings. An empty result does not establish that the image contains no files.")
                     }
                 }
             }
@@ -144,7 +168,7 @@ struct FilesystemTableView: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help("\(pageSummary). Search covers all saved entries; the table displays up to \(pageSize) entries per page.")
+                    .help("\(pageSummary). Search covers the full selected file view; the table displays up to \(pageSize) entries per page.")
                     .accessibilityLabel(pageSummary)
                 Spacer(minLength: 0)
                 HStack(spacing: 6) {
@@ -177,6 +201,7 @@ struct FilesystemTableView: View {
             .padding(.vertical, 8)
         }
         .onChange(of: workspace.filesystemSearchText) { _, _ in resetPage() }
+        .onChange(of: workspace.filesystemCategory) { _, _ in resetPage() }
         .onChange(of: workspace.selectedEvidenceID) { _, _ in resetPage() }
         .onChange(of: workspace.selectedFilesystemResult?.savedAt) { _, _ in resetPage() }
         .onChange(of: workspace.filesystemRows.count) { _, _ in

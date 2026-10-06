@@ -25,6 +25,8 @@ struct FilesystemView: View {
                     .padding(.vertical, 10)
                 Divider()
                 FilesystemTableView(workspace: workspace)
+                Divider()
+                FilesystemSelectionView(workspace: workspace)
             } else {
                 ContentUnavailableView {
                     Label("Ready to Analyze", systemImage: "list.bullet.rectangle")
@@ -61,7 +63,7 @@ private struct FilesystemControlsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Picker("Evidence", selection: $workspace.selectedEvidenceID) {
+                Picker("Data source", selection: $workspace.selectedEvidenceID) {
                     Text("Select image").tag(nil as UUID?)
                     ForEach(workspace.currentCase?.manifest.evidence ?? [], id: \.id) { record in
                         Text(URL(fileURLWithPath: record.sourcePath).lastPathComponent)
@@ -201,7 +203,7 @@ private struct FilesystemResultSummaryView: View {
                         .lineLimit(1)
                         .help(FilesystemFormatting.status(result.status))
                     Spacer(minLength: 8)
-                    Text("\(result.files.count.formatted()) entries · \(result.volumes.count.formatted()) filesystems")
+                    Text("\(result.files.count.formatted()) entries · \(result.volumes.count.formatted()) \(result.volumes.count == 1 ? "filesystem" : "filesystems")")
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .fixedSize()

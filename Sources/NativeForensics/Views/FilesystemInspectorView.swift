@@ -4,42 +4,105 @@ import SwiftUI
 
 struct FilesystemInspectorView: View {
     let workspace: WorkspaceStore
+    @State private var pane: InspectorPane = .properties
+
+    private enum InspectorPane: String, CaseIterable {
+        case properties = "Properties"
+        case integrity = "Integrity"
+    }
 
     private var displayTimezone: String {
         workspace.timestampDisplayTimezone == "UTC" ? "UTC" : workspace.selectedFilesystemResult?.options.timezone ?? "UTC"
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let file = workspace.selectedFilesystemFile {
-                    FilesystemFileDetailsView(file: file, displayTimezone: displayTimezone)
-                    Button(action: workspace.chooseExtractionDestination) {
-                        Label("Extract to New File…", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
+                    HStack(alignment: .top, spacing: 10) {
+                        ForensicFileIcon(file: file, size: 28)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(file.name.isEmpty ? file.path : file.name)
+                                .font(.headline)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .help(file.path)
+                            Text(file.isDirectory ? "Directory" : "Filesystem file")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!workspace.canExtractFilesystemFile)
+                    if file.isDeleted {
+                        Label("Deleted metadata does not guarantee intact contents. Verify the extracted bytes.", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("File Details", systemImage: "doc.text.magnifyingglass")
-                            .font(.headline)
-                        Text("Select a file to inspect its metadata, timestamps and extraction options.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    Label("File Inspector", systemImage: "doc.text.magnifyingglass")
+                        .font(.headline)
+                }
+                if let result = workspace.selectedFilesystemResult,
+                   result.status != .completed || !result.warnings.isEmpty {
+                    Label("\(FilesystemFormatting.status(result.status)) · \(result.warnings.count.formatted()) \(result.warnings.count == 1 ? "warning" : "warnings")", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .help("Review analysis warnings in the Filesystem view before using these results.")
+                }
+                if workspace.extractionReceipt != nil && !workspace.extractionReceiptIsVerified {
+                    Label("Extraction is unverified. Review the Integrity tab before using the output.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Picker("Inspector information", selection: $pane) {
+                    ForEach(InspectorPane.allCases, id: \.self) { pane in
+                        Text(pane.rawValue).tag(pane)
                     }
                 }
-
-                if let receipt = workspace.extractionReceipt {
-                    FilesystemExtractionReceiptView(receipt: receipt, verified: workspace.extractionReceiptIsVerified)
-                }
-
-                if let result = workspace.selectedFilesystemResult {
-                    FilesystemAnalysisDetailsView(result: result)
-                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("Inspector information")
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if pane == .properties {
+                        if let file = workspace.selectedFilesystemFile {
+                            FilesystemFileDetailsView(file: file, displayTimezone: displayTimezone)
+                            Button(action: workspace.chooseExtractionDestination) {
+                                Label("Extract to New File…", systemImage: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!workspace.canExtractFilesystemFile)
+                        } else {
+                            Text("Select a file to inspect its metadata, timestamps and extraction options.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        if let receipt = workspace.extractionReceipt {
+                            FilesystemExtractionReceiptView(receipt: receipt, verified: workspace.extractionReceiptIsVerified)
+                        }
+                        if let result = workspace.selectedFilesystemResult {
+                            FilesystemAnalysisDetailsView(result: result)
+                        } else {
+                            Text("Analyze an evidence image to inspect recorded source hashes and engine provenance.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onChange(of: workspace.selectedEvidenceID) { _, _ in pane = .properties }
+        .onChange(of: workspace.extractionReceipt) { _, receipt in
+            if receipt != nil { pane = .integrity }
         }
     }
 }
@@ -52,11 +115,6 @@ private struct FilesystemFileDetailsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(file.name.isEmpty ? file.path : file.name, systemImage: file.isDirectory ? "folder" : "doc")
-                .font(.headline)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .help(file.path)
             InspectorField(label: "Full Path", value: file.path)
                 .help(file.path)
             HStack(alignment: .top, spacing: 20) {
@@ -67,12 +125,6 @@ private struct FilesystemFileDetailsView: View {
                     Label(file.isDeleted ? "Deleted" : "Allocated", systemImage: file.isDeleted ? "trash" : "doc")
                         .foregroundStyle(file.isDeleted ? Color.orange : Color.primary)
                 }
-            }
-            if file.isDeleted {
-                Label("Deleted metadata does not guarantee intact contents. Verify the extracted bytes.", systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             GroupBox {
                 DisclosureGroup("Timestamps · \(displayTimezone)", isExpanded: $timestampsExpanded) {
@@ -127,8 +179,7 @@ private struct FilesystemAnalysisDetailsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Divider()
-            Label("Saved Analysis", systemImage: "externaldrive")
+            Label("Saved Analysis", systemImage: "externaldrive.badge.checkmark")
                 .font(.headline)
             Label(FilesystemFormatting.status(result.status), systemImage: result.status == .completed && result.warnings.isEmpty ? "checkmark.circle" : "exclamationmark.triangle")
                 .font(.caption)

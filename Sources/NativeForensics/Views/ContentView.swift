@@ -6,11 +6,11 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(workspace: workspace)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+                .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 320)
         } detail: {
             VStack(spacing: 0) {
                 if let forensicCase = workspace.currentCase {
-                    CaseHeaderView(forensicCase: forensicCase)
+                    CaseHeaderView(workspace: workspace)
                     Divider()
                     if workspace.section == .caseDetails {
                         CaseDetailsView(forensicCase: forensicCase)
@@ -25,7 +25,10 @@ struct ContentView: View {
                 Divider()
                 InspectionStatusView(workspace: workspace)
             }
-            .inspector(isPresented: $workspace.showInspector) {
+            .inspector(isPresented: Binding(
+                get: { workspace.showInspector && workspace.currentCase != nil },
+                set: { workspace.showInspector = $0 }
+            )) {
                 Group {
                     if workspace.section == .filesystem {
                         FilesystemInspectorView(workspace: workspace)
@@ -33,13 +36,13 @@ struct ContentView: View {
                         EvidenceInspectorView(workspace: workspace)
                     }
                 }
-                .inspectorColumnWidth(min: 270, ideal: 310, max: 420)
+                .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
             }
         }
         .navigationTitle(workspace.currentCase?.manifest.name ?? "Native Forensics")
-        .frame(minWidth: 900, minHeight: 580)
+        .frame(minWidth: 1040, minHeight: 660)
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .navigation) {
                 Button(action: workspace.createCase) {
                     Label("New Case", systemImage: "folder.badge.plus")
                 }
@@ -51,18 +54,26 @@ struct ContentView: View {
                 }
                 .help("Open a saved case (⌘O)")
                 .disabled(workspace.isBusy)
+            }
 
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: workspace.chooseImage) {
-                    Label("Inspect Image", systemImage: "externaldrive.badge.plus")
+                    Label("Add Data Source", systemImage: "externaldrive.badge.plus")
                 }
                 .help("Inspect a disk image and record its SHA-256 (⇧⌘I)")
                 .disabled(!workspace.canInspectImage)
 
                 Button(action: workspace.analyzeSelectedImage) {
-                    Label("Analyze Filesystem", systemImage: "list.bullet.rectangle")
+                    Label("Analyze Filesystem", systemImage: "play.circle")
                 }
                 .help("Analyze the selected evidence image (⇧⌘A)")
                 .disabled(!workspace.canAnalyzeFilesystem)
+
+                Button(action: workspace.chooseExtractionDestination) {
+                    Label("Extract Selected File", systemImage: "square.and.arrow.up")
+                }
+                .help("Extract the selected file to a new destination (⇧⌘E)")
+                .disabled(!workspace.canExtractFilesystemFile)
             }
 
             ToolbarItem(placement: .automatic) {
@@ -70,6 +81,7 @@ struct ContentView: View {
                     Label("Evidence Inspector", systemImage: "sidebar.right")
                 }
                 .help("Toggle evidence inspector (⌥⌘I)")
+                .disabled(workspace.currentCase == nil)
             }
         }
         .alert("Unable to Complete Action", isPresented: Binding(
