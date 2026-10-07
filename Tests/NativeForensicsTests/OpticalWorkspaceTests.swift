@@ -153,10 +153,245 @@ struct OpticalWorkspaceTests {
         #expect(store.errorMessage != nil)
     }
 
+    @Test("Autopsy export includes the full inventory despite a filtered table and selected row")
+    func autopsyExportWholeInventory() async throws {
+        let fixture = OpticalUIFixture(), destination = URL(fileURLWithPath: "/synthetic/new-udf-export")
+        let gate = OpticalAutopsyExportGate()
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { evidence, result, forensicCase, output, progress in
+            try await gate.export(evidence: evidence, result: result, forensicCase: forensicCase, output: output, progress: progress)
+        })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.stateFilter = .current
+        await (try #require(store.filterTask)).value
+        store.selectedEntryID = fixture.result.entries[0].id
+        #expect(store.rows.count == 1)
+        store.exportForAutopsy(to: destination)
+        let owner = try #require(store.activeTask)
+        let request = await gate.nextRequest()
+        #expect(request.result == fixture.result)
+        #expect(request.evidence == fixture.evidence)
+        #expect(request.caseID == fixture.forensicCase.manifest.id)
+        #expect(request.output == destination)
+        #expect(store.isExportingAutopsy)
+        #expect(!store.canInspect && !store.canExport && !store.canExportReport && !store.canPreview)
+        await gate.succeed(request, try makeAutopsyReceipt(fixture.result, destination: destination))
+        await owner.value
+        #expect(store.lastAutopsyExport?.entries.count == 2)
+        #expect(store.result == fixture.result)
+        #expect(store.selectedEntryID == fixture.result.entries[0].id)
+        #expect(store.errorMessage == nil)
+        #expect(!store.hasActiveWork && !store.isExportingAutopsy)
+        #expect(store.canExportForAutopsy)
+    }
+
+    @Test("A source change suppresses the old Autopsy export receipt and progress while draining its owner")
+    func autopsyExportSourceReplacement() async throws {
+        let first = OpticalUIFixture(), second = OpticalUIFixture()
+        let destination = URL(fileURLWithPath: "/synthetic/source-one-export")
+        let gate = OpticalAutopsyExportGate()
+        let store = makeStore(load: { evidence, _ in evidence.id == first.evidence.id ? first.result : second.result },
+            exportForAutopsy: { evidence, result, forensicCase, output, progress in
+                try await gate.export(evidence: evidence, result: result, forensicCase: forensicCase, output: output, progress: progress)
+            })
+        store.configure(evidence: first.evidence, in: first.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy(to: destination)
+        let oldOwner = try #require(store.activeTask)
+        let old = await gate.nextRequest()
+        store.configure(evidence: second.evidence, in: second.forensicCase)
+        let newOwner = try #require(store.activeTask)
+        #expect(store.hasActiveWork)
+        await gate.report(old, .init(stage: "Foreign progress", completedBytes: 1, totalBytes: 2))
+        await gate.succeed(old, try makeAutopsyReceipt(first.result, destination: destination))
+        await oldOwner.value
+        await newOwner.value
+        #expect(store.result == second.result)
+        #expect(store.lastAutopsyExport == nil && store.autopsyExportDestination == nil)
+        #expect(store.progress == nil)
+        #expect(store.errorMessage == nil)
+        #expect(!store.hasActiveWork)
+    }
+
+    @Test("Autopsy export cancellation drains staging work and permits a new destination retry")
+    func autopsyExportCancelAndRetry() async throws {
+        let fixture = OpticalUIFixture(), gate = OpticalAutopsyExportGate()
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { evidence, result, forensicCase, output, progress in
+            try await gate.export(evidence: evidence, result: result, forensicCase: forensicCase, output: output, progress: progress)
+        })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy(to: URL(fileURLWithPath: "/synthetic/canceled-output"))
+        let firstOwner = try #require(store.activeTask), first = await gate.nextRequest()
+        store.cancel()
+        #expect(store.hasActiveWork && !store.canExportForAutopsy)
+        await gate.fail(first, CancellationError())
+        await firstOwner.value
+        #expect(store.lastAutopsyExport == nil && store.errorMessage == nil)
+        #expect(store.statusMessage.contains("canceled"))
+        #expect(store.canExportForAutopsy)
+        let retryDestination = URL(fileURLWithPath: "/synthetic/retry-output")
+        store.exportForAutopsy(to: retryDestination)
+        let retryOwner = try #require(store.activeTask), retry = await gate.nextRequest()
+        await gate.succeed(retry, try makeAutopsyReceipt(fixture.result, destination: retryDestination))
+        await retryOwner.value
+        #expect(store.lastAutopsyExport?.destinationPath == retryDestination.path)
+        #expect(store.errorMessage == nil)
+    }
+
+    @Test("A successful atomic export remains visible when cancellation arrives after publication")
+    func autopsyExportLateCancelCommit() async throws {
+        let fixture = OpticalUIFixture(), gate = OpticalAutopsyExportGate()
+        let destination = URL(fileURLWithPath: "/synthetic/committed-output")
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { evidence, result, forensicCase, output, progress in
+            try await gate.export(evidence: evidence, result: result, forensicCase: forensicCase, output: output, progress: progress)
+        })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy(to: destination)
+        let owner = try #require(store.activeTask), request = await gate.nextRequest()
+        store.cancel()
+        await gate.succeed(request, try makeAutopsyReceipt(fixture.result, destination: destination))
+        await owner.value
+        #expect(store.lastAutopsyExport != nil)
+        #expect(store.statusMessage.contains("completed before cancellation"))
+        #expect(!store.hasActiveWork)
+    }
+
+    @Test("Shutdown waits for Autopsy export cleanup and suppresses its completed UI result")
+    func autopsyExportShutdown() async throws {
+        let fixture = OpticalUIFixture(), gate = OpticalAutopsyExportGate()
+        let destination = URL(fileURLWithPath: "/synthetic/shutdown-output")
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { evidence, result, forensicCase, output, progress in
+            try await gate.export(evidence: evidence, result: result, forensicCase: forensicCase, output: output, progress: progress)
+        })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy(to: destination)
+        let request = await gate.nextRequest()
+        let shutdown = try #require(store.beginShutdown())
+        #expect(store.hasActiveWork && !store.canExportForAutopsy)
+        await gate.succeed(request, try makeAutopsyReceipt(fixture.result, destination: destination))
+        await shutdown.value
+        #expect(!store.hasActiveWork && store.lastAutopsyExport == nil)
+    }
+
+    @Test("Invalid source, payload, history and destination bindings cannot produce an Autopsy success receipt", arguments: AutopsyReceiptFault.allCases)
+    fileprivate func autopsyExportRejectsReceipt(_ fault: AutopsyReceiptFault) async throws {
+        let fixture = OpticalUIFixture(), destination = URL(fileURLWithPath: "/synthetic/bad-receipt-output")
+        let receipt = try makeAutopsyReceipt(fixture.result, destination: destination, fault: fault)
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { _, _, _, _, _ in receipt })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy(to: destination)
+        await (try #require(store.activeTask)).value
+        #expect(store.lastAutopsyExport == nil)
+        #expect(store.errorMessage != nil)
+        #expect(store.result == fixture.result)
+        #expect(store.canExportForAutopsy)
+    }
+
+    @Test("A late destination chooser cannot export after the source selection changes")
+    func autopsyExportStaleChooser() async throws {
+        let first = OpticalUIFixture(), second = OpticalUIFixture(), chooser = OpticalDestinationGate()
+        let calls = OpticalExportCallCounter()
+        let store = makeStore(load: { evidence, _ in evidence.id == first.evidence.id ? first.result : second.result },
+            exportForAutopsy: { _, _, _, _, _ in await calls.record(); throw CancellationError() },
+            chooseAutopsyDestination: { await chooser.choose() })
+        store.configure(evidence: first.evidence, in: first.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy()
+        await chooser.waitUntilRequested()
+        let oldOwner = try #require(store.activeTask)
+        store.configure(evidence: second.evidence, in: second.forensicCase)
+        let newOwner = try #require(store.activeTask)
+        await chooser.finish(URL(fileURLWithPath: "/synthetic/stale-chooser-output"))
+        await oldOwner.value
+        await newOwner.value
+        #expect(await calls.count == 0)
+        #expect(store.result == second.result)
+        #expect(store.lastAutopsyExport == nil && store.errorMessage == nil)
+    }
+
+    @Test("Canceling the folder chooser never starts the source exporter")
+    func autopsyExportChooserCancel() async throws {
+        let fixture = OpticalUIFixture(), calls = OpticalExportCallCounter()
+        let store = makeStore(load: { _, _ in fixture.result }, exportForAutopsy: { _, _, _, _, _ in
+            await calls.record(); throw CancellationError()
+        }, chooseAutopsyDestination: { nil })
+        store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(store.activeTask)).value
+        store.exportForAutopsy()
+        await (try #require(store.activeTask)).value
+        #expect(await calls.count == 0)
+        #expect(store.lastAutopsyExport == nil && store.errorMessage == nil)
+        #expect(store.statusMessage.contains("No export was started"))
+        #expect(store.canExportForAutopsy)
+    }
+
+    @Test("An existing file or forensic case path is never replaced by an Autopsy export")
+    func autopsyExportProtectedDestination() throws {
+        let fixture = OpticalUIFixture()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Synthetic-UDF-UI-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let existing = root.appendingPathComponent("existing-output")
+        let marker = Data("existing synthetic export".utf8)
+        try marker.write(to: existing)
+        #expect(throws: (any Error).self) {
+            try OpticalAutopsyExportService.validateDestination(existing, evidence: fixture.evidence, forensicCase: fixture.forensicCase)
+        }
+        #expect(try Data(contentsOf: existing) == marker)
+        #expect(throws: (any Error).self) {
+            try OpticalAutopsyExportService.validateDestination(fixture.forensicCase.bundleURL.appendingPathComponent("Output"),
+                evidence: fixture.evidence, forensicCase: fixture.forensicCase)
+        }
+        #expect(throws: (any Error).self) {
+            try OpticalAutopsyExportService.validateDestination(root.appendingPathComponent("Other.nativecase/Output"),
+                evidence: fixture.evidence, forensicCase: fixture.forensicCase)
+        }
+    }
+
+    @Test("Whole-source exports require a standard complete UDF receipt and respect workspace busy state")
+    func autopsyExportEligibility() async throws {
+        let fixture = OpticalUIFixture()
+        let store = makeStore(load: { _, _ in fixture.result })
+        #expect(!store.canExportForAutopsy)
+        let workspace = WorkspaceStore(optical: store)
+        workspace.currentCase = fixture.forensicCase
+        workspace.selectedEvidenceID = fixture.evidence.id
+        await (try #require(store.activeTask)).value
+        #expect(workspace.canExportOpticalForAutopsy)
+        workspace.isInspecting = true
+        #expect(!workspace.canExportOpticalForAutopsy)
+        workspace.isInspecting = false
+        var fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.result)) as? [String: Any])
+        var options = try #require(fields["options"] as? [String: Any])
+        options["maximumFiles"] = 1
+        fields["options"] = options
+        let limited = try JSONDecoder().decode(UDFInspectionResult.self, from: JSONSerialization.data(withJSONObject: fields))
+        let limitedStore = makeStore(load: { _, _ in limited })
+        limitedStore.configure(evidence: fixture.evidence, in: fixture.forensicCase)
+        await (try #require(limitedStore.activeTask)).value
+        #expect(!limitedStore.canExportForAutopsy)
+        #expect(limitedStore.autopsyExportUnavailableReason?.contains("custom bounded inventory") == true)
+    }
+
+    @Test("File-count progress does not present completed files as evidence bytes")
+    func autopsyProgressUnits() {
+        let description = OpticalViewFormatting.progressDescription(.init(stage: "Exporting verified file 2/20",
+            completedBytes: 1, totalBytes: 20, files: 1))
+        #expect(description.contains("1 / 20 files"))
+        #expect(!description.contains("bytes") && !description.contains("B /"))
+    }
+
     private func makeStore(load: @escaping OpticalWorkspaceStore.Load, inspect: OpticalWorkspaceStore.Inspect? = nil,
-                           analyze: OpticalWorkspaceStore.Analyze? = nil, export: OpticalWorkspaceStore.Export? = nil) -> OpticalWorkspaceStore {
+                           analyze: OpticalWorkspaceStore.Analyze? = nil, export: OpticalWorkspaceStore.Export? = nil,
+                           exportForAutopsy: OpticalWorkspaceStore.ExportForAutopsy? = nil,
+                           chooseAutopsyDestination: OpticalWorkspaceStore.ChooseAutopsyDestination? = nil) -> OpticalWorkspaceStore {
         OpticalWorkspaceStore(documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: load,
-            inspect: inspect, analyze: analyze, export: export)
+            inspect: inspect, analyze: analyze, export: export, exportForAutopsy: exportForAutopsy,
+            chooseAutopsyDestination: chooseAutopsyDestination)
     }
 }
 
@@ -219,4 +454,92 @@ private actor OpticalAnalysisGate {
     }
     func waitUntilRequested() async { if response != nil { return }; await withCheckedContinuation { waiter = $0 } }
     func succeed(_ result: DocumentAnalysis) { response?.resume(returning: result); response = nil }
+}
+
+private enum AutopsyReceiptFault: CaseIterable, Sendable {
+    case sourceHash, sourceSize, missingFile, changedPayload, changedHistory, duplicateID, duplicatePath, escapedPath, destination
+}
+
+private func makeAutopsyReceipt(_ result: UDFInspectionResult, destination: URL,
+    fault: AutopsyReceiptFault? = nil) throws -> UDFLogicalFilesExport {
+    var entries: [[String: Any]] = result.entries.map { entry in
+        ["entryID": entry.id, "originalPath": entry.originalPath,
+         "outputRelativePath": "LogicalFiles/\(entry.state.rawValue)/\(entry.id)/payload",
+         "pathMapping": "synthetic", "state": entry.state.rawValue,
+         "snapshotIDs": entry.snapshotIDs, "byteCount": entry.byteCount, "sha256": entry.sha256]
+    }
+    switch fault {
+    case .missingFile: entries.removeLast()
+    case .changedPayload: entries[0]["sha256"] = String(repeating: "f", count: 64)
+    case .changedHistory: entries[1]["state"] = UDFEntryState.current.rawValue
+    case .duplicateID: entries[1]["entryID"] = entries[0]["entryID"]
+    case .duplicatePath: entries[1]["outputRelativePath"] = entries[0]["outputRelativePath"]
+    case .escapedPath: entries[0]["outputRelativePath"] = "LogicalFiles/../outside"
+    default: break
+    }
+    let object: [String: Any] = [
+        "schemaVersion": 1, "status": "completed",
+        "destinationPath": fault == .destination ? "/synthetic/foreign-output" : destination.path,
+        "sourceSHA256": fault == .sourceHash ? String(repeating: "f", count: 64) : result.sourceSHA256,
+        "sourceByteCount": result.sourceByteCount + (fault == .sourceSize ? 1 : 0),
+        "caseID": UUID().uuidString, "jobID": UUID().uuidString,
+        "parserVersion": result.parserVersion, "profile": result.profile, "exportedAt": 0,
+        "entries": entries, "historyReportSHA256": String(repeating: "d", count: 64),
+        "historyJSONSHA256": String(repeating: "e", count: 64), "limitations": ["Synthetic adapter receipt"]
+    ]
+    return try JSONDecoder().decode(UDFLogicalFilesExport.self, from: JSONSerialization.data(withJSONObject: object))
+}
+
+private actor OpticalAutopsyExportGate {
+    struct Request: Sendable {
+        let id: UUID
+        let evidence: EvidenceRecord
+        let result: UDFInspectionResult
+        let caseID: UUID
+        let output: URL
+    }
+    private var queued: [Request] = []
+    private var waiting: [CheckedContinuation<Request, Never>] = []
+    private var responses: [UUID: CheckedContinuation<UDFLogicalFilesExport, Error>] = [:]
+    private var progress: [UUID: @Sendable (UDFInspectionProgress) -> Void] = [:]
+    func export(evidence: EvidenceRecord, result: UDFInspectionResult, forensicCase: ForensicCase, output: URL,
+        progress: @escaping @Sendable (UDFInspectionProgress) -> Void) async throws -> UDFLogicalFilesExport {
+        let request = Request(id: UUID(), evidence: evidence, result: result, caseID: forensicCase.manifest.id, output: output)
+        self.progress[request.id] = progress
+        return try await withCheckedThrowingContinuation { continuation in
+            responses[request.id] = continuation
+            if waiting.isEmpty { queued.append(request) } else { waiting.removeFirst().resume(returning: request) }
+        }
+    }
+    func nextRequest() async -> Request {
+        if !queued.isEmpty { return queued.removeFirst() }
+        return await withCheckedContinuation { waiting.append($0) }
+    }
+    func report(_ request: Request, _ value: UDFInspectionProgress) { progress[request.id]?(value) }
+    func succeed(_ request: Request, _ receipt: UDFLogicalFilesExport) {
+        progress[request.id] = nil
+        responses.removeValue(forKey: request.id)?.resume(returning: receipt)
+    }
+    func fail(_ request: Request, _ error: any Error) {
+        progress[request.id] = nil
+        responses.removeValue(forKey: request.id)?.resume(throwing: error)
+    }
+}
+
+private actor OpticalDestinationGate {
+    private var response: CheckedContinuation<URL?, Never>?
+    private var waiter: CheckedContinuation<Void, Never>?
+    func choose() async -> URL? {
+        await withCheckedContinuation { response = $0; waiter?.resume(); waiter = nil }
+    }
+    func waitUntilRequested() async {
+        if response != nil { return }
+        await withCheckedContinuation { waiter = $0 }
+    }
+    func finish(_ destination: URL?) { response?.resume(returning: destination); response = nil }
+}
+
+private actor OpticalExportCallCounter {
+    private(set) var count = 0
+    func record() { count += 1 }
 }

@@ -7,7 +7,7 @@ struct OpticalWorkspaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OpticalControlsView(store: workspace.optical)
+            OpticalControlsView(workspace: workspace)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             Divider()
@@ -47,10 +47,11 @@ struct OpticalWorkspaceView: View {
 }
 
 private struct OpticalControlsView: View {
-    let store: OpticalWorkspaceStore
+    let workspace: WorkspaceStore
+    private var store: OpticalWorkspaceStore { workspace.optical }
 
     private var isWorking: Bool {
-        store.isLoading || store.isInspecting || store.isPreviewing || store.isExporting || store.isExportingReport || store.isFiltering
+        store.isLoading || store.isInspecting || store.isPreviewing || store.isExporting || store.isExportingReport || store.isExportingAutopsy || store.isFiltering
     }
 
     var body: some View {
@@ -89,6 +90,9 @@ private struct OpticalControlsView: View {
                     .disabled(!store.canExportReport)
                 }
             }
+            if store.result != nil {
+                OpticalAutopsyExportView(workspace: workspace)
+            }
             DisclosureGroup("Inspection Limits") {
                 Text("\(store.options.maximumSnapshots.formatted()) snapshots · \(store.options.maximumFiles.formatted()) files · \(EvidenceFormatting.bytes(store.options.maximumSourceBytes)) input · \(EvidenceFormatting.bytes(store.options.maximumFileBytes)) per file · \(EvidenceFormatting.bytes(store.options.maximumPayloadBytes)) payload · \(store.options.timeoutSeconds.formatted()) seconds")
                     .font(.caption)
@@ -119,7 +123,7 @@ private struct OpticalControlsView: View {
                     if let progress = store.progress, progress.totalBytes > 0 {
                         ProgressView(value: min(max(Double(progress.completedBytes) / Double(progress.totalBytes), 0), 1))
                             .frame(maxWidth: 180)
-                        Text("\(progress.stage) · \(EvidenceFormatting.bytes(progress.completedBytes)) / \(EvidenceFormatting.bytes(progress.totalBytes)) · \(progress.files.formatted()) files")
+                        Text(OpticalViewFormatting.progressDescription(progress))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -305,7 +309,7 @@ private struct OpticalFilesTableView: View {
                 }
                 .width(102)
             }
-            .disabled(optical.isLoading || optical.isInspecting || optical.isExporting || optical.isExportingReport || optical.isFiltering)
+            .disabled(optical.isLoading || optical.isInspecting || optical.isExporting || optical.isExportingReport || optical.isExportingAutopsy || optical.isFiltering)
             .contextMenu(forSelectionType: String.self) { selection in
                 if !optical.isFiltering, selection.count == 1, let id = selection.first,
                    pageRows.contains(where: { $0.id == id }) {
@@ -349,7 +353,7 @@ private struct OpticalFilesTableView: View {
             .controlSize(.small)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .disabled(optical.isLoading || optical.isInspecting || optical.isExporting || optical.isExportingReport || optical.isFiltering)
+            .disabled(optical.isLoading || optical.isInspecting || optical.isExporting || optical.isExportingReport || optical.isExportingAutopsy || optical.isFiltering)
             .help("Search covers all recorded entries. The table displays up to \(pageSize) rows per page.")
         }
         .onChange(of: store.searchText) { _, _ in changePage(to: 0) }
@@ -388,6 +392,16 @@ enum OpticalViewFormatting {
     static func extensionHint(_ entry: UDFFileEntry) -> String {
         let suffix = (entry.name as NSString).pathExtension
         return suffix.isEmpty ? "Unknown" : suffix.uppercased()
+    }
+
+    static func progressDescription(_ value: UDFInspectionProgress) -> String {
+        if value.stage.hasPrefix("Exporting verified file") || value.stage.hasPrefix("Complete:") {
+            return "\(value.stage) · \(value.files.formatted()) / \(value.totalBytes.formatted()) files"
+        }
+        if value.stage.hasPrefix("Reading UDF namespace") {
+            return "\(value.stage) · \(value.files.formatted()) files recorded"
+        }
+        return "\(value.stage) · \(EvidenceFormatting.bytes(value.completedBytes)) / \(EvidenceFormatting.bytes(value.totalBytes)) · \(value.files.formatted()) files"
     }
 
     static func utc(_ date: Date) -> String {

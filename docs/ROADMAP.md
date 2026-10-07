@@ -1,5 +1,7 @@
 # แผนพัฒนา NativeForensics
 
+ล่าสุด **0.5.1 / build 14** เพิ่ม source-bound **Export for Autopsy** ใน native UI และแยก blocking process waits ออกจาก cooperative executor ตาม [ผลตรวจรุ่นนี้](NATIVE-0.5.1.md) ช่วง multi-file Codex, artifact timeline และ distribution ยังเป็น milestones ถัดไป
+
 Native Mac foundation และ filesystem workflow มี implementation แล้ว ปัจจุบัน **Phase 1 coverage ยัง IN PROGRESS** เวอร์ชัน 0.5 เพิ่ม assignment recovery, bounded UDF VAT history, isolated document previews, selected-document text search และ transactional batch export ตาม [assignment validation](ASSIGNMENT-VALIDATION-2026-10-07.md) ผลนี้ไม่ปิด broad-format, artifact-analysis หรือ distribution gates
 
 ลำดับนี้เป็น milestones ที่ใช้ตัดสินใจจากผลทดสอบ ไม่ใช่กำหนดเวลาหรือข้อรับรองว่าแอปแทน Autopsy ได้ครบ ทุก phase ต้องรักษา source integrity และไม่ใส่ evidence/cases ของผู้ใช้ใน Git

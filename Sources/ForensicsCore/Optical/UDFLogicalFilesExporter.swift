@@ -42,15 +42,27 @@ public enum UDFLogicalFilesExporter {
         try await export(sourceURL: sourceURL, to: destination, progress: progress, beforePublication: {})
     }
 
+    /// Case workflows must bind a fresh export to the examiner's saved source
+    /// receipt. Reject changed bytes before creating any staging directories.
+    public static func export(evidence: EvidenceRecord, to destination: URL,
+        progress: @escaping @Sendable (UDFInspectionProgress) -> Void = { _ in }) async throws -> UDFLogicalFilesExport {
+        guard evidence.container == .raw, evidence.hashScope == FileHashScope.selectedFileBytes,
+              evidence.byteCount > 0, evidence.byteCount <= UDFInspectionOptions().maximumSourceBytes,
+              EngineValidation.validHash(evidence.sha256) else { throw UDFError.invalidOptions }
+        return try await export(sourceURL: URL(fileURLWithPath: evidence.sourcePath), to: destination,
+            progress: progress, beforePublication: {}, expectedEvidence: evidence)
+    }
+
     static func export(sourceURL: URL, to destination: URL,
         progress: @escaping @Sendable (UDFInspectionProgress) -> Void = { _ in },
         beforePublication: @escaping @Sendable () throws -> Void,
-        timeoutSeconds: Double = 600) async throws -> UDFLogicalFilesExport {
+        timeoutSeconds: Double = 600,
+        expectedEvidence: EvidenceRecord? = nil) async throws -> UDFLogicalFilesExport {
         guard timeoutSeconds.isFinite, timeoutSeconds > 0, timeoutSeconds <= 600 else { throw UDFError.invalidOptions }
         let deadline = ProcessInfo.processInfo.systemUptime + timeoutSeconds
         let worker = Task.detached(priority: .userInitiated) {
             try await performExport(sourceURL: sourceURL, to: destination, progress: progress,
-                beforePublication: beforePublication, deadline: deadline)
+                beforePublication: beforePublication, deadline: deadline, expectedEvidence: expectedEvidence)
         }
         let timeout = Task.detached {
             do {
@@ -70,7 +82,8 @@ public enum UDFLogicalFilesExporter {
 
     private static func performExport(sourceURL: URL, to destination: URL,
         progress: @escaping @Sendable (UDFInspectionProgress) -> Void,
-        beforePublication: @Sendable () throws -> Void, deadline: TimeInterval) async throws -> UDFLogicalFilesExport {
+        beforePublication: @Sendable () throws -> Void, deadline: TimeInterval,
+        expectedEvidence: EvidenceRecord?) async throws -> UDFLogicalFilesExport {
         let check: @Sendable () throws -> Void = {
             guard ProcessInfo.processInfo.systemUptime < deadline else { throw UDFError.timeout }
             try Task.checkCancellation()
@@ -103,6 +116,11 @@ public enum UDFLogicalFilesExporter {
         guard image.container == .raw, image.byteCount <= UDFInspectionOptions().maximumSourceBytes,
               image.sourceIdentity == originalIdentity else {
             throw UDFError.unsupported("Select a regular raw .dd, .img or .raw UDF image within 32 GiB.")
+        }
+        if let expectedEvidence {
+            guard image.sha256 == expectedEvidence.sha256, image.byteCount == expectedEvidence.byteCount else {
+                throw ForensicsError.sourceChanged
+            }
         }
         try check()
         let transaction = try UDFLogicalExportDirectory(destination: output, deadline: deadline)

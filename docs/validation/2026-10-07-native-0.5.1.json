@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "milestone": "0.5.1",
+  "build": 14,
+  "scope": "local development validation; CI is commit-specific",
+  "host": {"chip": "Apple M2", "architecture": "arm64", "macOS": "27.0.1"},
+  "swiftTests": {
+    "debug": {"coreDeclarations": 267, "coreSuites": 25, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
+    "release": {"coreDeclarations": 267, "coreSuites": 25, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
+    "realNativeHelperEnabled": true,
+    "strictCooperativeExecutor": {"declarations": 1, "status": "passed"}
+  },
+  "pythonHarness": {"tests": 55, "status": "passed"},
+  "nativeGUI": {
+    "syntheticOnly": true,
+    "visibleFilteredRows": 1,
+    "fullInventoryPayloads": 2,
+    "chooserCancelAndRetryObserved": true,
+    "completedReceiptObserved": true,
+    "independentLiteralBytesMatch": true,
+    "payloadAndHistoryReportHashesMatch": true,
+    "sourceHashUnchanged": true,
+    "separateAdapterCaseAndJobIDs": true
+  },
+  "bundle": {"version": "0.5.1", "build": 14, "engineVersion": "0.1.2-tsk4.15.0", "engineUnchanged": true, "signedReceiptAndDependencyChecks": "passed", "launched": true, "signing": "local ad-hoc"},
+  "autopsyFrozenBaseline": {"pass": 30, "fail": 0, "warn": 0, "info": 2, "skip": 3, "servicesStarted": false, "baselineRegenerated": false},
+  "limitations": [
+    "Derived Logical Files import does not add UDF support to TSK or transfer original timestamp/deletion flags into Autopsy.",
+    "Only the existing bounded raw-2048 UDF 2.01 physical/virtual/linked-VAT profile and default full-inventory options are accepted.",
+    "In-progress GUI cancellation was not observed; core/store cancellation and shutdown tests passed.",
+    "Recovery and UDF pipelines still use detached task workers.",
+    "No new throughput, full-app benchmark, physical M5, older macOS or notarization claim.",
+    "The previously shared portable Autopsy ZIP is a separate unchanged delivery artifact.",
+    "No coursework evidence, cases or provider requests were included in this validation."
+  ]
+}

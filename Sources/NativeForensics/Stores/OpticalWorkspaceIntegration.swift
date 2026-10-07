@@ -5,6 +5,14 @@ extension WorkspaceStore {
         currentCase != nil && selectedEvidence != nil && !isBusy && !isLoadingFilesystem
             && caseWork.canChangeSelection && recovery.canChangeSelection && optical.canInspect
     }
+    var canExportOpticalForAutopsy: Bool {
+        currentCase != nil && selectedEvidence != nil && !isBusy && !isLoadingFilesystem
+            && caseWork.canChangeSelection && recovery.canChangeSelection && optical.canExportForAutopsy
+    }
+    func exportOpticalForAutopsy() {
+        guard canExportOpticalForAutopsy else { return }
+        optical.exportForAutopsy()
+    }
     func showOpticalHistory() {
         guard !isBusy, currentCase != nil, selectedEvidence != nil,
               caseWork.canChangeSelection, recovery.canChangeSelection else { return }

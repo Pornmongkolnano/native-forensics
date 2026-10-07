@@ -30,6 +30,7 @@
 - **Export history**: เก็บ path-free historical extraction receipts ที่ผ่าน verification ดู [Case work และ preview](docs/CASE-WORK.md) สำหรับ retention, limits และความหมายของ historical verification
 - **Recovered Files**: กู้ candidates จาก RAW image ด้วย PhotoRec ที่ติดตั้งแยก ตรวจ bytes เทียบ source extents, เก็บผลแต่ละงานแยกกัน พร้อม examiner assessments, raw evidence hex และ Markdown report; carving ไม่พิสูจน์ original filename หรือ deletion
 - **Optical History**: อ่าน RAW / 2,048-byte / UDF 2.01 VAT profile ด้วย Swift reader แยกจาก TSK, แสดง current files และ linked historical namespaces พร้อม ancestor deletion proof, raw timestamps, extents และ verified export/report
+- **Export for Autopsy**: ส่งออก UDF ทั้ง current/history ไปยังโฟลเดอร์ใหม่จากแอป พร้อมตรวจ saved source hash, payload hashes และ Reports; การค้นหาหรือแถวที่เลือกไม่ลดจำนวนไฟล์ที่จะส่งออก ดู [วิธีใช้ 0.5.1](docs/NATIVE-0.5.1.md)
 - **Verified Document Preview**: helper แยก process ตรวจ image/PDF/text/ZIP/Office จากเนื้อหาจริง แม้นามสกุลไม่ตรง; thumbnails, referenced text และค้นหาภายในไฟล์ที่เลือก โดยบอก partial/unsupported ชัดเจน ไม่มี OCR หรือ Office page-layout renderer
 - **Export Matching Files**: export ทุกไฟล์ที่ตรง filter ทั้งผลการค้นหาไปยัง directory ใหม่ พร้อม per-file hashes และ manifest; ไม่จำกัดเพียง 100 แถวที่แสดงในตาราง
 
@@ -48,7 +49,7 @@ Helper ตรวจ EWF segment order/completeness และปฏิเสธ s
 
 TSK adapter ชุดนี้ **ไม่มี UDF**; Optical History ใช้ bounded Swift adapter แยก รองรับเฉพาะ profile ที่ระบุ APFS/FileVault, OCR, legacy Office body decoding และ computer activity artifact analysis ยังไม่มี File/path filtering ใช้ชื่อไฟล์ ส่วน content search ครอบคลุมข้อความที่ decoder อ่านได้ในไฟล์ที่เลือก ไม่ใช่ case-wide index Deleted metadata และ hash ที่ตรงไม่รับรองว่า content สมบูรณ์
 
-เวอร์ชัน 0.5.0 / build 13 ต่อยอด [case work/local preview 0.4](docs/CASE-WORK.md) และ [Codex file analysis](docs/CODEX-ANALYSIS.md) ดู [assignment comparison](docs/ASSIGNMENT-VALIDATION-2026-10-07.md) สำหรับการเทียบ exact exported bytes, content validation และข้อจำกัดของโจทย์ ส่วน [repaired Autopsy benchmark](docs/AUTOPSY-COMPARISON-2026-10-07.md) เป็นผล 0.4 เฉพาะ workload ที่ระบุ ไม่ใช่ timing ของฟีเจอร์ใหม่หรือ full application parity
+เวอร์ชัน **0.5.1 / build 14** เพิ่ม [UDF export ในแอปและการแก้ process scheduling](docs/NATIVE-0.5.1.md) ต่อยอด [case work/local preview 0.4](docs/CASE-WORK.md) และ [Codex file analysis](docs/CODEX-ANALYSIS.md) ดู [assignment comparison](docs/ASSIGNMENT-VALIDATION-2026-10-07.md) สำหรับผล 0.5.0 ที่เทียบ exact exported bytes, content validation และข้อจำกัดของโจทย์ ส่วน [repaired Autopsy benchmark](docs/AUTOPSY-COMPARISON-2026-10-07.md) เป็นผล 0.4 เฉพาะ workload ที่ระบุ ไม่ใช่ timing ของฟีเจอร์ใหม่หรือ full application parity
 
 เริ่มใช้งานตาม [คู่มือ assignment](docs/ASSIGNMENT-WORKFLOW.md) ซึ่งแยก recovery, deleted filesystem files และ optical history พร้อมขอบเขตความหมายของผลตรวจ
 

@@ -13,7 +13,7 @@ struct UDFHistoryTests {
     func autopsyLogicalImport() async throws {
         let fixture = try UDFFixture(); defer { fixture.remove() }
         let output = fixture.directory.appendingPathComponent("Autopsy Import")
-        let exported = try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: output)
+        let exported = try await UDFLogicalFilesExporter.export(evidence: fixture.evidence, to: output)
         #expect(exported.status == "completed")
         #expect(exported.entries.count == 2)
         #expect(exported.sourceSHA256 == fixture.evidence.sha256)
@@ -44,6 +44,22 @@ struct UDFHistoryTests {
                 #expect(try Data(contentsOf: target) == fixture.image)
             } else { try fixture.image.write(to: target, options: .withoutOverwriting) }
         }
+    }
+
+    @Test("A case-bound logical import rejects changed source bytes or size before staging", arguments: [false, true])
+    func autopsyLogicalFrozenSource(_ changeSize: Bool) async throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        var changed = fixture.image
+        if changeSize { changed.append(0) } else { changed[0] ^= 1 }
+        try changed.write(to: fixture.source)
+        let output = fixture.directory.appendingPathComponent("Changed Source Import")
+        await #expect(throws: ForensicsError.sourceChanged) {
+            try await UDFLogicalFilesExporter.export(evidence: fixture.evidence, to: output)
+        }
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+        let children = try FileManager.default.contentsOfDirectory(at: fixture.directory, includingPropertiesForKeys: nil)
+        #expect(!children.contains { $0.lastPathComponent.hasPrefix(".udf-logical-import-") })
+        #expect(try Data(contentsOf: fixture.source) == changed)
     }
 
     @Test("Logical import does not overwrite outputs or follow a source/output symlink")

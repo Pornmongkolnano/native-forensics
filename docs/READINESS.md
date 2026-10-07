@@ -1,5 +1,7 @@
 # Local-use readiness — 7 October 2026
 
+Current development build is **0.5.1 / build 14**. [Native export and scheduling validation](NATIVE-0.5.1.md) records the added UDF-to-Autopsy workflow, current debug/release tests and synthetic GUI export. The assignment and historical gates below retain their original version scopes.
+
 NativeForensics **0.5.0 / build 13** is verified for the bounded assignment workflows in [the current validation report](ASSIGNMENT-VALIDATION-2026-10-07.md): 14 primary whole-image recovery payloads, 41 comparable filesystem exports and 20 UDF payloads, all checked against independent/reference bytes. Original evidence and Autopsy's frozen baseline were preserved. This is a local development milestone, not general Autopsy parity or a public release.
 
 ## Current verified scope

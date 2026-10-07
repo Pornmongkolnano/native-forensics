@@ -19,7 +19,7 @@ struct InspectionStatusView: View {
                     Spacer()
                     Button("Cancel", action: workspace.filesystemDocumentPreview.cancel)
                 }
-            } else if workspace.optical.isInspecting || workspace.optical.isPreviewing || workspace.optical.isExporting || workspace.optical.isExportingReport {
+            } else if workspace.optical.isInspecting || workspace.optical.isPreviewing || workspace.optical.isExporting || workspace.optical.isExportingReport || workspace.optical.isExportingAutopsy {
                 OpticalStatusView(store: workspace.optical)
             } else if workspace.recovery.examination.hasActiveWork {
                 HStack(spacing: 8) {

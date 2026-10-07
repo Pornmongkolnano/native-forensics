@@ -11,7 +11,7 @@ struct OpticalStatusView: View {
                 Button("Cancel", action: store.cancel)
             }
             if let progress = store.progress {
-                Text("\(progress.stage) · \(progress.completedBytes.formatted()) / \(progress.totalBytes.formatted()) bytes · \(progress.files.formatted()) files")
+                Text(OpticalViewFormatting.progressDescription(progress))
                     .foregroundStyle(.secondary).monospacedDigit()
             }
         }

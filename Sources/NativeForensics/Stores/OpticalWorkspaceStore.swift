@@ -33,6 +33,8 @@ final class OpticalWorkspaceStore {
     typealias Load = @Sendable (EvidenceRecord, ForensicCase) async throws -> UDFInspectionResult?
     typealias Inspect = @Sendable (EvidenceRecord, ForensicCase, UDFInspectionOptions, @escaping @Sendable (UDFInspectionProgress) -> Void) async throws -> UDFInspectionResult
     typealias Analyze = @Sendable (UDFFileEntry, UDFInspectionResult, ForensicCase, URL) async throws -> DocumentAnalysis
+    typealias ExportForAutopsy = @Sendable (EvidenceRecord, UDFInspectionResult, ForensicCase, URL, @escaping @Sendable (UDFInspectionProgress) -> Void) async throws -> UDFLogicalFilesExport
+    typealias ChooseAutopsyDestination = @MainActor @Sendable () async -> URL?
     typealias Export = @Sendable (UDFFileEntry, UDFInspectionResult, ForensicCase, URL) async throws -> UDFExportReceipt
 
     private(set) var result: UDFInspectionResult?
@@ -56,6 +58,9 @@ final class OpticalWorkspaceStore {
     private(set) var analyses: [String: DocumentAnalysis] = [:]
     private(set) var reportURL: URL?
     private(set) var isExportingReport = false
+    private(set) var isExportingAutopsy = false
+    private(set) var lastAutopsyExport: UDFLogicalFilesExport?
+    private(set) var autopsyExportDestination: URL?
 
     @ObservationIgnored private var selection: Selection?
     @ObservationIgnored private var generation: UUID?
@@ -70,12 +75,15 @@ final class OpticalWorkspaceStore {
     @ObservationIgnored private let loadRequest: Load
     @ObservationIgnored private let inspectRequest: Inspect
     @ObservationIgnored private let analyzeRequest: Analyze
+    @ObservationIgnored private let exportForAutopsyRequest: ExportForAutopsy
+    @ObservationIgnored private let chooseAutopsyDestination: ChooseAutopsyDestination
     @ObservationIgnored private let exportRequest: Export
     @ObservationIgnored private(set) var activeTask: Task<Void, Never>?
     @ObservationIgnored private(set) var filterTask: Task<Void, Never>?
 
     init(documentHelperURL: URL? = nil, load: Load? = nil, inspect: Inspect? = nil,
-         analyze: Analyze? = nil, export: Export? = nil) {
+         analyze: Analyze? = nil, export: Export? = nil, exportForAutopsy: ExportForAutopsy? = nil,
+         chooseAutopsyDestination: ChooseAutopsyDestination? = nil) {
         self.documentHelperURL = documentHelperURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/NFDocumentDecoder")
         loadRequest = load ?? { evidence, forensicCase in
             try UDFInspector.loadLatest(in: forensicCase, evidenceID: evidence.id)
@@ -85,6 +93,11 @@ final class OpticalWorkspaceStore {
         }
         analyzeRequest = analyze ?? { entry, result, forensicCase, helper in
             try await Self.decodeOwnedPreview(entry: entry, result: result, forensicCase: forensicCase, helper: helper)
+        }
+        self.chooseAutopsyDestination = chooseAutopsyDestination ?? { await OpticalAutopsyExportService.chooseDestination() }
+        exportForAutopsyRequest = exportForAutopsy ?? { evidence, result, forensicCase, destination, progress in
+            try await OpticalAutopsyExportService.export(evidence: evidence, result: result,
+                in: forensicCase, to: destination, progress: progress)
         }
         exportRequest = export ?? { entry, result, forensicCase, destination in
             try await UDFInspector.export(entryID: entry.id, from: result, in: forensicCase, to: destination)
@@ -109,6 +122,14 @@ final class OpticalWorkspaceStore {
     }
     var canPreview: Bool { selectedEntry != nil && documentUnavailableReason == nil && !hasActiveWork && !isClosing }
     var canExport: Bool { selectedEntry != nil && !hasActiveWork && !isClosing }
+    var autopsyExportUnavailableReason: String? {
+        guard let result else { return "Inspect this UDF source before exporting its full current and historical inventory." }
+        if result.options != UDFInspectionOptions() {
+            return "Inspect again with the standard UDF limits before creating a full Autopsy export. A custom bounded inventory may omit files."
+        }
+        return inspectionUnavailableReason
+    }
+    var canExportForAutopsy: Bool { result != nil && autopsyExportUnavailableReason == nil && !hasActiveWork && !isClosing }
     var canExportReport: Bool { result != nil && !hasActiveWork && !isClosing }
 
     func configure(evidence: EvidenceRecord?, in forensicCase: ForensicCase?) {
@@ -125,13 +146,15 @@ final class OpticalWorkspaceStore {
         analyses = [:]
         analysisOrder = []
         reportURL = nil
+        lastAutopsyExport = nil
+        autopsyExportDestination = nil
         guard let evidence, let forensicCase else { return }
         selection = Selection(evidence: evidence, forensicCase: forensicCase)
         refresh()
     }
 
     func refresh() {
-        guard let selection, !isClosing, !isInspecting, !isExporting, !isExportingReport else { return }
+        guard let selection, !isClosing, !isInspecting, !isExporting, !isExportingReport, !isExportingAutopsy else { return }
         let previous = invalidate()
         let id = UUID(), operation = loadRequest
         generation = id
@@ -311,11 +334,81 @@ final class OpticalWorkspaceStore {
         activeTask = task
     }
 
+    /// Export is source-wide. Search filters, table pages and selected rows do
+    /// not alter the collection, and the chooser cannot retarget a frozen job.
+    func exportForAutopsy() {
+        beginAutopsyExport(destination: nil)
+    }
+
+    func exportForAutopsy(to destination: URL) {
+        beginAutopsyExport(destination: destination)
+    }
+
+    private func beginAutopsyExport(destination: URL?) {
+        guard canExportForAutopsy, let selection, let result else { return }
+        let id = UUID(), operation = exportForAutopsyRequest, chooser = chooseAutopsyDestination
+        generation = id
+        isExportingAutopsy = true
+        lastAutopsyExport = nil
+        autopsyExportDestination = nil
+        errorMessage = nil
+        progress = nil
+        statusMessage = destination == nil ? "Choose an export parent folder for the complete UDF inventory…"
+            : "Verifying the recorded source and exporting all UDF states for Autopsy…"
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { self.finish(id) }
+            do {
+                let chosen: URL?
+                if let destination { chosen = destination } else { chosen = await chooser() }
+                guard let target = chosen else {
+                    if self.matches(id, selection: selection) {
+                        self.statusMessage = "Autopsy export destination selection canceled. No export was started."
+                    }
+                    return
+                }
+                try Task.checkCancellation()
+                guard self.matches(id, selection: selection), self.result?.jobID == result.jobID else { return }
+                try Self.verifyBinding(result, selection: selection)
+                try OpticalAutopsyExportService.validateDestination(target, evidence: selection.evidence,
+                    forensicCase: selection.forensicCase)
+                self.autopsyExportDestination = target
+                self.statusMessage = "Verifying the recorded source and exporting all UDF states for Autopsy…"
+                let value = try await Self.work { [weak self] in
+                    try await operation(selection.evidence, result, selection.forensicCase, target) { [weak self] update in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.matches(id, selection: selection), self.isExportingAutopsy,
+                                  self.result?.jobID == result.jobID else { return }
+                            self.progress = update
+                        }
+                    }
+                }
+                // A successful core receipt is past atomic publication. Show it
+                // even if a cancel request arrived just after the directory rename.
+                guard self.matches(id, selection: selection), self.result?.jobID == result.jobID else { return }
+                try OpticalAutopsyExportService.validateReceipt(value, result: result, destination: target)
+                self.lastAutopsyExport = value
+                self.statusMessage = Task.isCancelled
+                    ? "The verified Autopsy export was completed before cancellation finished. Its receipt is available."
+                    : "Autopsy export complete: \(value.entries.count.formatted()) verified current and historical files. Add the LogicalFiles folder as a Logical Files data source."
+            } catch is CancellationError {
+                guard self.matches(id, selection: selection) else { return }
+                self.statusMessage = "Autopsy export canceled. Incomplete work is retained only in a private staging folder; retry with a new destination."
+            } catch {
+                guard self.matches(id, selection: selection) else { return }
+                self.errorMessage = error.localizedDescription
+                self.statusMessage = "Autopsy export could not be confirmed. Existing cases and previous exports were preserved. If an output folder exists, review its Reports before importing it; incomplete work stays in private staging."
+            }
+        }
+        jobs[id] = task
+        activeTask = task
+    }
+
     func cancel() {
         for task in jobs.values { task.cancel() }
         if isFiltering { searchText = ""; stateFilter = .all; refreshRows() }
     }
-    func reset() { _ = invalidate(); selection = nil; result = nil; rows = []; analyses = [:]; analysisOrder = []; selectedEntryID = nil; isClosing = false }
+    func reset() { _ = invalidate(); selection = nil; result = nil; rows = []; analyses = [:]; analysisOrder = []; selectedEntryID = nil; lastAutopsyExport = nil; autopsyExportDestination = nil; isClosing = false }
     func beginShutdown() -> Task<Void, Never>? {
         isClosing = true
         let pending = invalidate()
@@ -399,6 +492,7 @@ final class OpticalWorkspaceStore {
         isInspecting = false
         isExporting = false
         isExportingReport = false
+        isExportingAutopsy = false
         isFiltering = false
         progress = nil
         errorMessage = nil
@@ -413,6 +507,7 @@ final class OpticalWorkspaceStore {
         isInspecting = false
         isExporting = false
         isExportingReport = false
+        isExportingAutopsy = false
         progress = nil
     }
     private func matches(_ id: UUID, selection: Selection) -> Bool { generation == id && self.selection == selection && !isClosing }

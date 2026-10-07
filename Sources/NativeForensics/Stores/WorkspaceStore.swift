@@ -146,7 +146,7 @@ final class WorkspaceStore {
             || assistant.isPresented || assistant.hasActiveWork || contentPreview.isLoading || caseWork.hasActivePublication
             || recovery.isRecovering || recovery.isPreviewing || recovery.isExporting
             || recovery.examination.isReadingRaw || recovery.examination.isSaving || recovery.examination.isExportingReport
-            || optical.isInspecting || optical.isPreviewing || optical.isExporting || optical.isExportingReport
+            || optical.isInspecting || optical.isPreviewing || optical.isExporting || optical.isExportingReport || optical.isExportingAutopsy
             || filesystemDocumentPreview.isLoading || filesystemBatchExport.isExporting
     }
     var hasActiveWork: Bool {

@@ -46,6 +46,8 @@ struct OpticalInspectorView: View {
                     if pane == .provenance {
                         if let result = store.result {
                             OpticalProvenanceView(result: result)
+                            Divider()
+                            OpticalAutopsyExportView(workspace: workspace)
                         } else {
                             Text("Inspect a supported RAW optical image to record UDF provenance and linked snapshots.")
                                 .font(.callout)
