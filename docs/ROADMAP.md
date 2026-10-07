@@ -4,6 +4,78 @@ Native Mac foundation และ filesystem workflow ชุดแรกมี imp
 
 ลำดับนี้เป็น milestones ที่ใช้ตัดสินใจจากผลทดสอบ ไม่ใช่กำหนดเวลาหรือข้อรับรองว่าแอปแทน Autopsy ได้ครบ ทุก phase ต้องรักษา source integrity และไม่ใส่ evidence/cases ของผู้ใช้ใน Git
 
+## ลำดับส่งมอบหลัง 0.3.0 — แผนวันที่ 7 October 2026
+
+เป้าหมายคือให้ผู้ตรวจทำงานตั้งแต่เลือกไฟล์ → อ่านเนื้อหา → บันทึกข้อค้นพบ → ตรวจคำอธิบาย AI → ออกรายงาน โดยกลับมาเปิดเคสแล้วตรวจที่มาของแต่ละข้อสรุปได้ ใช้ TSK/helper เดิมต่อและเพิ่ม native workflow รอบ engine ที่มีอยู่ หมายเลขเวอร์ชันด้านล่างเป็นเป้าหมายสำหรับจัดขอบเขตงาน ยังไม่ใช่ฟีเจอร์ที่ส่งมอบหรือกำหนดวัน release
+
+ฐานปัจจุบันมี case/listing/extraction, background path search และ Codex สำหรับไฟล์เดียว แต่คำตอบ AI และ extraction receipt ใน UI ยังเป็น session state; ไม่มี durable findings, local content preview, document-content search หรือ artifact timeline ดู [Codex scope](CODEX-ANALYSIS.md), [Readiness](READINESS.md) และ [Validation](VALIDATION.md) ผลทดสอบ synthetic corpus ไม่แทนการรองรับทุก filesystem หรือ benchmark บน M5
+
+| ลำดับ / เป้าหมาย | สิ่งที่ผู้ใช้ทำได้เมื่อผ่าน gate | ขึ้นกับ |
+|---|---|---|
+| **1 / 0.4 งานในเคสและ preview แรก** | Save Analysis, เปิดประวัติต่อไฟล์, notes/bookmarks/tags, อ่าน text/hex ใน inspector | Case publication ที่มีอยู่ และ fresh verified extraction |
+| **2 / 0.5 เอกสารและค้นเนื้อหา** | Preview PDF/images ที่ประกาศรองรับ, สกัดข้อความพร้อมเลขหน้า, ค้นข้อความในไฟล์และกลับไปยังตำแหน่งที่พบ | Verified-content service, decoder isolation และ derived-store experiment |
+| **3 / 0.6 Codex เปรียบเทียบหลักฐาน** | เลือกข้อความจากสองไฟล์ เปรียบเทียบ/ถามต่อ พร้อม references ที่แอปตรวจและเปิดดูได้ | Durable records และ content references ของช่วง 1–2 |
+| **4 / 0.7 Timeline และรายงาน** | รวม filesystem/browser/download events, filter เวลา, export รายงานที่แยกข้อเท็จจริงกับ AI/บันทึกผู้ตรวจ | Independent artifact fixtures และ timestamp policy |
+| **5 / 0.8 Recovery** | วิเคราะห์ unallocated/damaged data ผ่าน carving adapter และตรวจ candidates ก่อน export | Controlled scratch, candidate models และ independent recovery corpus |
+| **6 / 1.0 รุ่นพร้อมแจกในขอบเขตที่ประกาศ** | ติดตั้งบนเครื่องใหม่ ใช้งานได้ตาม compatibility/capability matrix และมีตัวเลข performance ที่ตรวจซ้ำได้ | Correctness, packaging, license/source/relink และ clean-machine gates |
+
+Phase 1 correctness กับ release preparation เป็นงานขนานตั้งแต่ช่วงแรก ไม่ต้องรอช่วง 6 จึงเริ่มจัด dependency materials, compatibility matrix หรือวัด app memory การผ่านช่วงฟีเจอร์ไม่ปิด gates ของ Phase 1 โดยอัตโนมัติ
+
+### ช่วง 1: งานไม่หายและอ่านไฟล์ก่อนถาม AI
+
+แบ่งเป็นสามชิ้นที่ใช้ได้แยกกัน: **Save Analysis → findings/notes → text/hex preview** เริ่ม Save Analysis ก่อนเพราะแก้ข้อจำกัดของฟีเจอร์ 0.3.0 ได้โดยไม่เพิ่มชนิดเนื้อหาที่ส่งออก
+
+- เพิ่ม versioned sidecars เช่น `analyses/<record-id>.json` และ `findings/<finding-id>.json` ภายใน `.nativecase` เส้นทางเหล่านี้เป็นแบบที่เสนอ; ยังไม่มี implementation รักษา manifest v1 และ historical listing JSON เดิม ไม่ migrate/rewrite เคสโดยอัตโนมัติ
+- Analysis record เป็น immutable receipt ผูก case/evidence IDs, exact file locator, filesystem snapshot digest/job reference กับ selected-entry/provenance summary, ordered container hashes พร้อม hash scopes, engine/options, extracted-content digest ถ้ามี, prompt-template/CLI versions, request digest, warnings และ structured answer ไม่คัดลอก listing เต็มลงทุกคำตอบ เวอร์ชัน model/provider บันทึกเฉพาะที่ตรวจได้จาก execution receipt; ค่าที่ไม่ทราบต้องระบุ unknown
+- ตั้ง serialized/read cap เริ่มต้น 1 MiB ต่อ record และ history pages สูงสุด 50 records; oversized save ต้องรายงาน failure โดยไม่ตัด record เงียบ ๆ ไม่โหลด history ทั้งเคสลง MainActor การเปิดรายการต้องอ่าน/validate แบบ bounded และทดสอบ aggregate memory เมื่อมีประวัติจำนวนมาก
+- ผู้ใช้เลือก Save หลังได้คำตอบที่ผ่าน response validation แล้ว หน้าบันทึกแจ้งว่าคำถาม/คำตอบ/metadata อาจมีข้อมูลส่วนตัว; exact outbound context และ text excerpt ต้องเป็น retention choice ที่มองเห็น ไม่มี raw provider log/credentials/host source paths ที่บันทึกตามมาโดยอัตโนมัติ `full` เก็บ exact UTF-8 request bytes ที่แอปส่งให้ CLI หลัง redaction รวมคำถาม/template text ที่ใช้จริง; ไม่สร้าง prompt ย้อนหลังจาก template version และไม่อ้างว่าเป็น HTTP payload ภายใน CLI `digestOnly` เก็บ digest แทน request bytes จึงสร้าง request เดิมกลับมาไม่ได้
+- Findings/notes เป็นงานของผู้ตรวจ แยกจากคำตอบ AI และมีสถานะยังไม่ตรวจ/ตรวจเทียบแล้ว/ปฏิเสธพร้อมบันทึกเหตุผล ไม่มีการยก AI answer เป็น verified finding อัตโนมัติ การแก้ note ต้องมี revision reference; extraction history ผูก file/source/output scopes และยังแสดง historical/offline state
+- แยก verified-content service จาก AssistantContextBuilder โดยคง owned descriptors, scratch lifetime และ independent output verification ให้ preview/decoders/AI ใช้ผลเดียวกัน เริ่ม regular file ขนาดไม่เกิน 1 MiB และ text prefix 32 KiB ตามฐานปัจจุบัน; hex แสดง byte offsets ของ extracted bytes, text แสดง encoding/truncation กับ line references ของ derived view
+- Inspector เพิ่ม Properties / Content / Findings; แสดง loading/partial/error ในตำแหน่งเดิม พร้อม keyboard navigation, copy text และ labels ที่อ่านได้ด้วย accessibility ห้ามผล preview ของ selection เก่าทับ selection ใหม่
+
+Gate: Save → Quit → Reopen ได้ record/notes เดิม; full-retention request hash คำนวณซ้ำตรง; case v1 เปิดได้; offline/changed source อ่าน record เป็น historical ไม่แสดงว่าเพิ่ง verify ใหม่ Test interrupted/disk-full/concurrent saves, corrupt/unknown schema, symlink replacement และ selection races ต้องไม่ทำ record/source เดิมเสียหาย Preview UTF-8/Thai/empty/binary/truncated มี expected bytes/hash และ cancel/close ล้างเฉพาะ owned scratch
+
+### ช่วง 2: เอกสารและ content search
+
+- สร้าง decoder contract คืน file digest, decoder/version/options, derived-text digest, page/line references, coverage และ failure/partial status เริ่ม text/CSV/JSON/logs กับ PDF ที่มี text layer; scanned PDF/OCR, Office macros และ image inference จัดเป็นขอบเขตถัดไป
+- ทดลอง PDFKit สำหรับ native PDF text/rendering ตาม [Apple PDFDocument](https://developer.apple.com/documentation/pdfkit/pdfdocument) และ [PDFPage.string](https://developer.apple.com/documentation/pdfkit/pdfpage/string) ก่อนเลือก implementation ใช้ decoder process ที่ควบคุม inputs/resources และต้องตรวจ sandbox/network/file-access behavior จริง; process isolation อย่างเดียวไม่ใช่ security boundary GUI รับ safe derived output ไม่รัน actions/macros/เปิด external resources
+- PDF reference ระบุหน้าและช่วงข้อความที่ decode ได้ ไม่อ้างว่าเป็น byte range ของ original PDF Cache key ครอบคลุม verified source set, file locator/extracted digest และ decoder version/options; inode/mtime อย่างเดียวไม่แทนการตรวจ source hash
+- แยก rebuildable derived index จาก manifest/listing ที่มีอยู่ ทดลอง SQLite FTS5 เทียบ substring baseline ก่อนเลือก โดย [FTS5](https://www.sqlite.org/fts5.html) มี token/phrase/prefix และ trigram substring ที่มีข้อจำกัดสำหรับคำสั้น ต้องทดสอบไทยไม่มีช่องว่าง, combining marks, normalization และ queries 1–2 ตัวอักษร ไม่ถือ Unicode tokenizer เป็นคำรับรองภาษาไทย
+- แสดงจำนวน indexed/skipped/failed/pending และ stale results ชัดเจน Search hit ผูก file ID + decoder reference + hashes; term ที่มีเฉพาะเนื้อหาต้องพบ ไม่ใช้ extension/path match อ้างว่าเป็น content search
+
+Gate: known PDF/text/image fixtures ให้ข้อความ/หน้า/rendered outputs ตาม oracle; corrupt/encrypted/oversized documents, timeout/cancel และ decode failure ไม่ทำ GUI ล่มหรือส่งข้อมูลออก Index rebuild/incremental invalidation ตรง independent expected results ตั้ง byte/page/pixel/time/memory caps จาก experiment ก่อนเปิดใช้ และรักษา partial coverage ไม่ให้ผล “ไม่พบ” กลายเป็นข้อสรุปว่าไม่มีข้อมูล
+
+### ช่วง 3: Codex ที่เปรียบเทียบและอ้างกลับได้
+
+เริ่มสองไฟล์ใน evidence เดียวก่อน สำหรับ UTF-8 ใช้เพดานเดิม 32 KiB ต่อ excerpt รวมไม่เกิน 64 KiB และต้องจำกัดขนาด serialized request เพิ่มต่างหาก Budget สำหรับ PDF references กำหนดหลังช่วง 2 ผู้ใช้เลือก ranges/redaction และดู exact aggregate payload ก่อนทุก Send; local preview/search ไม่ส่ง cloud เก็บ selected ranges, transformation version/options, disclosed-text digest และ mapping กลับไป decoder references เพื่อไม่ให้ citations เลื่อนหลัง redaction โดยไม่เก็บข้อความที่ผู้ใช้ปิดบังเข้ามาตามหลัง
+
+References ของคำตอบมี IDs/ranges ที่ตรวจว่าถูก disclosed จริงก่อนทำปุ่มเปิดหลักฐาน Reference ที่ resolve ได้ไม่รับรองว่าการตีความถูกต้อง Follow-up เป็น bounded reviewed request ใหม่ที่ผูก parent record; previous answer ถือเป็น untrusted interpretation ไม่เพิ่ม model tool access และไม่แก้ deterministic evidence/timeline facts
+
+Gate: fabricated/out-of-range/stale references ถูกแสดง unresolved; เปลี่ยน selection/คำถาม/cancel ไม่บันทึกลงไฟล์ผิด; context budget/partial/missing-file coverage อยู่ทั้ง preview และ saved record; source/hash mismatch ไม่ส่งเนื้อหาออก CI ใช้ fake provider; live smoke ใช้ synthetic data และตรวจ permission contract ของ CLI เวอร์ชันที่รองรับ
+
+### ช่วง 4–6: Timeline, recovery และ release
+
+- **Timeline/reports:** เริ่ม filesystem events ที่มีแล้วและ browser/download parser แรกจาก known SQLite/WAL/SHM fixtures เก็บ raw time/precision/timezone assumption พร้อม deterministic normalization; DST gap/overlap ต้องมี policy ห้าม AI เติมเหตุการณ์ลง timeline Export JSON/Markdown ก่อน แล้วค่อย PDF report โดยแยก verified bytes, parser observations, hypotheses และ examiner notes
+- **Recovery:** ใช้ PhotoRec adapter เป็น candidate ที่ต้องทดลอง พร้อม private output/scratch และ candidate offset/range/status/hash ระบุ unknown/unavailable เมื่อพิสูจน์ source extents ไม่ได้ แยก recovered logical bytes จาก original source extents และไม่อนุมาน contiguous range จาก output size เริ่ม JPEG/PNG/PDF/ZIP ที่มี oracle; fragmented/incomplete/false-positive และ two-independent-PDF/incremental-update gates ด้านล่างต้องผ่าน Carved candidate กับ deleted filesystem entry เป็นคนละชนิดข้อมูล
+- **Release:** ปิด bugs ภายใน advertised capability และแจกพร้อม notices/corresponding source/relink materials, Developer ID/notarization เมื่อมี signing identity พร้อม ทดสอบ clean machine, macOS versions ที่ประกาศ และ physical MacBook Air M5 ไม่ลด Gatekeeper เพื่อชดเชย packaging ที่ยังไม่ผ่าน
+
+APFS/FileVault, OCR ทุกไฟล์ และ engine rewrite ต้องมี ADR กับ independent corpus/measurement แยกหลัง workflow ข้างต้นพร้อม; ไม่ใช่ dependency ของ Save/preview/search แรก
+
+### Backlog รอบแรกและการวัดผล
+
+แยกงานช่วง 1 เป็น commits ตามขอบเขตนี้โดยยังไม่เริ่ม implementation ใน planning change:
+
+1. Contracts/fixtures: AnalysisRecord, FindingRecord, retention modes, canonical request digest และ reference/status invariants
+2. Core persistence: immutable sidecar publication/reopen, case ownership/locking, version handling และ fault-injection regressions
+3. Native workflow: Save Analysis, per-file history, notes/bookmarks และ historical badges พร้อม GUI save/reopen checks
+4. Verified-content service: shared ownership/cleanup contract และ extraction/hash regression parity กับ AssistantContextBuilder เดิม
+5. Text/hex inspector: bounded content, copy/navigation/accessibility และ stale-selection/cancel/close regressions
+6. Validation/docs: debug/release + real helper, bundle verification, end-to-end synthetic GUI receipt และ sanitized measurements
+
+การวัดแยก source verification, extraction, decode/index, UI และ provider latency ใช้ cold/warm/mixed workloads และ fixed output oracles บันทึก p50/p95, peak app/helper RSS, cancellation cleanup และ UI interaction latency Provider time ไม่ใช้เป็นเครื่องชี้ว่า engine เร็วขึ้น; helper 1/2/4 results ไม่กำหนด production workers จนวัดทั้ง pipeline
+
+เริ่ม baseline บน 50,000-entry workload ปัจจุบันก่อน ทดลอง 100,000/1,000,000 entries ได้ใน derived-store harness เท่านั้นจน query/paging/storage budgets ผ่าน ไม่เพิ่ม listing ceiling ที่ใช้งานจริงเพียงเพื่อทำ benchmark เป้าหมาย latency/RAM เชิงตัวเลขกำหนดจาก baseline และเครื่องเป้าหมาย พร้อม correctness gate และ regression budget ก่อนลงมือ optimize
+
 ## Phase 0 Native foundation ที่มีแล้ว
 
 ขอบเขตเริ่มต้นใน repository: SwiftPM core และ SwiftUI desktop app สำหรับสร้างเคส, reopen manifest, เลือก source file, อ่าน bytes แบบ streaming, SHA-256, progress และ cancellation Hash ระบุว่าเป็น selected file bytes โดยไม่ตีความเป็น logical disk image
