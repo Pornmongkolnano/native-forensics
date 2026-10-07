@@ -26,7 +26,7 @@
     "compactReceiptAndVisibleTableObserved": true,
     "importInstructionsExpandAndCollapseObserved": true
   },
-  "opticalLayout": {"followUpDate": "2026-10-08", "windowSizes": [[1040, 660], [1280, 780]], "beforeAndAfterCompletedExport": true, "cases": 4, "minimumCompleteVisibleRows": 3, "finiteSplitAndScrollBounds": true, "debugAndReleaseWorkspaceRerun": "passed"},
+  "opticalLayout": {"followUpDate": "2026-10-08", "windowSizes": [[1040, 660], [1280, 780]], "beforeAndAfterCompletedExport": true, "cases": 4, "minimumCompleteVisibleRows": 3, "explicitTableMinimumPoints": 192, "finiteSplitAndScrollBounds": true, "debugAndReleaseWorkspaceRerun": "passed"},
   "bundle": {"version": "0.5.1", "build": 14, "engineVersion": "0.1.2-tsk4.15.0", "engineUnchanged": true, "signedReceiptAndDependencyChecks": "passed", "launched": true, "signing": "local ad-hoc"},
   "autopsyFrozenBaseline": {"pass": 30, "fail": 0, "warn": 0, "info": 2, "skip": 3, "servicesStarted": false, "baselineRegenerated": false},
   "limitations": [

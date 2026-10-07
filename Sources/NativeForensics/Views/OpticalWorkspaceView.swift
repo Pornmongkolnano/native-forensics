@@ -309,6 +309,10 @@ private struct OpticalFilesTableView: View {
                 }
                 .width(102)
             }
+            // AppKit's default table minimum differs between macOS releases.
+            // Reserve room for three full two-line rows plus the native header
+            // and scrollbar, rather than inheriting a 160-point table height.
+            .frame(minHeight: 192)
             .disabled(optical.isLoading || optical.isInspecting || optical.isExporting || optical.isExportingReport || optical.isExportingAutopsy || optical.isFiltering)
             .contextMenu(forSelectionType: String.self) { selection in
                 if !optical.isFiltering, selection.count == 1, let id = selection.first,

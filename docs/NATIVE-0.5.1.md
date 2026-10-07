@@ -33,6 +33,8 @@ GUI ใช้ synthetic UDF fixture เดิมเท่านั้น เป�
 
 การตรวจ GUI ต่อวันที่ 8 ตุลาคมพบว่าแผงผลส่งออกเดิมกินพื้นที่ตาราง จึงรวมจำนวนไฟล์และปุ่มไว้แถวเดียว พับคำแนะนำโดยค่าเริ่มต้นและจำกัดพื้นที่เลื่อนของรายละเอียด การทดสอบ AppKit วัด viewport ของ `NSTableView` จริงที่ 1040×660 และ 1280×780 ทั้งก่อนและหลัง completed receipt รวม 4 กรณี ยืนยันว่าแสดงอย่างน้อย 3 แถวครบโดยไม่ขยาย split view เกินหน้าต่าง ทดสอบ workspace 119 declarations ซ้ำทั้ง debug/release ผ่าน และเปิด bundle ใหม่ส่งออก fixture ซ้ำเพื่อตรวจ bytes/hashes และการเปิด/พับคำแนะนำผ่าน GUI
 
+Runner macOS 26 ใช้ row geometry ต่างจากเครื่อง macOS 27: table default เหลือ viewport 134 จุด แต่สามแถวต้องการ 138 จุด จึงกำหนด minimum ของ table ที่ 192 จุดเพื่อเผื่อ native header/scrollbar แทนการลดจำนวนแถวที่ test ต้องรับรอง เกณฑ์ finite window bounds และสามแถวเดิมยังใช้ทั้งสี่กรณี
+
 `build_and_run.sh --verify` สร้างและเปิด app bundle 0.5.1 สำเร็จ Independent bundle validation ผ่าน strict signatures, receipt hashes, ARM64 และ system-only library closures Engine ยังเป็น 0.1.2-tsk4.15.0 เดิม Autopsy frozen-baseline health ได้ **30 PASS / 0 FAIL / 0 WARN** โดยไม่เปิด services หรือปรับ baseline ดู [sanitized receipt](validation/2026-10-07-native-0.5.1.json) สำหรับขอบเขต checks
 
 CI ใช้ synthetic/native corpus, debug/release, strict executor probe และ packaged bundle checks ให้ดูสถานะของ commit ที่จะใช้งานแยกจากผล local ข้างต้น ผล timing ของ fixture ไม่ใช่ full-app speedup ยังไม่ได้ทดสอบเครื่อง M5 จริงหรือ notarization และชุด Autopsy ZIP ที่แชร์ก่อนหน้านี้เป็น artifact แยกจาก native app รุ่นนี้
