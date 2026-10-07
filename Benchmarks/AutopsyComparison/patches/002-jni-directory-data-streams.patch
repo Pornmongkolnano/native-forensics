@@ -1,0 +1,75 @@
+--- a/auto_db_java.cpp
++++ b/auto_db_java.cpp
+@@ -27,6 +27,22 @@
+ 
+ using std::stringstream;
+ using std::for_each;
++
++// Supplemental DATA streams on non-root NTFS directories are file rows.
++// Keep dot aliases and root parenting on the existing directory path.
++static bool isNamedNtfsDirectoryData(const TSK_FS_FILE *fs_file,
++    const TSK_FS_ATTR *fs_attr)
++{
++    return fs_file != NULL && fs_file->fs_info != NULL
++        && fs_file->meta != NULL && fs_file->name != NULL
++        && fs_file->name->name != NULL && fs_file->name->name[0] != '\0'
++        && !TSK_FS_ISDOT(fs_file->name->name)
++        && fs_file->name->meta_addr != fs_file->fs_info->root_inum
++        && TSK_FS_TYPE_ISNTFS(fs_file->fs_info->ftype)
++        && fs_file->meta->type == TSK_FS_META_TYPE_DIR
++        && fs_attr != NULL && fs_attr->type == TSK_FS_ATTR_TYPE_NTFS_DATA
++        && fs_attr->name != NULL && fs_attr->name[0] != '\0';
++}
+ 
+ /**
+  */
+@@ -539,6 +555,7 @@
+     if (fs_file->name == NULL)
+         return TSK_OK;
+ 
++    int name_type = fs_file->name->type;
+     if (fs_file->meta) {
+         mtime = fs_file->meta->mtime;
+         atime = fs_file->meta->atime;
+@@ -550,6 +567,12 @@
+         gid = fs_file->meta->gid;
+         uid = fs_file->meta->uid;
+         meta_seq = fs_file->meta->seq;
++    }
++
++    if (isNamedNtfsDirectoryData(fs_file, fs_attr)) {
++        // Change only this emitted stream row, never the shared directory.
++        name_type = TSK_FS_NAME_TYPE_REG;
++        meta_type = TSK_FS_META_TYPE_REG;
+     }
+ 
+     size_t attr_nlen = 0;
+@@ -655,7 +678,7 @@
+         TSK_DB_FILES_TYPE_FS,
+         type, idx, namej,
+         fs_file->name->meta_addr, (uint64_t)fs_file->name->meta_seq,
+-        fs_file->name->type, meta_type, fs_file->name->flags, meta_flags,
++        name_type, meta_type, fs_file->name->flags, meta_flags,
+         size,
+         (unsigned long long)crtime, (unsigned long long)ctime, (unsigned long long) atime, (unsigned long long) mtime,
+         meta_mode, gid, uid, 
+@@ -1626,14 +1649,16 @@
+ TskAutoDbJava::processAttribute(TSK_FS_FILE * fs_file,
+     const TSK_FS_ATTR * fs_attr, const char *path)
+ {
+-    // add the file metadata for the default attribute type
+-    if (isDefaultType(fs_file, fs_attr)) {
++    // Keep the directory default row and also import its named DATA streams.
++    const bool defaultAttribute = isDefaultType(fs_file, fs_attr);
++    if (defaultAttribute || isNamedNtfsDirectoryData(fs_file, fs_attr)) {
+ 
+         if (insertFileData(fs_attr->fs_file, fs_attr, path) == TSK_ERR) {
+             registerError();
+             return TSK_OK;
+         }
+-        else {
++        else if (defaultAttribute) {
++            // A supplemental stream must not suppress the fallback directory row.
+             m_attributeAdded = true;
+         }
+     }

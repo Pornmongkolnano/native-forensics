@@ -1,0 +1,29 @@
+--- a/dataModel_SleuthkitJNI.cpp
++++ b/dataModel_SleuthkitJNI.cpp
+@@ -859,6 +859,9 @@
+ 
+     if (env->GetStringUTFLength(timeZone) > 0) {
+         const char *tzstr = env->GetStringUTFChars(timeZone, &isCopy);
++        if (tzstr == NULL) {
++            return 0; // Preserve the pending JNI allocation exception.
++        }
+ 
+         if (strlen(tzstr) > 64) {
+             env->ReleaseStringUTFChars(timeZone, tzstr);
+@@ -870,9 +873,15 @@
+ 
+         char envstr[70];
+         snprintf(envstr, 70, "TZ=%s", tzstr);
++#ifdef TSK_WIN32
++        const int timezoneResult = putenv(envstr);
++#else
++        // POSIX putenv retains its argument; setenv copies the JNI string.
++        const int timezoneResult = setenv("TZ", tzstr, 1);
++#endif
+         env->ReleaseStringUTFChars(timeZone, tzstr);
+ 
+-        if (0 != putenv(envstr)) {
++        if (0 != timezoneResult) {
+             stringstream ss;
+             ss << "Error setting timezone environment, using: ";
+             ss << envstr;
