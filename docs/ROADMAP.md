@@ -1,14 +1,14 @@
 # แผนพัฒนา NativeForensics
 
-Native Mac foundation และ filesystem workflow ชุดแรกมี implementation แล้ว ปัจจุบัน **Phase 1 ยัง IN PROGRESS** เพื่อเพิ่ม corpus/coverage และ GUI validation ก่อนขยาย recovery/content analysis หรือรายงานผลเรื่อง performance
+Native Mac foundation และ filesystem workflow มี implementation แล้ว ปัจจุบัน **Phase 1 coverage ยัง IN PROGRESS** เวอร์ชัน 0.5 เพิ่ม assignment recovery, bounded UDF VAT history, isolated document previews, selected-document text search และ transactional batch export ตาม [assignment validation](ASSIGNMENT-VALIDATION-2026-10-07.md) ผลนี้ไม่ปิด broad-format, artifact-analysis หรือ distribution gates
 
 ลำดับนี้เป็น milestones ที่ใช้ตัดสินใจจากผลทดสอบ ไม่ใช่กำหนดเวลาหรือข้อรับรองว่าแอปแทน Autopsy ได้ครบ ทุก phase ต้องรักษา source integrity และไม่ใส่ evidence/cases ของผู้ใช้ใน Git
 
 ## ลำดับส่งมอบหลัง 0.3.0 — แผนวันที่ 7 October 2026
 
-เป้าหมายคือให้ผู้ตรวจทำงานตั้งแต่เลือกไฟล์ → อ่านเนื้อหา → บันทึกข้อค้นพบ → ตรวจคำอธิบาย AI → ออกรายงาน โดยกลับมาเปิดเคสแล้วตรวจที่มาของแต่ละข้อสรุปได้ ใช้ TSK/helper เดิมต่อและเพิ่ม native workflow รอบ engine ที่มีอยู่ **ช่วง 1 มี implementation และ local validation ใน 0.4.0 / build 12 แล้ว** หมายเลขช่วง 2–6 เป็นเป้าหมายสำหรับจัดขอบเขตงาน ยังไม่ใช่ฟีเจอร์ที่ส่งมอบหรือกำหนดวัน release
+เป้าหมายคือให้ผู้ตรวจทำงานตั้งแต่เลือกไฟล์ → อ่านเนื้อหา → บันทึกข้อค้นพบ → ตรวจคำอธิบาย AI → ออกรายงาน โดยกลับมาเปิดเคสแล้วตรวจที่มาของแต่ละข้อสรุปได้ ใช้ TSK/helper เดิมต่อและเพิ่ม native workflow รอบ engine ที่มีอยู่ **ช่วง 1 มี implementation และ local validation ใน 0.4.0 / build 12 แล้ว** ส่วน 0.5 เพิ่มบาง workflow ของช่วงถัดไปตามขอบเขตที่ตรวจจริง หมายเลขช่วง 2–6 ยังเป็น milestones สำหรับพัฒนาต่อ ไม่ใช่ข้อรับรองว่าทุก gate เสร็จแล้วหรือกำหนดวัน release
 
-ฐานปัจจุบันมี case/listing/extraction, background path search, Codex สำหรับไฟล์เดียว, explicit Save Analysis, per-file history, revisioned notes/bookmarks/tags, extraction history และ fresh verified text/hex preview ดู [Case work/limits](CASE-WORK.md), [Codex scope](CODEX-ANALYSIS.md) และ [Validation](VALIDATION.md) ยังไม่มี document-content search, PDF/image decoder หรือ artifact timeline ผลทดสอบ synthetic corpus ไม่แทนการรองรับทุก filesystem หรือ benchmark บน M5
+ฐาน 0.4 มี case/listing/extraction, background path search, Codex สำหรับไฟล์เดียว, explicit Save Analysis, per-file history, revisioned notes/bookmarks/tags, extraction history และ fresh verified text/hex preview ดู [Case work/limits](CASE-WORK.md) และ [Codex scope](CODEX-ANALYSIS.md) เวอร์ชัน 0.5 เพิ่ม document decoder/search ในไฟล์ที่เลือก ยังไม่มี case-wide content index, artifact timeline, OCR หรือ legacy Office body decoding ผลทดสอบไม่แทนทุก filesystem หรือ benchmark บน M5
 
 | ลำดับ / เป้าหมาย | สิ่งที่ผู้ใช้ทำได้เมื่อผ่าน gate | ขึ้นกับ |
 |---|---|---|
@@ -123,7 +123,7 @@ Acceptance gates ที่ยังต้องปิดก่อน Phase 1 com
 - Full GUI flow เพิ่ม create/inspect cancellation, fresh unsupported input, partition-open partial results และ cancel/save/publication races; success, listing-limit partial reopen/export, native hash cancellation และ retained-cache failure ผ่านพร้อม hash/receipt readback แล้ว
 - Independent fixture outputs และ differential reference ตรงกันภายใน advertised capability ไม่ประกาศรองรับจาก compiled generic TSK formats เพียงอย่างเดียว
 
-**UDF ไม่มีใน TSK adapter ที่เลือก** ต้องมี adapter และ independent corpus แยกเพื่อรองรับงาน UDF; เป็น extension ที่ยังไม่ได้ implement APFS/FileVault/encrypted filesystems ถูกปิดไว้สำหรับ Phase 3 ส่วน SQLite result store/migrations ยังเป็นทางเลือกหลัง bounded JSON และ workload จำเป็นต้องใช้
+**UDF ไม่มีใน TSK adapter ที่เลือก** แต่ 0.5 มี Swift adapter แยกสำหรับ RAW 2,048-byte / UDF 2.01 physical/virtual VAT profile พร้อม synthetic malformed-input corpus และ independent assignment extents/hash oracle ยังไม่ครอบคลุม UDF ทุก profile APFS/FileVault/encrypted filesystems ถูกปิดไว้สำหรับ Phase 3 ส่วน SQLite result store/migrations ยังเป็นทางเลือกหลัง bounded JSON และ workload จำเป็นต้องใช้
 
 ก่อนแจก helper ต้องจัด dependency source/licenses/relink package ให้ครบ Local `.engine/relink/` และ source archives เป็น artifacts ที่เก็บไว้สำหรับงานนี้ ไม่ใช่ completed distribution package
 

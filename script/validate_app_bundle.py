@@ -78,10 +78,40 @@ def validate_metadata(bundle: Path) -> dict:
         raise ValueError("The bundled third-party notices differ from the receipt.")
     if receipt.get("distributionArtifactsBundled") is not False:
         raise ValueError("Development bundle must disclose absent source/relink distribution artifacts.")
+    decoder_receipt_path = bundle / "Contents/Resources/document-decoder-manifest.json"
+    version = info.get("CFBundleShortVersionString", "0.0.0")
+    try:
+        requires_decoder = tuple(int(part) for part in version.split(".")) >= (0, 5, 0)
+    except (ValueError, AttributeError):
+        raise ValueError("Invalid application version.")
+    decoder_hash = None
+    if requires_decoder or decoder_receipt_path.exists():
+        regular(decoder_receipt_path)
+        decoder_receipt = json.loads(decoder_receipt_path.read_text())
+        decoder = bundle / "Contents/Helpers/NFDocumentDecoder"
+        regular(decoder)
+        if (decoder_receipt.get("schemaVersion") != 1 or decoder_receipt.get("protocolVersion") != 1
+                or decoder_receipt.get("path") != "Contents/Helpers/NFDocumentDecoder"
+                or decoder_receipt.get("architecture") != receipt.get("architecture")
+                or decoder_receipt.get("minimumMacOS") != minimum):
+            raise ValueError("Invalid document decoder receipt or runtime scope.")
+        decoder_hash = sha256(decoder)
+        if decoder_hash != decoder_receipt.get("sha256"):
+            raise ValueError("The document decoder differs from its build receipt.")
+        source_hashes = decoder_receipt.get("sourceSha256")
+        if not isinstance(source_hashes, dict) or not source_hashes:
+            raise ValueError("The document decoder source inventory is missing.")
+        for name, value in source_hashes.items():
+            parts = PurePosixPath(name).parts
+            if (".." in parts or not name.endswith(".swift") or not name.startswith(
+                    ("Sources/NFDocumentDecoder/", "Sources/ForensicsCore/"))
+                    or not isinstance(value, str) or len(value) != 64
+                    or any(letter not in "0123456789abcdef" for letter in value)):
+                raise ValueError("Invalid document decoder source inventory.")
     return {"appVersion": info.get("CFBundleShortVersionString"),
             "engineVersion": receipt.get("engineVersion"),
             "architecture": receipt.get("architecture"), "minimumMacOS": minimum,
-            "helperSha256": receipt["engineSha256"]}
+            "helperSha256": receipt["engineSha256"], "documentDecoderSha256": decoder_hash}
 
 
 def command(argv: list[str]) -> str:
@@ -93,7 +123,10 @@ def validate_bundle(bundle: Path) -> dict:
     result = validate_metadata(bundle)
     app = bundle / "Contents/MacOS/NativeForensics"
     helper = bundle / "Contents/Helpers/NFTSKEngine"
-    for binary in (app, helper):
+    binaries = [app, helper]
+    if result.get("documentDecoderSha256"):
+        binaries.append(bundle / "Contents/Helpers/NFDocumentDecoder")
+    for binary in binaries:
         architectures = command(["/usr/bin/lipo", "-archs", str(binary)]).split()
         if result["architecture"] not in architectures:
             raise ValueError("App and helper architecture differ from the receipt.")
@@ -103,6 +136,8 @@ def validate_bundle(bundle: Path) -> dict:
                                    for value in dependencies):
             raise ValueError("The app has a dynamic dependency outside macOS system libraries.")
     command(["/usr/bin/codesign", "--verify", "--strict", str(helper)])
+    if result.get("documentDecoderSha256"):
+        command(["/usr/bin/codesign", "--verify", "--strict", str(binaries[-1])])
     command(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(bundle)])
     result["validation"] = "passed-local-artifact-checks"
     result["distribution"] = "development; Developer ID/notarization and source/relink package not verified"

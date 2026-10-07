@@ -7,6 +7,7 @@ signing, or verification fails. Publication rolls back a failed rename.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import plistlib
@@ -30,6 +31,12 @@ def stage_bundle(binary: Path) -> Path:
             (bundle / "Contents" / directory).mkdir(parents=True, exist_ok=True)
         shutil.copy2(binary, bundle / f"Contents/MacOS/{NAME}")
         shutil.copy2(ROOT / ".engine/bin/NFTSKEngine", bundle / "Contents/Helpers/NFTSKEngine")
+        decoder = binary.parent / "NFDocumentDecoder"
+        if decoder.is_symlink() or not decoder.is_file():
+            raise ValueError("Build NFDocumentDecoder beside the app binary before packaging.")
+        copied_decoder = bundle / "Contents/Helpers/NFDocumentDecoder"
+        shutil.copy2(decoder, copied_decoder)
+        subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(copied_decoder)], check=True)
         resources = bundle / "Contents/Resources"
         shutil.copy2(ROOT / "Assets/AppIcon/AppIcon.icns", resources / "AppIcon.icns")
         shutil.copytree(ROOT / "NativeEngine/licenses", resources / "EngineLicenses", dirs_exist_ok=True)
@@ -40,13 +47,28 @@ def stage_bundle(binary: Path) -> Path:
         receipt["relinkArtifacts"] = "Not bundled; development checkout .engine/relink/"
         receipt["sourceArtifacts"] = "Not bundled; development checkout .engine/downloads/ and tracked patches"
         (resources / "engine-manifest.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+        decoder_receipt = {
+            "schemaVersion": 1, "protocolVersion": 1,
+            "path": "Contents/Helpers/NFDocumentDecoder",
+            "sha256": hashlib.sha256(copied_decoder.read_bytes()).hexdigest(),
+            "architecture": receipt["architecture"],
+            "minimumMacOS": receipt["toolchain"]["minimumMacOS"],
+            "scope": "Local bounded document and image inspection in an owned process",
+            "sourceSha256": {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                for directory in (ROOT / "Sources/NFDocumentDecoder", ROOT / "Sources/ForensicsCore")
+                for path in sorted(directory.rglob("*.swift"))},
+        }
+        (resources / "document-decoder-manifest.json").write_text(json.dumps(decoder_receipt, indent=2, sort_keys=True) + "\n")
         identifier = "io.github.pornmongkolnano.nativeforensics"
         case_type = identifier + ".case"
         info = {
             "CFBundleExecutable": NAME, "CFBundleIdentifier": identifier,
             "CFBundleName": NAME, "CFBundleDisplayName": "Native Forensics",
-            "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.4.0",
-            "CFBundleVersion": "12", "CFBundleIconFile": "AppIcon",
+            "NSDownloadsFolderUsageDescription": "Read the evidence files and case folders you select, and save verified exports to the destinations you choose.",
+            "NSDocumentsFolderUsageDescription": "Read the evidence files and case folders you select, and save verified exports to the destinations you choose.",
+            "NSDesktopFolderUsageDescription": "Read the evidence files and case folders you select, and save verified exports to the destinations you choose.",
+            "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.5.0",
+            "CFBundleVersion": "13", "CFBundleIconFile": "AppIcon",
             "LSMinimumSystemVersion": receipt["toolchain"]["minimumMacOS"],
             "NSPrincipalClass": "NSApplication", "NSHighResolutionCapable": True,
             "CFBundleDocumentTypes": [{"CFBundleTypeName": "Native Forensics Case",

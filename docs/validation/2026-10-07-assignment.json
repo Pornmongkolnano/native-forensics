@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "appVersion": "0.5.0",
+  "appBuild": "13",
+  "privacy": "Generic dataset labels only; original sources, filenames, hashes, paths, payloads, cases, screenshots, logs and answers stay in ignored local material.",
+  "host": {
+    "architecture": "arm64",
+    "chip": "Apple M2",
+    "macOS": "27.0.1",
+    "swift": "6.4",
+    "xcode": "27",
+    "declaredMinimumMacOS": "14",
+    "physicalM5Tested": false,
+    "olderSupportedMacOSTested": false
+  },
+  "scope": "Assignment-driven correctness and bounded local usability, not a fresh performance benchmark or complete Autopsy parity.",
+  "localValidation": {
+    "swiftDebug": {
+      "coreDeclarations": 259,
+      "coreSuites": 24,
+      "coreSeconds": 41.321,
+      "appDeclarations": 108,
+      "appSuites": 15,
+      "totalDeclarations": 367,
+      "passed": true,
+      "appSeconds": 2.861
+    },
+    "swiftRelease": {
+      "coreDeclarations": 259,
+      "coreSuites": 24,
+      "coreSeconds": 39.848,
+      "appDeclarations": 108,
+      "appSuites": 15,
+      "appSeconds": 2.959,
+      "totalDeclarations": 367,
+      "passed": true
+    },
+    "realHelperAndLocalUDFOracle": "enabled; current configured core integration passed in both configurations",
+    "nativeCorpus": {
+      "checks": 105,
+      "failures": 0,
+      "passed": true
+    },
+    "pythonHarnessAndBundle": {
+      "tests": 55,
+      "passed": true
+    },
+    "nativeHelper": {
+      "version": "0.1.2-tsk4.15.0",
+      "pinnedPatches": 5,
+      "unchangedFromPriorMilestone": true
+    },
+    "latestIndependentBundleValidation": {
+      "status": "passed",
+      "appVersion": "0.5.0",
+      "appBuild": "13",
+      "strictAppAndHelperSignatures": true,
+      "receiptHashes": true,
+      "architecture": "arm64",
+      "systemOnlyDynamicDependencyClosures": 3,
+      "documentDecoderSHA256": "13948b05f60daeca050ce415cea2e00f423145c77dd99e5e856f5d08b4ccf9a4",
+      "signing": "ad-hoc local development",
+      "notarized": false
+    }
+  },
+  "assignmentComparison": {
+    "core": {
+      "gates": 2198,
+      "mismatches": 0,
+      "negativeControls": 6,
+      "passed": true,
+      "scope": "Actual source-bound core outputs, metadata/timestamps, document reference controls and canonical result reopen."
+    },
+    "guiBatchAndRecoveryReadback": {
+      "gates": 783,
+      "mismatches": 0,
+      "negativeControls": 6,
+      "passed": true,
+      "scope": "Read-only verification of actual GUI-published batch files/manifest and current recovery generation; UI observations recorded separately."
+    },
+    "guiUDFReportReadback": {
+      "gates": 385,
+      "mismatches": 0,
+      "negativeControls": 6,
+      "passed": true,
+      "scope": "Published report versus current persisted job, inventory, extents and timestamps; no UI observation inferred."
+    },
+    "datasets": {
+      "A": {
+        "kind": "damaged metadata; whole-image RAW signature recovery",
+        "nativePrimaryPayloads": 14,
+        "autopsyPrimaryPayloads": 14,
+        "exactPayloadMatches": 14,
+        "autopsyEmbeddedDerivatives": 16,
+        "geometry": "Assignment-labelled FAT32; actual damaged geometry unresolved.",
+        "deletionAndOriginalNames": "unknown",
+        "photoRecCommand": "partition_none,wholespace,search"
+      },
+      "B": {
+        "kind": "FAT32 removable media",
+        "nativeFilesystemRecords": 51,
+        "autopsyFilesystemRecords": 62,
+        "comparablePayloads": 41,
+        "nativeExactExports": 41,
+        "guiBatchSucceeded": 41,
+        "guiBatchFailed": 0,
+        "officePayloads": 17,
+        "configurationTextPayloads": 1,
+        "unidentifiedOrOverwrittenOriginalSlots": 23,
+        "autopsyEmbeddedDerivatives": 394,
+        "recordCountMeaning": "Namespace/pseudo-entry representation differs; not a payload recovery deficit.",
+        "intactOriginalFiles": "Exact acquired-byte exports do not establish intact former originals or a wiping utility/time."
+      },
+      "C": {
+        "kind": "bounded RAW UDF 2.01 physical/virtual VAT profile; 2048-byte sectors",
+        "vatSnapshots": 9,
+        "independentTargetPayloads": 20,
+        "nativeExactExports": 20,
+        "currentImages": 3,
+        "historicalOfficePayloads": 17,
+        "autopsyExactTargetMatches": 13,
+        "autopsyTargetPartialOrMissing": 7,
+        "rawTimestampFieldsVerified": 80,
+        "deletionSemantics": "Historical children recovered through deleted ancestors; child FID flags remain non-deleted.",
+        "crossMediaOfficeExactMatches": 17
+      }
+    },
+    "allThreeSourceHashesUnchanged": true,
+    "allThreeResultStoresReopened": true,
+    "initialProbeException": "Initial comparison rejected an unpersisted subsecond savedAt normalization; canonical serialized readback subsequently passed without source/result rewriting.",
+    "guiRecoveryReportsReadback": {
+      "gates": 466,
+      "mismatches": 0,
+      "passed": true,
+      "reports": 2,
+      "scope": "Actual published GUI recovery reports versus final persisted recovery generation, full 14-payload inventory/ranges/bytes, zero loaded analyses/notes, unknown/not-reviewed assessments and host-path redaction. All three source hashes freshly reconfirmed unchanged; no UI actions inferred."
+    }
+  },
+  "documentDecoder": {
+    "independentReferenceExports": 91,
+    "executionFailures": 0,
+    "sourcesUnchanged": true,
+    "modernOfficeReferencedBodies": 10,
+    "legacyOfficeUnsupportedBodies": 7,
+    "modernOfficePartialFiles": 5,
+    "modernPartialKinds": {
+      "DOCX": 4,
+      "XLSX": 1
+    },
+    "officeMIMEMatchesWithAutopsy": 17,
+    "officeMIMEComparisons": 17,
+    "allMIMEMatchesWithAutopsy": 40,
+    "allMIMEComparisons": 41,
+    "remainingMIMEClassification": "UTF-8 text versus INI subtype",
+    "literalSearchControlsPassed": 25,
+    "referenceComparison": "Native decoder output on actual Native exports equals Native decoder controls on independently verified reference bytes; not Autopsy text-extractor parity.",
+    "unsupported": [
+      "legacy Office body parsing",
+      "OCR",
+      "audio/video playback",
+      "Office rendered layout and formula/macro execution"
+    ],
+    "partialCoverageAlwaysExplicit": true
+  },
+  "liveGUI": {
+    "observed": [
+      "open disposable assignment case",
+      "whole-image recovery finishes with 14 primary candidates and ready controls",
+      "verified image preview and raw unzoned EXIF",
+      "misleading extension detected as DOCX; referenced body and literal search displayed",
+      "41-file filesystem batch export publishes manifest; source switch clears old receipt",
+      "20-file UDF inventory and nine VAT snapshots; deleted-ancestor distinction and verified Office preview",
+      "UDF report publication retains all inventory entries despite a one-row table filter",
+      "finite split panes remain inside window after layout correction",
+      "latest source-only descriptor build reads 4096-byte raw hex window at offset zero",
+      "after graceful idle-app restart and case reopen, actual PDF preview shows 15 pages/15 text records; literal search yields 14 matches with page and UTF-16 references",
+      "actual recovery-report publication displays an explicit saved-report status; report inventory contains 14 candidates"
+    ],
+    "independentPublicationReadbacks": "Recorded separately under assignmentComparison; a save sheet alone is not success.",
+    "permissionResetOrFolderGrant": false,
+    "fullDiskAccessChanged": false,
+    "realUserEvidenceSentToAI": false,
+    "assignmentSubmitted": false,
+    "unobservedFinalPaths": [
+      "manual recovery assessment save",
+      "reopened assessment readback"
+    ],
+    "automationLimitation": "UI automation native pipe intermittently closed during accessibility inspection while the app remained alive with an idle main loop. Normal restart/reopen worked. Actual PDF preview/search and recovery-report publication were observed; manual assessment save/reopened assessment readback remain unobserved. Core persistence tests do not establish GUI completion; bridge failure alone is not an observed app failure.",
+    "recoveryReports": {
+      "inventoryCandidates": 14,
+      "loadedDecoderAnalyses": 0,
+      "manualNotes": 0,
+      "scope": "Published GUI reports after restart accurately reflect unloaded decoder/assessment state. Loaded-data report coverage is separately verified through core/CLI tests.",
+      "readbackComparison": {
+        "gates": 466,
+        "mismatches": 0,
+        "passed": true,
+        "reportsVerified": 2
+      }
+    }
+  },
+  "regressionRepairs": [
+    "explicit whole-RAW recovery scope with persisted legacy-scope distinction",
+    "isolated document cancellation outcome and owned-spawn readiness",
+    "streaming ZIP entry CRC validation without full-member allocation",
+    "observable busy state releases completed job controls",
+    "session batch receipts clear on case/source transition while published files persist",
+    "finite central viewport with independently scrolling long panes",
+    "source-only search directory descriptors avoid enumeration while retaining no-follow/identity/hash checks",
+    "packaged document decoder receipt/hash/architecture/system-dependency validation and folder-purpose descriptions",
+    "recovery controls expose saved-report URL/export errors, clear stale report URLs on result changes and old errors at new export start"
+  ],
+  "autopsyPreservation": {
+    "readOnlyFrozenBaseline": true,
+    "baselineRegenerated": false,
+    "health": {
+      "PASS": 30,
+      "FAIL": 0,
+      "WARN": 0,
+      "INFO": 2,
+      "SKIP": 3
+    },
+    "scope": "Read-only installation/runtime diagnostics, not exhaustive forensic functional coverage."
+  },
+  "ci": {
+    "priorPreAssignmentRun": 37594374839,
+    "priorConclusion": "success",
+    "currentAssignmentCommitResult": "not yet recorded; inspect commit-specific GitHub Actions separately",
+    "localPassIsNotCIPass": true,
+    "providerCallsInCI": false
+  },
+  "remaining": [
+    "PC/user artifacts required for traversed-directory/opened-file conclusions",
+    "general UDF/APFS/FileVault and broader complex/damaged filesystem coverage",
+    "legacy Office body/OCR/media playback and full artifact investigation",
+    "external PhotoRec is not bundled",
+    "Developer ID/notarization, corresponding-source/relink distribution and clean-machine install",
+    "physical M5 and supported older macOS validation",
+    "broader GUI publication/cancellation/crash/power-loss cases, case migration/integrity and sidecar authenticity",
+    "full-app latency/RAM/battery/thermal profiling; no fresh 0.5 benchmark claim"
+  ]
+}

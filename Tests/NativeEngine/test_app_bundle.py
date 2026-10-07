@@ -91,6 +91,42 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "minimum macOS"):
             validate_metadata(self.bundle)
 
+    def add_decoder(self):
+        with self.info_path.open("rb") as stream:
+            info = plistlib.load(stream)
+        info["CFBundleShortVersionString"] = "0.5.0"
+        with self.info_path.open("wb") as stream:
+            plistlib.dump(info, stream)
+        decoder = self.bundle / "Contents/Helpers/NFDocumentDecoder"
+        decoder.write_bytes(b"synthetic-decoder")
+        receipt = {"schemaVersion": 1, "protocolVersion": 1,
+            "path": "Contents/Helpers/NFDocumentDecoder", "architecture": "arm64", "minimumMacOS": "14.0",
+            "sha256": hashlib.sha256(decoder.read_bytes()).hexdigest(),
+            "sourceSha256": {"Sources/NFDocumentDecoder/main.swift": "a" * 64}}
+        path = self.bundle / "Contents/Resources/document-decoder-manifest.json"
+        path.write_text(json.dumps(receipt))
+        return decoder, path, receipt
+
+    def test_current_version_requires_exact_decoder_receipt_and_payload(self):
+        decoder, path, receipt = self.add_decoder()
+        self.assertEqual(validate_metadata(self.bundle)["documentDecoderSha256"], receipt["sha256"])
+        decoder.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "decoder differs"):
+            validate_metadata(self.bundle)
+        decoder.write_bytes(b"synthetic-decoder")
+        path.unlink()
+        with self.assertRaises(ValueError):
+            validate_metadata(self.bundle)
+
+    def test_decoder_inventory_and_runtime_scope_mutations_are_rejected(self):
+        _, path, receipt = self.add_decoder()
+        for field, value in (("path", "../outside"), ("minimumMacOS", "27.0"),
+                             ("architecture", "x86_64"), ("sourceSha256", {"../outside": "a" * 64})):
+            changed = {**receipt, field: value}
+            path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):
+                validate_metadata(self.bundle)
+
     def test_failed_publication_preserves_previous_bundle_and_stage(self):
         stage = self.root / "stage.app"
         stage.mkdir()

@@ -18,6 +18,7 @@ if [[ "$MODE" == "--debug" ]]; then BUILD_CONFIGURATION="debug"; fi
 cd "$ROOT_DIR"
 python3 ./script/build_native_engine.py
 swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
+swift build -c "$BUILD_CONFIGURATION" --product NFDocumentDecoder
 BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
 # Fully stage/sign/verify before asking the running app to drain its work.
 STAGED_APP="$(python3 ./script/package_app.py --stage "$BUILD_DIR/$APP_NAME")"

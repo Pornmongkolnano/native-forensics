@@ -10,6 +10,13 @@ Repository เก็บ [exFAT UTC-offset patch](patches/sleuthkit/exfat-utc-off
 |---|---|---|
 | Swift, SwiftPM และ macOS SDK | build และ desktop runtime | ใช้จาก installed Apple developer toolchain; ไม่ vendor toolchain ใน repository |
 | Foundation, SwiftUI, AppKit, CryptoKit | case persistence, UI, panels, SHA-256 | macOS system frameworks; ไม่ redistribute framework binaries |
+| ImageIO, CoreGraphics, PDFKit และ system zlib | isolated document decoding, re-encoded thumbnails, PDF text, bounded ZIP inflation | macOS SDK/system implementations; ไม่ copy framework binaries; `NFDocumentDecoder` เป็น original project code |
+
+## Assignment recovery and optical inspection (0.5)
+
+`PhotoRecRecoveryService` invokes an independently installed PhotoRec process. The tested local executable is PhotoRec 7.2, ARM64, SHA-256 `2d34125f46b90d03788782528b3551d50cc87b04e806b2935554e210d8b95257`. Official [7.2 source archive](https://www.cgsecurity.org/testdisk-7.2.tar.bz2) SHA-256 is `f8343be20cb4001c5d91a2e3bcd918398f00ae6d8310894a5a9f2feb813c283f`; [upstream](https://www.cgsecurity.org/wiki/PhotoRec) identifies GPL-2.0-or-later. PhotoRec binaries/source are not bundled or committed here. The tested build has no optional EWF/libjpeg support. Every recovery receipt records the pinned executable hash/version and exact command. Missing PhotoRec disables carving with a diagnostic; filesystem and optical readers remain separate.
+
+The bounded Swift UDF reader is original project code implementing the recorded UDF 2.01 / 2,048-byte physical/virtual VAT profile against [ECMA TR/112](https://ecma-international.org/wp-content/uploads/ECMA_TR-112-4_1st_edition_december_2023.pdf). No Autopsy, Strata, UDFclient or independent-oracle parser code is bundled. UDFclient/raw-structure references are local independent validation tools. `NFDocumentDecoder` uses original Swift ZIP/Office structure readers, system codecs and raw zlib inflation; legacy Office classification does not assert body decoding. Its bundle manifest binds the helper bytes and contributing Swift source inventory.
 
 ## Research references
 
@@ -24,9 +31,9 @@ Autopsy มี [Apache 2.0 license](https://github.com/sleuthkit/autopsy/blob/au
 
 | Component | Phase | ข้อมูล license/provenance ที่ต้องตรวจ |
 |---|---|---|
-| [PhotoRec](https://www.cgsecurity.org/wiki/PhotoRec) | 2 | ผู้ผลิตระบุ GPL v2 or later; retain source/provenance/notices ของ build ที่เลือก และตรวจรูปแบบ integration/distribution ก่อน bundling |
+| [PhotoRec](https://www.cgsecurity.org/wiki/PhotoRec) | 0.5 external process | invoked locally, not bundled; source/provenance and integration scope recorded above; distribution remains separate |
 | SQLite และ FTS5 | 1/2 | เลือก system หรือ pinned implementation แล้วบันทึก exact provenance และ notices |
-| Document extractors และ preview codecs | 2 | ยังไม่เลือก; เปรียบเทียบ coverage/security/performance และ inventory licenses ก่อนเพิ่ม |
+| Additional document extractors/OCR | 2 | system-codec preview is implemented; choose and inventory any additional runtime before adding |
 | APFS/FileVault tooling | 3 | ยังไม่เลือก; exact supported APIs, revision, patches และ license inventory พร้อม encrypted-image validation |
 
 [TSK license inventory](https://github.com/sleuthkit/sleuthkit/blob/sleuthkit-4.15.0/licenses/README.md) แสดงว่าไม่ควรใช้ label เดียวแทนทั้ง toolkit สัญญา helper process เป็นการตัดสินใจทางเทคนิค ไม่ใช่ข้อสรุปว่าการแยก process เปลี่ยน license obligations
@@ -39,7 +46,7 @@ Autopsy มี [Apache 2.0 license](https://github.com/sleuthkit/autopsy/blob/au
 
 ## Phase 1 native helper ที่รวมแล้ว
 
-[`NativeEngine/dependencies.json`](NativeEngine/dependencies.json) pin version, source URL และ SHA-256 ของ dependency ที่ใช้ `script/build_native_engine.py` ดาวน์โหลดเข้า `.engine/downloads/` (ไม่ commit binary/source tarballs) และตรวจ checksum ก่อนใช้ Generated TSK `configure` ถูกปรับเฉพาะ 4 บรรทัดที่ inject Homebrew/`/usr/local` include/link paths โดย script เพื่อให้ค้น dependency จาก SDK และ owned prefix เท่านั้น; source modifications ทั้งสี่รายการอยู่ใน dependency specification ได้แก่ exFAT offsets, FAT 64-bit years, explicit EWF segments และ [one-line EWF adapter compatibility patch](NativeEngine/patches/ewf-20240506-read-api.patch) ที่ระบุใน pinned specification (`read_random` alias → current `read_buffer_at_offset` API ของ libewf 20240506) Build ใน private temporary worktree แล้ว publish ผลลง `.engine/prefix/` เพื่อรองรับ checkout และ SDK paths ที่มีช่องว่าง Build ด้วย installed Xcode toolchain ตั้ง deployment target macOS 14.0; จำกัด parallel build สูงสุด 4 jobs และตรวจว่า helper มี dynamic dependencies เฉพาะ system libraries
+[`NativeEngine/dependencies.json`](NativeEngine/dependencies.json) pin version, source URL และ SHA-256 ของ dependency ที่ใช้ `script/build_native_engine.py` ดาวน์โหลดเข้า `.engine/downloads/` (ไม่ commit binary/source tarballs) และตรวจ checksum ก่อนใช้ Generated TSK `configure` ถูกปรับเฉพาะ 4 บรรทัดที่ inject Homebrew/`/usr/local` include/link paths โดย script เพื่อให้ค้น dependency จาก SDK และ owned prefix เท่านั้น; source modifications ทั้งห้ารายการอยู่ใน dependency specification ได้แก่ exFAT offsets, FAT 64-bit years, FAT calendar validation, explicit EWF segments และ [one-line EWF adapter compatibility patch](NativeEngine/patches/ewf-20240506-read-api.patch) ที่ระบุใน pinned specification (`read_random` alias → current `read_buffer_at_offset` API ของ libewf 20240506) Build ใน private temporary worktree แล้ว publish ผลลง `.engine/prefix/` เพื่อรองรับ checkout และ SDK paths ที่มีช่องว่าง Build ด้วย installed Xcode toolchain ตั้ง deployment target macOS 14.0; จำกัด parallel build สูงสุด 4 jobs และตรวจว่า helper มี dynamic dependencies เฉพาะ system libraries
 
 | Component | Linking / enabled components | Upstream notices ที่เก็บ |
 |---|---|---|
@@ -48,7 +55,7 @@ Autopsy มี [Apache 2.0 license](https://github.com/sleuthkit/autopsy/blob/au
 | nlohmann/json 3.11.3 | single C++ header from exact tag; no runtime dynamic dependency | [MIT license and copyright](NativeEngine/licenses/nlohmann-json/LICENSE.MIT) |
 | CommonCrypto, libc++, zlib, bzip2, iconv, CoreFoundation | macOS system implementation; system binaries are not copied into the helper bundle | SDK/system runtime, not redistributed dependencies |
 
-SHA-256 values are in the pinned specification. `.engine/manifest.json` records actual helper digest, architecture, toolchain, aggregate digest ของ applied patch list (exFAT, EWF API, FAT 64-bit year range และ explicit EWF segments) พร้อม SHA ของแต่ละ patch, static dependency fingerprints and dynamic closure. `.engine/licenses/` copies the retained notices for app packaging. Generic compiled TSK filesystem support does not prove correctness or full format coverage; only capability tests justify advertised formats.
+SHA-256 values are in the pinned specification. `.engine/manifest.json` records actual helper digest, architecture, toolchain, aggregate digest ของ applied patch list (exFAT, EWF API, FAT 64-bit year range, FAT calendar validation และ explicit EWF segments) พร้อม SHA ของแต่ละ patch, static dependency fingerprints and dynamic closure. `.engine/licenses/` copies the retained notices for app packaging. Generic compiled TSK filesystem support does not prove correctness or full format coverage; only capability tests justify advertised formats.
 
 Static linking of LGPL libewf requires retaining source and the ability to relink a distributed helper with a modified libewf, in addition to notices. The build keeps `.engine/relink/NFTSKEngine.o`, both static archives, `link-command.json` and a portable `Relink.command`, plus the exact downloaded source tarballs. Before external binary distribution, provide these artifacts, corresponding source/patches, relevant notices, and the runnable `Relink.command` recipe. This local development build and a private source push do not by themselves complete that distribution package.
 
