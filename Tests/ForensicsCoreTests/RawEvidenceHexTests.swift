@@ -4,7 +4,47 @@ import Foundation
 import Testing
 @testable import ForensicsCore
 
+// Matches the read-directory primitive used by Apple's O_SEARCH VFS test.
+// Test-only: the production reader never enumerates the source directory.
+@_silgen_name("__getdirentries64")
+private func rawHexDirectoryEntries(_ descriptor: Int32, _ buffer: UnsafeMutableRawPointer,
+                                   _ count: Int, _ offset: UnsafeMutablePointer<off_t>) -> Int
+
 struct RawEvidenceHexTests {
+    @Test("Search-only parent handles open a known source but cannot enumerate its directory")
+    func sourceDirectorySearchOnly() throws {
+        let fixture = try HexFixture(bytes: Data("selected evidence bytes".utf8))
+        defer { fixture.remove() }
+        let parent = try EvidenceViewFiles.openDirectory(fixture.root, searchOnly: true)
+        defer { Darwin.close(parent) }
+        #expect(Darwin.fcntl(parent, F_GETFD) & FD_CLOEXEC != 0)
+        var buffer = [UInt8](repeating: 0, count: 4_096), offset: off_t = 0
+        errno = 0
+        let enumerated = buffer.withUnsafeMutableBytes {
+            rawHexDirectoryEntries(parent, $0.baseAddress!, $0.count, &offset)
+        }
+        let enumerationError = errno
+        #expect(enumerated == -1)
+        #expect(enumerationError == EBADF)
+        let source = try FileAccess.openReadOnly(fixture.source.lastPathComponent, in: parent)
+        defer { Darwin.close(source) }
+        let count = try buffer.withUnsafeMutableBytes { try FileAccess.read(source, into: $0, count: $0.count) }
+        #expect(Data(buffer.prefix(count)) == Data("selected evidence bytes".utf8))
+        try EvidenceViewFiles.validateDirectory(fixture.root, descriptor: parent, searchOnly: true)
+
+        // The default remains a readable directory, needed by report/storage
+        // callers for directory enumeration and durability operations.
+        let readable = try EvidenceViewFiles.openDirectory(fixture.root)
+        defer { Darwin.close(readable) }
+        offset = 0
+        let defaultRead = buffer.withUnsafeMutableBytes {
+            rawHexDirectoryEntries(readable, $0.baseAddress!, $0.count, &offset)
+        }
+        #expect(defaultRead > 0)
+        #expect(Darwin.fsync(readable) == 0)
+        try EvidenceViewFiles.validateDirectory(fixture.root, descriptor: readable)
+    }
+
     @Test("A raw byte window preserves absolute offsets without filesystem metadata")
     func exactWindow() async throws {
         let fixture = try HexFixture(bytes: Data((0...255).map(UInt8.init)))

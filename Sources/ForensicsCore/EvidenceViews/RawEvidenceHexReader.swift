@@ -48,14 +48,14 @@ public enum RawEvidenceHexReader {
         guard evidence.sourcePath.hasPrefix("/"), !evidence.sourcePath.utf8.contains(0) else {
             throw ForensicsError.invalidFileURL
         }
-        let parent = try EvidenceViewFiles.openDirectory(url.deletingLastPathComponent())
+        let parent = try EvidenceViewFiles.openDirectory(url.deletingLastPathComponent(), searchOnly: true)
         defer { Darwin.close(parent) }
         let descriptor = try FileAccess.openReadOnly(url.lastPathComponent, in: parent)
         defer { Darwin.close(descriptor) }
         let identity = try FileAccess.identity(of: descriptor)
         guard identity.size == evidence.byteCount else { throw ForensicsError.sourceChanged }
         let validate = {
-            try EvidenceViewFiles.validateDirectory(url.deletingLastPathComponent(), descriptor: parent)
+            try EvidenceViewFiles.validateDirectory(url.deletingLastPathComponent(), descriptor: parent, searchOnly: true)
             guard (try? FileAccess.identity(at: url.lastPathComponent, in: parent)) == identity,
                   (try? FileAccess.identity(of: descriptor)) == identity else {
                 throw ForensicsError.sourceChanged
@@ -124,7 +124,7 @@ public enum RawEvidenceHexReader {
 /// Used by the raw viewer and report exporter. No intermediate user-created
 /// symlink may redirect a pinned file operation into a different directory.
 enum EvidenceViewFiles {
-    static func openDirectory(_ url: URL) throws -> Int32 {
+    static func openDirectory(_ url: URL, searchOnly: Bool = false) throws -> Int32 {
         guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost",
               url.path.hasPrefix("/"), !url.path.utf8.contains(0) else { throw ForensicsError.invalidFileURL }
         var path = url.standardizedFileURL.path
@@ -149,11 +149,15 @@ enum EvidenceViewFiles {
                 }
             }
         }
-        var descriptor = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        // A known selected file needs only directory search, not an ability to
+        // enumerate its parent. Keep readable directory handles for report and
+        // storage callers that enumerate or synchronize directories.
+        let flags = (searchOnly ? O_SEARCH : (O_RDONLY | O_DIRECTORY)) | O_NOFOLLOW | O_CLOEXEC
+        var descriptor = Darwin.open("/", flags)
         guard descriptor >= 0 else { throw FileAccess.posixError("Cannot open directory") }
         do {
             for component in path.split(separator: "/").map(String.init) {
-                let next = Darwin.openat(descriptor, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                let next = Darwin.openat(descriptor, component, flags)
                 guard next >= 0 else { throw FileAccess.posixError("Cannot open directory without following links") }
                 Darwin.close(descriptor); descriptor = next
             }
@@ -161,8 +165,8 @@ enum EvidenceViewFiles {
         } catch { Darwin.close(descriptor); throw error }
     }
 
-    static func validateDirectory(_ url: URL, descriptor: Int32) throws {
-        let current = try openDirectory(url)
+    static func validateDirectory(_ url: URL, descriptor: Int32, searchOnly: Bool = false) throws {
+        let current = try openDirectory(url, searchOnly: searchOnly)
         defer { Darwin.close(current) }
         var lhs = stat(), rhs = stat()
         guard Darwin.fstat(current, &lhs) == 0, Darwin.fstat(descriptor, &rhs) == 0,
