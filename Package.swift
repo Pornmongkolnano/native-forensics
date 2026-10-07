@@ -11,7 +11,8 @@ let package = Package(
         .executable(name: "AutopsyUDFExport", targets: ["AutopsyUDFExport"])
     ],
     targets: [
-        .target(name: "ForensicsCore"),
+        .systemLibrary(name: "CSQLite3"),
+        .target(name: "ForensicsCore", dependencies: ["CSQLite3"]),
         .executableTarget(name: "NativeForensics", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "NFDocumentDecoder", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "AutopsyUDFExport", dependencies: ["ForensicsCore"]),
