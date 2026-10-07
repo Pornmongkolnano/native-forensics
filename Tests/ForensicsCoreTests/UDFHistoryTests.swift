@@ -315,8 +315,16 @@ struct UDFHistoryTests {
         let selected = try await ImageInspector.inspect(url: fixture.source, progress: { _ in })
         let forensicCase = try CaseStore.adding(image: selected, to: CaseStore.create(name: "Locked", in: fixture.directory))
         let evidence = try #require(forensicCase.manifest.evidence.first)
-        let result = try UDFInspector.parseForTesting(evidence: evidence, caseID: forensicCase.manifest.id,
-            options: .init(timeoutSeconds: 0.1))
+        // Prepare the inventory with the ordinary parser budget. The short
+        // deadline belongs only to the lock acquisition being tested below.
+        let parsed = try UDFInspector.parseForTesting(evidence: evidence, caseID: forensicCase.manifest.id)
+        let result = UDFInspectionResult(schemaVersion: parsed.schemaVersion, caseID: parsed.caseID,
+            sourceEvidenceID: parsed.sourceEvidenceID, sourceSHA256: parsed.sourceSHA256,
+            sourceByteCount: parsed.sourceByteCount, jobID: parsed.jobID, parserVersion: parsed.parserVersion,
+            profile: parsed.profile, volumeIdentifier: parsed.volumeIdentifier, udfRevision: parsed.udfRevision,
+            blockSize: parsed.blockSize, latestSnapshotID: parsed.latestSnapshotID, snapshots: parsed.snapshots,
+            entries: parsed.entries, deletedAncestors: parsed.deletedAncestors, limitations: parsed.limitations,
+            options: .init(timeoutSeconds: 0.1), savedAt: parsed.savedAt)
         let descriptor = Darwin.open(forensicCase.bundleURL.appendingPathComponent(".case.lock").path,
                                      O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         #expect(descriptor >= 0)

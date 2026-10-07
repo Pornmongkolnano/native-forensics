@@ -31,11 +31,13 @@ jobs:
       # Older SwiftPM combines test targets in one process. Native AppKit
       # initialization must not delay the core's real helper/lock deadlines.
       # Each invocation keeps parallel tests within its target; none are skipped.
+      # Bound simultaneous helper launches on small runners while retaining
+      # cross-suite parallel coverage and the existing process deadlines.
       - name: Synthetic core correctness tests
         env:
           NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
-        run: swift test --filter ForensicsCoreTests
+        run: swift test --filter ForensicsCoreTests --experimental-maximum-parallelization-width 4
       - name: Native workspace correctness tests
         run: swift test --skip-build --filter NativeForensicsTests
       - name: Cooperative executor blocking regression
@@ -50,6 +52,6 @@ jobs:
         env:
           NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
-        run: swift test -c release --filter ForensicsCoreTests
+        run: swift test -c release --filter ForensicsCoreTests --experimental-maximum-parallelization-width 4
       - name: Optimized native workspace correctness tests
         run: swift test -c release --skip-build --filter NativeForensicsTests

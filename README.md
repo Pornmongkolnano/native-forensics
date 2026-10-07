@@ -59,7 +59,7 @@ TSK adapter ชุดนี้ **ไม่มี UDF**; Optical History ใช�
 
 ```sh
 python3 script/build_native_engine.py
-swift test
+swift test --experimental-maximum-parallelization-width 4
 ./script/build_and_run.sh --verify
 ```
 

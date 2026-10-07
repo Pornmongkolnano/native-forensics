@@ -5,12 +5,14 @@
   "scope": "local development validation; CI is commit-specific",
   "host": {"chip": "Apple M2", "architecture": "arm64", "macOS": "27.0.1"},
   "swiftTests": {
-    "debug": {"coreDeclarations": 267, "coreSuites": 25, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
-    "release": {"coreDeclarations": 267, "coreSuites": 25, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
+    "debug": {"coreDeclarations": 270, "coreSuites": 26, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
+    "release": {"coreDeclarations": 270, "coreSuites": 26, "workspaceDeclarations": 119, "workspaceSuites": 15, "status": "passed"},
+    "coreMaximumParallelizationWidth": 4,
     "realNativeHelperEnabled": true,
     "strictCooperativeExecutor": {"declarations": 1, "status": "passed"}
   },
   "pythonHarness": {"tests": 55, "status": "passed"},
+  "engineSpawn": {"explicitDescriptorIsolation": true, "ownedProcessGroup": true, "unreapedLeaderUntilCleanup": true, "unchangedProtocolAndDeadlines": true, "unrelatedWriterEOFRegression": "passed", "ownedDescendantCancellationRegression": "passed"},
   "nativeGUI": {
     "syntheticOnly": true,
     "visibleFilteredRows": 1,

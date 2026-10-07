@@ -21,9 +21,13 @@ Engine, document decoder และ Codex client ใช้ concurrent native queu
 
 Fixtures ของการทดสอบ recovery/Codex เปลี่ยนจาก `sleep 30` เป็น ready handshake และ process ที่รอจนถูกสั่งหยุด ตัว controller ยกเลิกงานที่เป็นเจ้าของจาก native queue โดยตรง Assertions ยังตรวจ owned leader/descendant หาย, unrelated process ยังอยู่, source ไม่เปลี่ยนและไม่ publish generation เมื่อ cancel โดยไม่ขยาย production deadlines
 
+Engine เปลี่ยน launcher เป็น explicit POSIX spawn ที่ปิด descriptors ของงานอื่นระหว่าง spawn และให้แต่ละงานมี process group ของตน เก็บ leader ด้วย `waitid(WNOWAIT)` จนหยุด descendants/reap จบ ก่อนคืนผล เมื่อเสีย ownership (`ECHILD`) จะไม่ส่ง signal อีก มี test จงใจเปิด unrelated writer โดยไม่ตั้ง CLOEXEC แล้วตรวจ EOF ขณะที่ helper ยังอยู่ รวมทั้ง cancellation ที่ยืนยัน owned descendants หยุดและ process อื่นยังอยู่ Fixture ของ unrelated process ใช้การแยก descriptors แบบเดียวกัน
+
 ## Validation
 
-บน Apple M2/macOS 27.0.1: debug และ optimized release แต่ละ configuration ผ่าน **386 Swift Testing declarations** (267 Core/25 suites + 119 workspace/15 suites) พร้อม real filesystem helper/fixtures ชุด Python harness/bundle ผ่าน **55/55** Strict single-thread cooperative executor probe ผ่านหนึ่ง test ซึ่งพิสูจน์ว่า async caller กลับมาปล่อย blocking worker ได้ ไม่ใช่การวัด throughput
+บน Apple M2/macOS 27.0.1: debug และ optimized release แต่ละ configuration ผ่าน **389 Swift Testing declarations** (270 Core/26 suites + 119 workspace/15 suites) พร้อม real filesystem helper/fixtures Core ใช้ maximum parallelization width 4 และยังทดสอบหลายงานพร้อมกัน ชุด Python harness/bundle ผ่าน **55/55** Strict single-thread cooperative executor probe ผ่านหนึ่ง test ซึ่งพิสูจน์ว่า async caller กลับมาปล่อย blocking worker ได้ ไม่ใช่การวัด throughput
+
+CI แรกของ 0.5.1 บน macOS 26/Swift 6.3.3 พบ output-pipe lifetime และ fixture deadline failures จึงเพิ่ม explicit descriptor isolation ข้างต้น และแยก parser preparation ออกจาก deadline 0.1 วินาทีของ test ที่ตั้งใจวัด lock acquisition หลังแก้ การรันเต็มที่ไม่จำกัด concurrency บนเครื่อง local ยังพบ 3 helper startup/response timeouts เมื่อหลาย fixtures แย่งทรัพยากร ทั้ง debug/release ผ่านเมื่อจำกัดพร้อมกัน 4 test cases จึงใช้เงื่อนไขเดียวกันใน Core CI โดยคงครบทุก test, parallel coverage และ production deadlines เดิม การแก้นี้ไม่ได้อ้างว่าได้พิสูจน์สาเหตุ inheritance ของ Foundation บน macOS 26 จากเครื่อง local macOS 27
 
 GUI ใช้ synthetic UDF fixture เดิมเท่านั้น เปิด saved optical receipt → กรองตารางเหลือ 1/2 → ยกเลิก chooser → retry → เห็น completed receipt สำหรับ **2/2** files การอ่าน output กลับด้วย Python เทียบ bytes กับ literal oracle แยกจาก exporter ตรงทั้งสองไฟล์ พร้อม payload/report hashes และ source SHA-256 เดิม New export ใช้ adapter case/job IDs แยกจากเคสที่เปิดอยู่ ไม่ได้ทดสอบ in-progress cancel ด้วย GUI ใน fixture ขนาดเล็กนี้; lifecycle/cancel/stale-selection cases ตรวจผ่าน store/core tests
 
