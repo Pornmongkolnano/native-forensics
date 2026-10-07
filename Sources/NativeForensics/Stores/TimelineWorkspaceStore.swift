@@ -9,6 +9,7 @@ final class TimelineWorkspaceStore {
     typealias FilesystemLoad = @Sendable (UUID, EvidenceRecord, EnumerationResult, Bool) async throws -> TimelineReport
     typealias BrowserLoad = @Sendable (UUID, EvidenceRecord, EnumerationResult, FilesystemEntry) async throws -> BrowserTimelineResult
     typealias Export = @Sendable (TimelineReport, URL, [URL]) async throws -> TimelineExportReceipt
+    typealias ChooseExportParent = @MainActor () async -> URL?
     private(set) var report: TimelineReport?
     private(set) var rows: [TimelineEvent] = []
     private(set) var isLoading = false
@@ -40,6 +41,7 @@ final class TimelineWorkspaceStore {
     @ObservationIgnored private let filesystemLoad: FilesystemLoad
     @ObservationIgnored private let browserLoad: BrowserLoad
     @ObservationIgnored private let export: Export
+    @ObservationIgnored private let chooseExportParent: ChooseExportParent
     @ObservationIgnored private var selection: Selection?
     @ObservationIgnored private var generation: UUID?
     @ObservationIgnored private var filterGeneration: UUID?
@@ -47,7 +49,7 @@ final class TimelineWorkspaceStore {
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private var filterJobs: [UUID: Task<Void, Never>] = [:]
 
-    init(engineHelperURL: URL, filesystemLoad: FilesystemLoad? = nil, browserLoad: BrowserLoad? = nil, export: Export? = nil) {
+    init(engineHelperURL: URL, filesystemLoad: FilesystemLoad? = nil, browserLoad: BrowserLoad? = nil, export: Export? = nil, chooseExportParent: ChooseExportParent? = nil) {
         self.filesystemLoad = filesystemLoad ?? { caseID, evidence, result, historical in
             try FilesystemTimeline.make(caseID: caseID, evidence: evidence, result: result, historical: historical)
         }
@@ -55,6 +57,7 @@ final class TimelineWorkspaceStore {
             try await FilesystemBrowserTimelineService(engine: EngineClient(helperURL: engineHelperURL)).parse(caseID: caseID, evidence: evidence, result: result, file: file)
         }
         self.export = export ?? { report, output, forbidden in try await TimelineReportExporter.export(report, to: output, forbiddenURLs: forbidden) }
+        self.chooseExportParent = chooseExportParent ?? { await CasePanelService.timelineReportParent() }
     }
 
     func configure(caseID: UUID, evidence: EvidenceRecord, result: EnumerationResult, historical: Bool, caseURL: URL) {
@@ -122,16 +125,35 @@ final class TimelineWorkspaceStore {
     }
 
     func chooseExport() {
-        guard canExport else { return }
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
-        panel.message = "Choose a parent folder outside evidence/case bundles. A new timeline folder will be created."
-        let selected = selection
-        isPresentingPanel = true
-        let response = panel.runModal()
-        isPresentingPanel = false
-        guard response == .OK, let parent = panel.url, selected == selection, !closing else { return }
-        exportReport(to: parent.appendingPathComponent("Timeline-\(UUID().uuidString.lowercased())", isDirectory: true))
+        guard canExport, let selected = selection else { return }
+        let id = UUID(), chooser = chooseExportParent, prior = Array(jobs.values)
+        generation = id; isPresentingPanel = true; errorMessage = nil
+        phase = "Choose a separate parent folder for complete timeline reports."
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.jobs[id] = nil
+                if self.generation == id { self.generation = nil; self.isPresentingPanel = false }
+            }
+            for job in prior { await job.value }
+            do {
+                try Task.checkCancellation()
+                guard self.generation == id, self.selection == selected, !self.closing else { return }
+                let parent = await chooser()
+                try Task.checkCancellation()
+                guard self.generation == id, self.selection == selected, !self.closing else { return }
+                self.generation = nil; self.isPresentingPanel = false
+                guard let parent else { self.phase = "Timeline report folder selection canceled; no reports were written."; return }
+                // Publication owns its own task. It may wait for this chooser to
+                // finish, but the chooser never waits on that publication task.
+                self.exportReport(to: parent.appendingPathComponent("Timeline-\(UUID().uuidString.lowercased())", isDirectory: true))
+            } catch is CancellationError {
+                if self.generation == id, !self.closing { self.phase = "Timeline report folder selection canceled; no reports were written." }
+            } catch {
+                if self.generation == id, !self.closing { self.errorMessage = error.localizedDescription }
+            }
+        }
+        jobs[id] = task
     }
 
     func exportReport(to output: URL) {
@@ -186,7 +208,7 @@ final class TimelineWorkspaceStore {
     private func invalidate() {
         generation = nil; filterGeneration = nil
         for task in jobs.values { task.cancel() }; for task in filterJobs.values { task.cancel() }
-        report = nil; rows = []; isLoading = false; isExporting = false; isFiltering = false; errorMessage = nil
+        report = nil; rows = []; isLoading = false; isExporting = false; isFiltering = false; isPresentingPanel = false; errorMessage = nil
         exportReceipt = nil; examinerNotes = ""; selectedEventID = nil
     }
 

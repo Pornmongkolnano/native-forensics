@@ -117,6 +117,28 @@ enum CasePanelService {
         return result
     }
 
+    /// Folder-only configuration is kept separate for pure AppKit regression
+    /// checks. Types/package policies come first; selection eligibility is last
+    /// because panel presentation can otherwise derive file-only eligibility.
+    static func timelineReportParentPanel() -> NSOpenPanel {
+        let panel = NSOpenPanel()
+        panel.title = "Export Timeline Reports"
+        panel.message = "Choose a parent folder outside evidence and case bundles. A new report folder will be created."
+        panel.prompt = "Choose Folder"
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowedContentTypes = [.folder]
+        panel.canResolveAliases = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        return panel
+    }
+
+    static func timelineReportParent() async -> URL? {
+        await present(timelineReportParentPanel())
+    }
+
     static func newRecoveryReport() async -> URL? {
         let panel = NSSavePanel()
         let delegate = NewFilePanelDelegate()

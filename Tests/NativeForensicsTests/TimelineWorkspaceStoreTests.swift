@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import UniformTypeIdentifiers
 import ForensicsCore
 import Testing
 @testable import NativeForensics
@@ -108,6 +110,76 @@ struct TimelineWorkspaceStoreTests {
         store.query = "History"; try await settle(store)
         #expect(store.rows.map(\.fileID) == ["history"])
     }
+    @Test func timelineFolderPanelHasExplicitDirectoryEligibility() {
+        let panel = CasePanelService.timelineReportParentPanel()
+        #expect(panel.allowedContentTypes == [.folder])
+        #expect(panel.canChooseDirectories)
+        #expect(!panel.canChooseFiles)
+        #expect(!panel.allowsMultipleSelection)
+        #expect(panel.canCreateDirectories)
+        #expect(!panel.treatsFilePackagesAsDirectories)
+        #expect(!panel.canResolveAliases)
+    }
+    @Test func asynchronousFolderChoicePublishesCompleteReport() async throws {
+        let value = selection()
+        let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-chosen-parent-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { parent })
+        configure(store, value); store.loadFilesystem(); try await settle(store)
+        store.chooseExport()
+        #expect(store.isPresentingPanel)
+        try await settle(store)
+        let receipt = try #require(store.exportReceipt)
+        #expect(receipt.eventCount == 2)
+        #expect(URL(fileURLWithPath: receipt.destinationPath).deletingLastPathComponent().path == parent.path)
+        #expect(!store.isPresentingPanel)
+        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: receipt.destinationPath).appendingPathComponent("timeline.json").path))
+    }
+    @Test func canceledFolderChoiceDrainsAndWritesNothing() async throws {
+        let value = selection(), gate = TimelineFolderGate()
+        let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-canceled-parent-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        configure(store, value); store.loadFilesystem(); try await settle(store)
+        store.chooseExport(); try await gate.waitStarted()
+        #expect(store.isPresentingPanel); #expect(store.hasActiveWork)
+        store.cancel(); await gate.release(parent); try await settle(store)
+        #expect(!store.isPresentingPanel); #expect(store.exportReceipt == nil)
+        #expect(store.phase.contains("selection canceled"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: parent.path).isEmpty)
+        #expect(store.canExport)
+    }
+    @Test func lateFolderChoiceAfterResetCannotPublishAndNewSelectionWorks() async throws {
+        let value = selection(), gate = TimelineFolderGate()
+        let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-stale-parent-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        configure(store, value); store.loadFilesystem(); try await settle(store)
+        store.chooseExport(); try await gate.waitStarted()
+        store.reset()
+        #expect(!store.isPresentingPanel); #expect(store.hasActiveWork)
+        configure(store, value)
+        await gate.release(parent); try await settle(store)
+        #expect(store.exportReceipt == nil); #expect(store.report == nil)
+        #expect(!store.isPresentingPanel); #expect(store.canLoad)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: parent.path).isEmpty)
+        store.loadFilesystem(); try await settle(store)
+        #expect(store.report?.events.count == 2)
+    }
+    @Test func shutdownDrainsPendingFolderChoiceWithoutPublication() async throws {
+        let value = selection(), gate = TimelineFolderGate()
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        configure(store, value); store.loadFilesystem(); try await settle(store)
+        store.chooseExport(); try await gate.waitStarted()
+        let drain = store.beginShutdown()
+        #expect(drain != nil); #expect(store.hasActiveWork); #expect(!store.isPresentingPanel)
+        await gate.release(nil); await drain?.value
+        #expect(!store.hasActiveWork); #expect(!store.isPresentingPanel)
+        #expect(store.exportReceipt == nil); #expect(!store.canLoad)
+    }
     @Test func timelineViewConstructionDoesNotRequireLiveEngine() async throws {
         let value = selection()
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"))
@@ -131,4 +203,15 @@ private actor TimelineLoadGate {
 private actor TimelineExportCapture {
     var value: (TimelineReport, [URL])?
     func record(_ report: TimelineReport, _ forbidden: [URL]) { value = (report, forbidden) }
+}
+
+private actor TimelineFolderGate {
+    private var continuation: CheckedContinuation<URL?, Never>?
+    private var started = false
+    func hold() async -> URL? { started = true; return await withCheckedContinuation { continuation = $0 } }
+    func release(_ parent: URL?) { continuation?.resume(returning: parent); continuation = nil }
+    func waitStarted() async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !started { guard ContinuousClock.now < deadline else { throw TimelineTestFailure.timeout }; try await Task.sleep(for: .milliseconds(2)) }
+    }
 }
