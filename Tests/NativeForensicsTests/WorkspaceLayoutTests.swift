@@ -7,20 +7,27 @@ import Testing
 @Suite("WorkspaceLayoutTests", .serialized)
 @MainActor
 struct WorkspaceLayoutTests {
-    @Test("A populated optical table keeps every split column inside its finite window", arguments: [
+    @Test("A populated optical table retains three visible rows before and after export within its finite window", arguments: [
         CGSize(width: 1280, height: 780), CGSize(width: 1040, height: 660)
-    ])
-    func opticalViewport(size: CGSize) async throws {
+    ], [false, true])
+    func opticalViewport(size: CGSize, hasCompletedExport: Bool) async throws {
         _ = NSApplication.shared
         let fixture = LayoutOpticalFixture()
         let optical = OpticalWorkspaceStore(documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"),
-            load: { _, _ in fixture.result })
+            load: { _, _ in fixture.result }, exportForAutopsy: { _, result, _, destination, _ in
+                try layoutAutopsyReceipt(result, destination: destination)
+            })
         let workspace = WorkspaceStore(helperURL: URL(fileURLWithPath: "/usr/bin/true"), optical: optical)
         workspace.currentCase = fixture.forensicCase
         workspace.selectedEvidenceID = fixture.evidence.id
         workspace.section = .optical
         await (try #require(optical.activeTask)).value
         optical.selectedEntryID = fixture.result.entries[0].id
+        if hasCompletedExport {
+            optical.exportForAutopsy(to: URL(fileURLWithPath: "/synthetic/layout-completed-export"))
+            await (try #require(optical.activeTask)).value
+            #expect(optical.lastAutopsyExport?.entries.count == fixture.result.entries.count)
+        }
 
         let host = NSHostingView(rootView: ContentView(workspace: workspace))
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
@@ -56,7 +63,9 @@ struct WorkspaceLayoutTests {
         let tables = views.compactMap { $0 as? NSTableView }
         let fileTable = try #require(tables.first { $0.numberOfRows == fixture.result.entries.count })
         let tableViewport = try #require(fileTable.enclosingScrollView)
-        #expect(tableViewport.contentSize.height > 0)
+        let firstThreeRows = fileTable.rect(ofRow: 2).maxY - fileTable.rect(ofRow: 0).minY
+        #expect(tableViewport.contentSize.height >= firstThreeRows,
+                "The file table must show at least three complete rows at \(size) with completed export \(hasCompletedExport); viewport \(tableViewport.contentSize.height), required \(firstThreeRows)")
         #expect(fileTable.bounds.height > tableViewport.contentSize.height,
                 "Overflow belongs to the file table's scrollable document, not the containing split view")
         await workspace.shutdown()
@@ -96,4 +105,22 @@ private struct LayoutOpticalFixture: Sendable {
             udfRevision: "2.01", latestSnapshotID: "latest", snapshots: [snapshot], entries: entries,
             deletedAncestors: [], limitations: ["Synthetic layout receipt only"], options: UDFInspectionOptions())
     }
+}
+
+private func layoutAutopsyReceipt(_ result: UDFInspectionResult, destination: URL) throws -> UDFLogicalFilesExport {
+    let entries: [[String: Any]] = result.entries.map { entry in
+        ["entryID": entry.id, "originalPath": entry.originalPath,
+         "outputRelativePath": "LogicalFiles/\(entry.state.rawValue)/\(entry.id)/payload",
+         "pathMapping": "synthetic", "state": entry.state.rawValue, "snapshotIDs": entry.snapshotIDs,
+         "byteCount": entry.byteCount, "sha256": entry.sha256]
+    }
+    let object: [String: Any] = [
+        "schemaVersion": 1, "status": "completed", "destinationPath": destination.path,
+        "sourceSHA256": result.sourceSHA256, "sourceByteCount": result.sourceByteCount,
+        "caseID": UUID().uuidString, "jobID": UUID().uuidString,
+        "parserVersion": result.parserVersion, "profile": result.profile, "exportedAt": 0,
+        "entries": entries, "historyReportSHA256": String(repeating: "d", count: 64),
+        "historyJSONSHA256": String(repeating: "e", count: 64), "limitations": ["Synthetic layout receipt"]
+    ]
+    return try JSONDecoder().decode(UDFLogicalFilesExport.self, from: JSONSerialization.data(withJSONObject: object))
 }
