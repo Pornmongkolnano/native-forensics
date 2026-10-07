@@ -104,7 +104,8 @@ struct ReadinessCoreTests {
     @Test("A queued case transaction cannot write through a replaced bundle directory")
     func queuedCaseDirectorySwapIsRejected() async throws {
         let temporary = try ReadinessDirectory()
-        defer { temporary.remove() }
+        var transactionFinished = true
+        defer { if transactionFinished { temporary.remove() } }
         let source = temporary.url.appendingPathComponent("source.raw")
         let sourceBytes = Data("source bytes".utf8)
         try sourceBytes.write(to: source)
@@ -118,10 +119,10 @@ struct ReadinessCoreTests {
         try originalData.write(to: external.bundleURL.appendingPathComponent("manifest.json"))
         let lockURL = original.bundleURL.appendingPathComponent(".case.lock")
         let lock = Darwin.open(lockURL.path, O_RDWR | O_NOFOLLOW | O_CLOEXEC)
-        #expect(lock >= 0)
+        try #require(lock >= 0)
         defer { Darwin.close(lock) }
         let identity = try FileAccess.identity(of: lock)
-        #expect(readinessCoreFlock(lock, LOCK_EX) == 0)
+        try #require(readinessCoreFlock(lock, LOCK_EX) == 0)
         defer { _ = readinessCoreFlock(lock, LOCK_UN) }
         let transaction = ReadinessTransaction()
         // flock is a blocking system call. Keep this deliberately queued writer
@@ -129,27 +130,23 @@ struct ReadinessCoreTests {
         let writer = Thread {
             transaction.complete(Result { try CaseStore.adding(image: image, to: original) })
         }
+        writer.name = "Queued case transaction regression writer"
+        writer.qualityOfService = .userInitiated
         writer.start()
 
-        // Observe its second descriptor to our unique lock inode instead of
-        // guessing a sleep duration. The caller has opened the case and lock,
-        // and cannot pass LOCK_EX while this test owns the lock.
-        var waiting = false
-        let deadline = ContinuousClock().now.advanced(by: .seconds(3))
-        while ContinuousClock().now < deadline {
-            if descriptors(matching: identity) >= 2 { waiting = true; break }
-            try await Task.sleep(for: .milliseconds(5))
+        // The observer owns the entire lock/swap sequence on another OS thread.
+        // Its descriptor barrier is recorded even if parallel tests delay this
+        // async test's next turn on Swift's cooperative executor.
+        let observation = await transaction.replaceWhenQueued(on: lock, identity: identity) {
+            try FileManager.default.moveItem(at: original.bundleURL, to: moved)
+            try FileManager.default.createSymbolicLink(at: original.bundleURL, withDestinationURL: external.bundleURL)
         }
-        #expect(waiting)
-        if !waiting {
-            _ = readinessCoreFlock(lock, LOCK_UN)
-            _ = await transaction.value()
-            return
-        }
-        try FileManager.default.moveItem(at: original.bundleURL, to: moved)
-        try FileManager.default.createSymbolicLink(at: original.bundleURL, withDestinationURL: external.bundleURL)
-        #expect(readinessCoreFlock(lock, LOCK_UN) == 0)
-        let result = await transaction.value()
+        transactionFinished = observation.result != nil
+        #expect(observation.unlockSucceeded)
+        let result = try #require(observation.result, "The transaction did not finish after its lock was released; its synthetic fixture was preserved.")
+        try observation.replacement.get()
+        #expect(observation.waiting)
+        guard observation.waiting else { return }
         switch result {
         case .success: Issue.record("A transaction was published through a replaced case directory.")
         case .failure(let error):
@@ -160,16 +157,6 @@ struct ReadinessCoreTests {
         #expect(try Data(contentsOf: moved.appendingPathComponent("manifest.json")) == originalData)
         #expect(try Data(contentsOf: external.bundleURL.appendingPathComponent("manifest.json")) == originalData)
         #expect(try Data(contentsOf: source) == sourceBytes)
-    }
-
-    private func descriptors(matching identity: SourceIdentity) -> Int {
-        var count = 0
-        for descriptor in Int32(0)..<Int32(min(getdtablesize(), 4096)) {
-            var metadata = stat()
-            if Darwin.fstat(descriptor, &metadata) == 0,
-               metadata.st_dev == identity.device, metadata.st_ino == identity.inode { count += 1 }
-        }
-        return count
     }
 
     private func record(path: String) -> EvidenceRecord {
@@ -187,28 +174,83 @@ struct ReadinessCoreTests {
 }
 
 private final class ReadinessTransaction: @unchecked Sendable {
-    private let lock = NSLock()
+    private let condition = NSCondition()
     private var result: Result<ForensicCase, Error>?
-    private var continuation: CheckedContinuation<Result<ForensicCase, Error>, Never>?
 
     func complete(_ value: Result<ForensicCase, Error>) {
-        lock.lock()
+        condition.lock()
         result = value
-        let waiter = continuation
-        continuation = nil
-        lock.unlock()
-        waiter?.resume(returning: value)
+        condition.broadcast()
+        condition.unlock()
     }
 
-    func value() async -> Result<ForensicCase, Error> {
+    func replaceWhenQueued(on descriptor: Int32, identity: SourceIdentity,
+                           replacement: @escaping @Sendable () throws -> Void) async -> ReadinessQueueObservation {
         await withCheckedContinuation { waiter in
-            lock.lock()
-            let completed = result
-            if completed == nil { continuation = waiter }
-            lock.unlock()
-            if let completed { waiter.resume(returning: completed) }
+            let observer = Thread { [self] in
+                var waiting = false
+                let deadline = Date(timeIntervalSinceNow: 3)
+                condition.lock()
+                while result == nil {
+                    // CaseStore has pinned the bundle before opening this
+                    // descriptor. Our held LOCK_EX prevents it from passing
+                    // acquisition, even if it has not entered flock yet.
+                    if hasQueuedDescriptor(matching: identity, excluding: descriptor) {
+                        waiting = true
+                        break
+                    }
+                    guard Date() < deadline else { break }
+                    // This timed wait only spaces descriptor observations; it
+                    // is never evidence that the transaction reached its lock.
+                    _ = condition.wait(until: min(deadline, Date(timeIntervalSinceNow: 0.005)))
+                }
+                condition.unlock()
+                let replaced = Result { if waiting { try replacement() } }
+                let unlocked = readinessCoreFlock(descriptor, LOCK_UN) == 0
+                // Bound a broken transaction without blocking a cooperative
+                // executor thread. Keep its fixture if it cannot be drained.
+                let completed = value(until: Date(timeIntervalSinceNow: 30))
+                waiter.resume(returning: ReadinessQueueObservation(waiting: waiting, unlockSucceeded: unlocked,
+                                                                   replacement: replaced, result: completed))
+            }
+            observer.name = "Queued case transaction regression observer"
+            observer.qualityOfService = .userInitiated
+            observer.start()
         }
     }
+
+    private func value(until deadline: Date) -> Result<ForensicCase, Error>? {
+        condition.lock()
+        defer { condition.unlock() }
+        while result == nil && Date() < deadline { _ = condition.wait(until: deadline) }
+        return result
+    }
+
+    private func hasQueuedDescriptor(matching identity: SourceIdentity, excluding held: Int32) -> Bool {
+        // Enumerate actual descriptors; a fixed FD ceiling can miss the writer
+        // when unrelated parallel tests have many files or pipes open.
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        let bytes = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, nil, 0)
+        guard bytes > 0 else { return false }
+        var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / stride + 32)
+        let listed = descriptors.withUnsafeMutableBytes {
+            proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, $0.baseAddress, Int32($0.count))
+        }
+        guard listed > 0 else { return false }
+        for entry in descriptors.prefix(Int(listed) / stride) where entry.proc_fd != held {
+            var metadata = stat()
+            if Darwin.fstat(entry.proc_fd, &metadata) == 0,
+               metadata.st_dev == identity.device, metadata.st_ino == identity.inode { return true }
+        }
+        return false
+    }
+}
+
+private struct ReadinessQueueObservation: Sendable {
+    let waiting: Bool
+    let unlockSucceeded: Bool
+    let replacement: Result<Void, Error>
+    let result: Result<ForensicCase, Error>?
 }
 
 private struct ReadinessDirectory {

@@ -162,14 +162,19 @@ struct EngineProtocolTests {
         let helper = try fixture.helper(body: body)
         let client = EngineClient(helperURL: helper, timeouts: EngineTimeouts(startup: 10, inactivity: 10, cancellationGrace: 0.2, terminationGrace: 0.1))
         let updates = EngineProgressRecorder()
-        let task = Task { try await client.enumerate(imageURL: fixture.source, progress: { updates.append($0) }) }
-        for _ in 0..<600 {
-            if updates.values.contains(where: { $0.stage == "waiting" }) { break }
-            try await Task.sleep(for: .milliseconds(10))
+        let cancellation = EngineEnumerationCancellation()
+        let task = Task {
+            try await client.enumerate(imageURL: fixture.source, progress: { update in
+                updates.append(update)
+                // Cancel the caller from the helper's actual progress event,
+                // before a delayed test-runner resume can hit inactivity.
+                if update.stage == "waiting" { cancellation.cancel() }
+            })
         }
-        #expect(updates.values.contains(where: { $0.stage == "waiting" }))
-        task.cancel()
+        cancellation.install(task)
         await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(task.isCancelled)
+        #expect(updates.values.contains(where: { $0.stage == "waiting" }))
         if !ignoreCancel { #expect(FileManager.default.fileExists(atPath: marker.path)) }
         #expect(try Data(contentsOf: fixture.source) == Data("abc".utf8))
     }
@@ -452,4 +457,22 @@ private final class EngineProgressRecorder: @unchecked Sendable {
     private var updates: [EngineProgress] = []
     func append(_ progress: EngineProgress) { lock.lock(); updates.append(progress); lock.unlock() }
     var values: [EngineProgress] { lock.lock(); defer { lock.unlock() }; return updates }
+}
+
+/// The caller handle is installed before the test's first suspension. Retain a
+/// progress-triggered cancellation request if it arrives before installation.
+private final class EngineEnumerationCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<EnumerationResult, any Error>?
+    private var requested = false
+
+    func install(_ task: Task<EnumerationResult, any Error>) {
+        lock.lock(); self.task = task; let cancel = requested; lock.unlock()
+        if cancel { task.cancel() }
+    }
+
+    func cancel() {
+        lock.lock(); requested = true; let task = task; lock.unlock()
+        task?.cancel()
+    }
 }
