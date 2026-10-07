@@ -19,6 +19,7 @@ let package = Package(
         .executableTarget(name: "FilesystemSearchBenchmark", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "ForensicsPipelineBenchmark", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "AssignmentWorkflowProbe", dependencies: ["ForensicsCore"]),
+        .executableTarget(name: "MilestoneWorkflowProbe", dependencies: ["ForensicsCore"]),
         .testTarget(name: "ForensicsCoreTests", dependencies: ["ForensicsCore", "NFDocumentDecoder"]),
         .testTarget(name: "NativeForensicsTests", dependencies: ["NativeForensics", "ForensicsCore"])
     ]

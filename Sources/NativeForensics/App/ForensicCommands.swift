@@ -67,11 +67,22 @@ struct ForensicCommands: Commands {
 
             Button("Cancel Current Job") { workspace?.cancelCurrentJob() }
                 .keyboardShortcut(".", modifiers: .command)
-                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true && workspace?.assistant.isWorking != true && workspace?.recovery.hasActiveWork != true && workspace?.optical.hasActiveWork != true && workspace?.filesystemBatchExport.hasActiveWork != true && workspace?.filesystemDocumentPreview.hasActiveWork != true && workspace?.filesystemBatchPanelTask == nil)
+                .disabled(workspace?.hasActiveWork != true)
 
             Button("Analyze with Codex…") { workspace?.openAssistant() }
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(workspace?.canOpenAssistant != true)
+
+            Divider()
+            Button("Search Case Content") { workspace?.showContentSearch() }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+                .disabled(workspace?.currentCase == nil || workspace?.isBusy == true)
+            Button("Compare Two Files with Codex") { workspace?.showComparison() }
+                .disabled(workspace?.selectedEvidence == nil || workspace?.isBusy == true)
+            Button("Recorded Timeline") { workspace?.showTimeline() }
+                .disabled(workspace?.selectedEvidence == nil || workspace?.isBusy == true)
+            Button("Audit Case Integrity") { workspace?.showCaseIntegrity() }
+                .disabled(workspace?.currentCase == nil || workspace?.isBusy == true)
         }
 
         CommandGroup(after: .sidebar) {

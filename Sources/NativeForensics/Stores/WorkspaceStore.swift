@@ -7,6 +7,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case filesystem
     case recovery
     case optical
+    case contentSearch
+    case comparison
+    case timeline
+    case integrity
     case caseDetails
 
     var id: Self { self }
@@ -16,6 +20,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .filesystem: "File Views"
         case .recovery: "Recovered Files"
         case .optical: "Optical History"
+        case .contentSearch: "Content Search"
+        case .comparison: "Compare Evidence"
+        case .timeline: "Timeline"
+        case .integrity: "Case Integrity"
         case .caseDetails: "Case Details"
         }
     }
@@ -25,6 +33,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .filesystem: "list.bullet.rectangle"
         case .recovery: "arrow.uturn.backward.circle"
         case .optical: "opticaldisc"
+        case .contentSearch: "doc.text.magnifyingglass"
+        case .comparison: "doc.on.doc"
+        case .timeline: "clock"
+        case .integrity: "checkmark.shield"
         case .caseDetails: "folder"
         }
     }
@@ -118,6 +130,8 @@ final class WorkspaceStore {
     @ObservationIgnored var filesystemSearchID: UUID?
 
     @ObservationIgnored var filesystemBatchPanelTask: Task<Void, Never>?
+    @ObservationIgnored var derivedNavigationTask: Task<Void, Never>?
+    @ObservationIgnored var derivedNavigationID: UUID?
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
     @ObservationIgnored let engineHelperURL: URL
@@ -128,6 +142,11 @@ final class WorkspaceStore {
     let optical: OpticalWorkspaceStore
     let filesystemDocumentPreview: FilesystemDocumentPreviewStore
     let filesystemBatchExport: FilesystemBatchExportStore
+    let comparisonSelection = ComparisonSelectionStore()
+    let comparisonAssistant = MultiEvidenceAnalysisStore()
+    let contentIndex: ContentIndexWorkspaceStore
+    let timeline: TimelineWorkspaceStore
+    let caseIntegrity = CaseIntegrityWorkspaceStore()
 
     init(helperURL: URL? = nil, recovery: RecoveryWorkspaceStore? = nil, optical: OpticalWorkspaceStore? = nil,
          filesystemBatchExport: FilesystemBatchExportStore? = nil) {
@@ -136,6 +155,8 @@ final class WorkspaceStore {
         let resolvedHelperURL = helperURL ?? Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/NFTSKEngine")
         engineHelperURL = resolvedHelperURL
+        contentIndex = ContentIndexWorkspaceStore(engineHelperURL: resolvedHelperURL)
+        timeline = TimelineWorkspaceStore(engineHelperURL: resolvedHelperURL)
         filesystemDocumentPreview = FilesystemDocumentPreviewStore(engineHelperURL: resolvedHelperURL)
         self.filesystemBatchExport = filesystemBatchExport ?? FilesystemBatchExportStore(engineHelperURL: resolvedHelperURL)
         assistant.onAnalysisSaved = { [weak self] _ in self?.caseWork.refresh() }
@@ -148,11 +169,17 @@ final class WorkspaceStore {
             || recovery.examination.isReadingRaw || recovery.examination.isSaving || recovery.examination.isExportingReport
             || optical.isInspecting || optical.isPreviewing || optical.isExporting || optical.isExportingReport || optical.isExportingAutopsy
             || filesystemDocumentPreview.isLoading || filesystemBatchExport.isExporting
+            || comparisonAssistant.isPresented || comparisonAssistant.hasActiveWork
+            || contentIndex.isWorking || timeline.isWorking || caseIntegrity.isWorking
+            || derivedNavigationTask != nil
     }
     var hasActiveWork: Bool {
         inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
             || assistant.hasActiveWork || contentPreview.hasActiveWork || caseWork.hasActiveWork || recovery.hasActiveWork || optical.hasActiveWork || filesystemDocumentPreview.hasActiveWork || filesystemBatchExport.hasActiveWork
             || filesystemBatchPanelTask != nil
+            || comparisonSelection.hasActiveWork || comparisonAssistant.hasActiveWork
+            || contentIndex.hasActiveWork || timeline.hasActiveWork || caseIntegrity.hasActiveWork
+            || derivedNavigationTask != nil
     }
     var canInspectImage: Bool { currentCase != nil && !isBusy && caseWork.canChangeSelection && recovery.canChangeSelection }
 
@@ -283,6 +310,8 @@ final class WorkspaceStore {
     func prepareForClosing() {
         isClosing = true
         assistant.prepareForTermination()
+        comparisonAssistant.prepareForTermination()
+        derivedNavigationTask?.cancel()
         caseWork.selectedAnalysis = nil
         caseWork.selectedFinding = nil
         caseWork.selectedExtraction = nil
@@ -293,6 +322,10 @@ final class WorkspaceStore {
         _ = recovery.beginShutdown()
         _ = contentPreview.beginShutdown()
         _ = caseWork.beginShutdown()
+        comparisonSelection.prepareForClosing()
+        _ = contentIndex.beginShutdown()
+        _ = timeline.beginShutdown()
+        _ = caseIntegrity.beginShutdown()
     }
 
     /// Awaiting the owning tasks also drains their detached workers and native
@@ -301,7 +334,9 @@ final class WorkspaceStore {
         prepareForClosing()
         let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask,
                        assistant.beginShutdown(), contentPreview.beginShutdown(), caseWork.beginShutdown(), recovery.beginShutdown(), optical.beginShutdown(),
-                       filesystemDocumentPreview.beginShutdown(), filesystemBatchExport.beginShutdown(), filesystemBatchPanelTask].compactMap { $0 }
+                       filesystemDocumentPreview.beginShutdown(), filesystemBatchExport.beginShutdown(), filesystemBatchPanelTask,
+                       comparisonSelection.beginShutdown(), comparisonAssistant.beginShutdown(), contentIndex.beginShutdown(),
+                       timeline.beginShutdown(), caseIntegrity.beginShutdown(), derivedNavigationTask].compactMap { $0 }
         cancelCurrentJob()
         return pending
     }
@@ -313,6 +348,10 @@ final class WorkspaceStore {
 
     private func load(_ forensicCase: ForensicCase) {
         errorMessage = nil
+        comparisonSelection.configure(result: nil)
+        contentIndex.reset()
+        timeline.reset()
+        caseIntegrity.configure(forensicCase: forensicCase)
         filesystemDocumentPreview.reset()
         filesystemBatchExport.reset()
         optical.reset()

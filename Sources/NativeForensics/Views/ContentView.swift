@@ -20,6 +20,14 @@ struct ContentView: View {
                         Group {
                             if workspace.section == .caseDetails {
                                 CaseDetailsView(forensicCase: forensicCase)
+                            } else if workspace.section == .contentSearch {
+                                ContentIndexWorkspaceView(store: workspace.contentIndex, onOpenReference: workspace.openContentIndexReference)
+                            } else if workspace.section == .comparison {
+                                EvidenceComparisonWorkspaceView(workspace: workspace)
+                            } else if workspace.section == .timeline {
+                                TimelineWorkspaceView(store: workspace.timeline, openFile: workspace.openTimelineFile)
+                            } else if workspace.section == .integrity {
+                                CaseIntegrityView(store: workspace.caseIntegrity)
                             } else if workspace.section == .optical {
                                 OpticalWorkspaceView(workspace: workspace)
                             } else if workspace.section == .recovery {
@@ -118,6 +126,13 @@ struct ContentView: View {
                 .help("Toggle evidence inspector (⌥⌘I)")
                 .disabled(workspace.currentCase == nil)
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { workspace.comparisonAssistant.isPresented },
+            set: { if !$0 { workspace.comparisonAssistant.close() } }
+        )) {
+            MultiEvidenceAnalysisView(store: workspace.comparisonAssistant)
+                .interactiveDismissDisabled(workspace.comparisonAssistant.isWorking)
         }
         .sheet(isPresented: Binding(
             get: { workspace.assistant.isPresented },

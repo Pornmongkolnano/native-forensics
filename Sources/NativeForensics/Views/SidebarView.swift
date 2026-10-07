@@ -49,7 +49,22 @@ struct SidebarView: View {
                     .disabled(workspace.selectedEvidence == nil)
             }
 
+            Section("Analysis") {
+                Label("Content Search", systemImage: "doc.text.magnifyingglass")
+                    .tag(WorkspaceNavigationSelection.contentSearch)
+                    .selectionDisabled(workspace.isBusy || workspace.currentCase == nil)
+                Label("Compare Evidence", systemImage: "doc.on.doc")
+                    .tag(WorkspaceNavigationSelection.comparison)
+                    .selectionDisabled(workspace.isBusy || workspace.selectedEvidence == nil)
+                Label("Timeline", systemImage: "clock")
+                    .tag(WorkspaceNavigationSelection.timeline)
+                    .selectionDisabled(workspace.isBusy || workspace.selectedEvidence == nil)
+            }
+
             Section("Case") {
+                Label("Case Integrity", systemImage: "checkmark.shield")
+                    .tag(WorkspaceNavigationSelection.integrity)
+                    .selectionDisabled(workspace.isBusy || workspace.currentCase == nil)
                 Label("Case Details", systemImage: "folder.badge.gearshape")
                     .tag(WorkspaceNavigationSelection.caseDetails)
                     .selectionDisabled(workspace.isBusy || workspace.currentCase == nil)
@@ -66,7 +81,7 @@ struct SidebarView: View {
                     Image(systemName: "lock.shield")
                     Text("Read-only evidence")
                 }
-                Text("File types are based on extensions.")
+                Text("File View categories use filename extensions.")
                     .font(.caption2)
             }
             .font(.caption)

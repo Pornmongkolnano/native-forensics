@@ -8,6 +8,10 @@ extension WorkspaceStore {
         case .caseDetails: return .caseDetails
         case .recovery: return .recovery
         case .optical: return .optical
+        case .contentSearch: return .contentSearch
+        case .comparison: return .comparison
+        case .timeline: return .timeline
+        case .integrity: return .integrity
         case .filesystem:
             if !filesystemNavigationShowsCategory, let selectedEvidenceID {
                 return .dataSource(selectedEvidenceID)
@@ -24,6 +28,10 @@ extension WorkspaceStore {
         case .caseDetails: section = .caseDetails
         case .recovery: showRecoveredFiles()
         case .optical: showOpticalHistory()
+        case .contentSearch: showContentSearch()
+        case .comparison: showComparison()
+        case .timeline: showTimeline()
+        case .integrity: showCaseIntegrity()
         case .dataSource(let evidenceID): chooseDataSource(evidenceID)
         case .fileView(let category): chooseFileView(category)
         }
@@ -394,6 +402,12 @@ extension WorkspaceStore {
         assistant.cancel()
         contentPreview.cancel()
         caseWork.cancelPendingWork()
+        comparisonSelection.cancel()
+        comparisonAssistant.cancel()
+        contentIndex.cancel()
+        timeline.cancel()
+        caseIntegrity.cancelPendingWork()
+        derivedNavigationTask?.cancel()
         if isFilteringFilesystem {
             filesystemSearchText = ""
             filesystemCategory = .all
@@ -443,6 +457,8 @@ extension WorkspaceStore {
         }
         filesystemFilesByID = byID
         refreshSelectedFileWork()
+        comparisonSelection.configure(result: selectedFilesystemResult)
+        refreshDerivedWorkspaces()
     }
 
     private func extract(file: FilesystemEntry, evidence: EvidenceRecord, to destination: URL, options: EngineOptions, sourcePaths: [URL], sourceHashes: [String: String]) {
