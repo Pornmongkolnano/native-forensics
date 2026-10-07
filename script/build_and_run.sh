@@ -17,11 +17,18 @@ if [[ "$MODE" == "--debug" ]]; then BUILD_CONFIGURATION="debug"; fi
 
 cd "$ROOT_DIR"
 python3 ./script/build_native_engine.py
+mkdir -p .build
+INPUT_SNAPSHOT="$(mktemp "$ROOT_DIR/.build/nativeforensics-inputs.XXXXXXXX")"
+trap 'rm -f "$INPUT_SNAPSHOT"' EXIT
+python3 ./script/source_provenance.py --snapshot "$INPUT_SNAPSHOT" --build-configuration "$BUILD_CONFIGURATION"
 swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
 swift build -c "$BUILD_CONFIGURATION" --product NFDocumentDecoder
 BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
+BUILD_RECEIPT="$(python3 ./script/source_provenance.py --seal-build "$INPUT_SNAPSHOT" --binary-directory "$BUILD_DIR")"
+rm -f "$INPUT_SNAPSHOT"
+INPUT_SNAPSHOT=""
 # Fully stage/sign/verify before asking the running app to drain its work.
-STAGED_APP="$(python3 ./script/package_app.py --stage "$BUILD_DIR/$APP_NAME")"
+STAGED_APP="$(python3 ./script/package_app.py --stage "$BUILD_DIR/$APP_NAME" --build-receipt "$BUILD_RECEIPT")"
 cleanup_stage() {
   if [[ -n "${STAGED_APP:-}" && -d "$(dirname "$STAGED_APP")" ]]; then
     rm -rf "$(dirname "$STAGED_APP")"

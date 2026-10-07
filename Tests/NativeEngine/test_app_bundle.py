@@ -50,46 +50,52 @@ class BundleTests(unittest.TestCase):
         self.receipt_path.write_text(json.dumps(self.receipt))
 
     def test_complete_metadata_accepts_and_returns_receipt_scope(self):
-        result = validate_metadata(self.bundle)
+        result = validate_metadata(self.bundle, allow_legacy_development=True)
         self.assertEqual(result["minimumMacOS"], "14.0")
         self.assertEqual(result["helperSha256"], self.receipt["engineSha256"])
+
+    def test_legacy_receipts_require_explicit_development_inspection(self):
+        with self.assertRaisesRegex(ValueError, "Legacy development receipts"):
+            validate_metadata(self.bundle)
+        self.assertEqual(validate_metadata(self.bundle, allow_legacy_development=True)["sourceProvenance"],
+                         "legacy-development-unbound")
 
     def test_changed_helper_is_rejected(self):
         (self.bundle / "Contents/Helpers/NFTSKEngine").write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "helper differs"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_missing_or_changed_notices_are_rejected(self):
         path = self.bundle / "Contents/Resources/EngineLicenses/THIRD_PARTY_NOTICES.md"
         path.unlink()
         with self.assertRaises(ValueError):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
         path.write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "notices differ"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_license_escape_and_changed_license_are_rejected(self):
         self.receipt["licenseSha256"] = {"NativeEngine/licenses/../../outside": "a" * 64}
         self.write_receipt()
         with self.assertRaisesRegex(ValueError, "invalid path"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
         self.receipt["licenseSha256"] = {"NativeEngine/licenses/component/LICENSE": "a" * 64}
         self.write_receipt()
         with self.assertRaisesRegex(ValueError, "license does not match"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_symlinked_helper_is_rejected_without_following(self):
         helper = self.bundle / "Contents/Helpers/NFTSKEngine"
         helper.unlink()
         helper.symlink_to(self.info_path)
         with self.assertRaisesRegex(ValueError, "symlinks"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_minimum_version_mismatch_is_rejected(self):
         self.receipt["toolchain"]["minimumMacOS"] = "27.0"
         self.write_receipt()
         with self.assertRaisesRegex(ValueError, "minimum macOS"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def add_decoder(self):
         with self.info_path.open("rb") as stream:
@@ -109,14 +115,14 @@ class BundleTests(unittest.TestCase):
 
     def test_current_version_requires_exact_decoder_receipt_and_payload(self):
         decoder, path, receipt = self.add_decoder()
-        self.assertEqual(validate_metadata(self.bundle)["documentDecoderSha256"], receipt["sha256"])
+        self.assertEqual(validate_metadata(self.bundle, allow_legacy_development=True)["documentDecoderSha256"], receipt["sha256"])
         decoder.write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "decoder differs"):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
         decoder.write_bytes(b"synthetic-decoder")
         path.unlink()
         with self.assertRaises(ValueError):
-            validate_metadata(self.bundle)
+            validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_decoder_inventory_and_runtime_scope_mutations_are_rejected(self):
         _, path, receipt = self.add_decoder()
@@ -125,7 +131,7 @@ class BundleTests(unittest.TestCase):
             changed = {**receipt, field: value}
             path.write_text(json.dumps(changed))
             with self.assertRaises(ValueError):
-                validate_metadata(self.bundle)
+                validate_metadata(self.bundle, allow_legacy_development=True)
 
     def test_failed_publication_preserves_previous_bundle_and_stage(self):
         stage = self.root / "stage.app"
