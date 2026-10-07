@@ -745,6 +745,44 @@ public:
     ~NewOutput() { cleanup(); }
 };
 
+// TSK 4.15.0 intentionally returns zero bytes for FILLER runs, while its generic
+// attribute reader does not decrypt NTFS EFS attributes. Those compatibility
+// behaviors must not become our verified logical-content extraction receipt.
+// Sparse runs and the interval after initialized size are different: NTFS
+// defines their logical content as zeros, so preserve them without reading
+// uninitialized bytes physically stored on disk.
+int64_t verifiedReadableBytes(const TSK_FS_ATTR *attribute, TSK_FS_INFO *fs, Input &input) {
+    if (!TSK_FS_TYPE_ISNTFS(fs->ftype)) return attribute->size;
+    if (attribute->flags & TSK_FS_ATTR_ENC)
+        throw Failure("UNSUPPORTED_ENCRYPTED_CONTENT", "NTFS encrypted attribute content cannot be decrypted by this engine");
+    // Compressed readers consume whole compression units, including mappings
+    // beyond the requested initialized prefix. Their complete-byte semantics
+    // require an independent compression corpus before being advertised here.
+    if (attribute->flags & TSK_FS_ATTR_COMP)
+        throw Failure("UNSUPPORTED_COMPRESSED_CONTENT", "NTFS compressed attribute extraction is not validated by this engine");
+    if (!(attribute->flags & TSK_FS_ATTR_NONRES)) return attribute->size;
+    if (fs->block_size == 0 || attribute->nrd.initsize < 0 || attribute->nrd.initsize > attribute->size ||
+        attribute->nrd.skiplen != 0)
+        throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS attribute has invalid initialized-content geometry");
+    const uint64_t initialized = uint64_t(attribute->nrd.initsize);
+    const uint64_t requiredBlocks = initialized / fs->block_size + (initialized % fs->block_size != 0);
+    uint64_t covered = 0;
+    std::set<const TSK_FS_ATTR_RUN *> seen;
+    for (const auto *run = attribute->nrd.run; covered < requiredBlocks && run; run = run->next) {
+        input.check();
+        if (!seen.insert(run).second || run->len == 0 || run->offset != covered ||
+            (run->flags & TSK_FS_ATTR_RUN_FLAG_FILLER))
+            throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS initialized content has missing, overlapping, or filler data runs");
+        if (run->flags & TSK_FS_ATTR_RUN_FLAG_ENCRYPTED)
+            throw Failure("UNSUPPORTED_ENCRYPTED_CONTENT", "NTFS encrypted data runs cannot be decrypted by this engine");
+        // Clamp rather than multiply untrusted lengths or overflow a VCN sum.
+        covered += std::min<uint64_t>(run->len, requiredBlocks - covered);
+    }
+    if (covered != requiredBlocks)
+        throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS data runs do not cover all initialized logical content");
+    return attribute->nrd.initsize;
+}
+
 void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &output) {
     int64_t offset = request.file["fsOffsetBytes"].get<int64_t>();
     if (offset >= image->size) throw Failure("INVALID_FILE_REFERENCE", "Filesystem offset is outside the logical image");
@@ -774,6 +812,7 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         throw Failure("DIRECTORY_EXTRACTION", "Select a file or named data stream to extract");
     int64_t expected = request.file["size"].get<int64_t>();
     if (attribute->size != expected) throw Failure("FILE_SIZE_MISMATCH", "Current file size differs from the enumerated reference");
+    const int64_t readableBytes = verifiedReadableBytes(attribute, fs.get(), input);
     NewOutput destination(request.outputPath, request.sources);
     CC_SHA256_CTX context;
     CC_SHA256_Init(&context);
@@ -786,7 +825,14 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         size_t amount = size_t(std::min<int64_t>(buffer.size(), expected - position));
         // TSK 4.15 automatically attempts deleted FAT recovery while loading its
         // run list. A separate legacy icat -r flag no longer exists in the API.
-        ssize_t count = tsk_fs_attr_read(attribute, position, buffer.data(), amount, TSK_FS_FILE_READ_FLAG_NONE);
+        ssize_t count;
+        if (position >= readableBytes) {
+            std::fill_n(buffer.data(), amount, 0);
+            count = ssize_t(amount);
+        } else {
+            amount = size_t(std::min<int64_t>(amount, readableBytes - position));
+            count = tsk_fs_attr_read(attribute, position, buffer.data(), amount, TSK_FS_FILE_READ_FLAG_NONE);
+        }
         if (count <= 0 || size_t(count) > amount) throw Failure("FILE_READ_FAILED", tskError());
         size_t written = 0;
         while (written < size_t(count)) {

@@ -124,9 +124,10 @@ def _runlist(runs: list[tuple[int | None, int]]) -> bytes:
 
 
 def _nonresident(kind: int, size: int, runs: list[tuple[int | None, int]],
-                 attribute_id: int, name="", *, sparse=False) -> bytes:
+                 attribute_id: int, name="", *, sparse=False, encrypted=False, compressed=False,
+                 start_vcn=0, initialized_size=None, allocated_size=None) -> bytes:
     encoded = name.encode("utf-16-le")
-    header_size = 72 if sparse else 64
+    header_size = 72 if sparse or compressed else 64
     offset = _align(header_size + len(encoded))
     runlist = _runlist(runs)
     length = _align(offset + len(runlist))
@@ -134,11 +135,14 @@ def _nonresident(kind: int, size: int, runs: list[tuple[int | None, int]],
     physical_size = sum(count for location, count in runs if location is not None) * CLUSTER
     result = bytearray(length)
     struct.pack_into("<IIBBHHH", result, 0, kind, length, 1, len(encoded) // 2,
-                     header_size if encoded else 0, 0x8000 if sparse else 0,
+                     header_size if encoded else 0,
+                     (0x8000 if sparse else 0) | (0x4000 if encrypted else 0) | (1 if compressed else 0),
                      attribute_id)
-    struct.pack_into("<QQHHIQQQ", result, 16, 0, logical_clusters - 1,
-                     offset, 0, 0, logical_clusters * CLUSTER, size, size)
-    if sparse:
+    struct.pack_into("<QQHHIQQQ", result, 16, start_vcn, start_vcn + logical_clusters - 1,
+                     offset, 4 if compressed else 0, 0,
+                     (start_vcn + logical_clusters) * CLUSTER if allocated_size is None else allocated_size,
+                     size, size if initialized_size is None else initialized_size)
+    if sparse or compressed:
         struct.pack_into("<Q", result, 64, physical_size)
     result[header_size:header_size + len(encoded)] = encoded
     result[offset:offset + len(runlist)] = runlist
@@ -158,7 +162,7 @@ def _protect(record: bytearray, fixup_offset: int, signature: int) -> bytes:
 
 
 def _mft(number: int, attributes: list[bytes], *, allocated=True,
-         directory=False, links=1) -> bytes:
+         directory=False, links=1, base_record=0) -> bytes:
     result = bytearray(RECORD)
     result[:4] = b"FILE"
     offset = 56  # 48-byte v3.1 header and six-byte USA, rounded to eight bytes.
@@ -167,7 +171,8 @@ def _mft(number: int, attributes: list[bytes], *, allocated=True,
     struct.pack_into("<HHHHIIQHHI", result, 16,
                      1 if allocated else 2, links, offset,
                      (1 if allocated else 0) | (2 if directory else 0),
-                     used, RECORD, 0, max((struct.unpack_from("<H", item, 14)[0] for item in attributes), default=-1) + 1,
+                     used, RECORD, (base_record | (1 << 48)) if base_record else 0,
+                     max((struct.unpack_from("<H", item, 14)[0] for item in attributes), default=-1) + 1,
                      0, number)
     for attribute in attributes:
         result[offset:offset + len(attribute)] = attribute
@@ -390,6 +395,97 @@ def ntfs_image(path: Path) -> dict:
                             "deletedStreamCount": sum(row["isDeleted"] for row in expected), "compressedData": False,
                             "encryptedData": False, "bootable": False},
     }
+
+
+def _attribute_list_entry(number: int, start_vcn: int, attribute_id: int) -> bytes:
+    # ATTRIBUTE_LIST_ENTRY: type, record length, name length/offset, first VCN,
+    # file reference (with sequence), attribute identifier, eight-byte alignment.
+    return struct.pack("<IHBBQQH6x", 0x80, 32, 0, 0, start_vcn,
+                       number | (1 << 48), attribute_id)
+
+
+def ntfs_capability_image(path: Path, kind: str) -> dict:
+    """Original corruption/complexity probes with literal logical-byte oracles.
+
+    Each variant changes only record 25 (and extension 35 for ATTRIBUTE_LIST).
+    Existing baseline source files are never rewritten. Bytes already stored in
+    clusters 100/104 retain the same independently generated payload pattern.
+    """
+    manifest = ntfs_image(path)
+    payload = bytes((index * 131 + 17) % 256 for index in range(9001))
+    attributes = [_resident(0x10, _standard_information(), 0),
+                  _resident(0x30, _filename("fragmented.bin", len(payload),
+                                           allocation_size=3 * CLUSTER), 1)]
+    expected_error = None
+    extension = None
+    if kind == "encrypted":
+        data = _nonresident(0x80, len(payload), [(100, 1), (104, 2)], 2, encrypted=True)
+        expected_error = "UNSUPPORTED_ENCRYPTED_CONTENT"
+    elif kind == "compressed":
+        # Valid compressed-attribute header with a final physically stored,
+        # uncompressed short unit. No LZNT1 decoder oracle is claimed here.
+        data = _nonresident(0x80, len(payload), [(100, 1), (104, 2)], 2, compressed=True)
+        expected_error = "UNSUPPORTED_COMPRESSED_CONTENT"
+    elif kind == "missing-leading-run":
+        data = _nonresident(0x80, len(payload), [(104, 2)], 2, start_vcn=1)
+        expected_error = "INCOMPLETE_ATTRIBUTE_RUNLIST"
+    elif kind == "missing-tail-run":
+        data = _nonresident(0x80, len(payload), [(100, 1)], 2,
+                            allocated_size=3 * CLUSTER)
+        expected_error = "INCOMPLETE_ATTRIBUTE_RUNLIST"
+    elif kind in {"attribute-list", "attribute-list-missing-middle"}:
+        start_vcn = 1 if kind == "attribute-list" else 2
+        data = _nonresident(0x80, len(payload), [(100, 1)], 2,
+                            allocated_size=3 * CLUSTER)
+        entries = (_attribute_list_entry(25, 0, 2)
+                   + _attribute_list_entry(35, start_vcn, 2))
+        attributes.append(_resident(0x20, entries, 3))
+        extension = _mft(35, [_nonresident(0x80, 0, [(104, 3 - start_vcn)], 2,
+                                         start_vcn=start_vcn, initialized_size=0,
+                                         allocated_size=0)], base_record=25)
+        if kind == "attribute-list-missing-middle":
+            expected_error = "INCOMPLETE_ATTRIBUTE_RUNLIST"
+    elif kind in {"uninitialized-tail", "uninitialized-all", "uninitialized-tail-unmapped"}:
+        initialized = (CLUSTER if kind == "uninitialized-tail-unmapped" else
+                       CLUSTER + 5 if kind == "uninitialized-tail" else 0)
+        runs = [(100, 1)] if kind == "uninitialized-tail-unmapped" else [(100, 1), (104, 2)]
+        data = _nonresident(0x80, len(payload), runs, 2,
+                            initialized_size=initialized, allocated_size=3 * CLUSTER)
+        payload = payload[:initialized] + bytes(len(payload) - initialized)
+    else:
+        raise ValueError("Unknown NTFS capability fixture: " + kind)
+    attributes.append(data)
+    with path.open("r+b") as stream:
+        stream.seek(MFT_LCN * CLUSTER + 25 * RECORD)
+        stream.write(_mft(25, attributes))
+        if extension:
+            stream.seek(MFT_LCN * CLUSTER + 35 * RECORD)
+            stream.write(extension)
+    manifest["logicalSha256"] = _hash(path)
+    manifest["syntheticLayout"].update(encryptedData=kind == "encrypted", compressedData=kind == "compressed")
+    target = next(row for row in manifest["files"] if row["path"] == "fragmented.bin")
+    target.update(payloadHex=payload.hex(), sha256=hashlib.sha256(payload).hexdigest())
+    manifest["target"] = target
+    manifest["capabilityCase"] = kind
+    manifest["expectedExtractionError"] = expected_error
+    return manifest
+
+
+def generate_ntfs_capability_fixtures(output: Path) -> list[dict]:
+    """Generate once; verify retained original fixture hashes on later runs."""
+    kinds = ("encrypted", "compressed", "missing-leading-run", "missing-tail-run",
+             "attribute-list", "attribute-list-missing-middle",
+             "uninitialized-tail", "uninitialized-all", "uninitialized-tail-unmapped")
+    receipt = output / "ntfs-capabilities.json"
+    if receipt.exists():
+        fixtures = json.loads(receipt.read_text())
+        if ([row.get("capabilityCase") for row in fixtures] != list(kinds)
+                or any(_hash(output / row["path"]) != row["logicalSha256"] for row in fixtures)):
+            raise RuntimeError("Existing NTFS capability fixture changed; choose a fresh directory")
+        return fixtures
+    fixtures = [ntfs_capability_image(output / ("ntfs-" + kind + ".raw"), kind) for kind in kinds]
+    receipt.write_text(json.dumps(fixtures, indent=2, ensure_ascii=False) + "\n")
+    return fixtures
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 
 from fixtures import PAYLOADS, digest, generate
+from ntfs_fixtures import generate_ntfs_capability_fixtures
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -42,6 +43,7 @@ class Runner:
         self.started = time.time()
         self.fixture_dir = output / "fixtures"
         self.fixtures = generate(self.fixture_dir)
+        self.ntfs_capability_fixtures = generate_ntfs_capability_fixtures(self.fixture_dir)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.run_dir = output / ("run-" + timestamp + "-" + uuid.uuid4().hex[:8])
         self.run_dir.mkdir()
@@ -212,6 +214,38 @@ class Runner:
                 baseline = observed
             expect(observed == baseline, "recorded timestamps depend on the ambient host timezone")
         return {"requestTimezone": timezone, "hostTimezones": matrix["hostTimezones"], "fileCount": len(fixture["files"])}
+
+    def ntfs_capability(self, fixture):
+        before = digest(self.fixture_dir / fixture["path"])
+        result = self.call(self.request(fixture, hashLogicalImage=False))
+        entries = self.regular(result["files"])
+        target = fixture["target"]
+        expect(target["path"] in entries, "selected synthetic NTFS DATA entry is missing")
+        row = entries[target["path"]]
+        locator = {key: row[key] for key in ("fsOffsetBytes", "metaAddress", "attributeType", "attributeID", "size") if key in row}
+        expect(locator.get("size") == target["size"], "selected attribute logical size differs")
+        destination = self.exports / (uuid.uuid4().hex + "-ntfs-probe.bin")
+        extracted = self.call(self.request(fixture, "extract", file=locator,
+                                           outputPath=str(destination), hashLogicalImage=False))
+        error = fixture["expectedExtractionError"]
+        receipts = [frame for frame in extracted["frames"] if frame["type"] == "extracted"]
+        if error:
+            expect(extracted["terminal"]["type"] == "failed", "unsupported content incorrectly completed")
+            expect([frame["code"] for frame in extracted["frames"] if frame["type"] == "error"] == [error],
+                   "unsupported content has the wrong explicit error")
+            expect(not receipts and not destination.exists(), "unsupported content published an output or receipt")
+            expect(not any(frame["type"] == "progress" and frame.get("stage") == "extract" for frame in extracted["frames"]),
+                   "unsupported content began extraction before validation")
+        else:
+            expect(extracted["terminal"]["type"] == "completed", "valid NTFS capability fixture failed")
+            expect(len(receipts) == 1, "valid NTFS fixture lacks its extraction receipt")
+            expect(destination.read_bytes() == bytes.fromhex(target["payloadHex"]), "NTFS logical bytes differ from literal oracle")
+            expect(digest(destination) == target["sha256"] == receipts[0].get("sha256"), "NTFS byte hash differs")
+            expect(receipts[0].get("byteCount") == target["size"], "NTFS logical byte count differs")
+        expect(digest(self.fixture_dir / fixture["path"]) == before == fixture["logicalSha256"],
+               "NTFS probe source bytes changed")
+        return {"case": fixture["capabilityCase"], "expectedError": error,
+                "sourceUnchanged": True, "outputPublished": not bool(error)}
 
     def fail_request(self, request):
         result = self.call(request)
@@ -440,6 +474,8 @@ class Runner:
             if matrix.get("hostTimezones"):
                 self.check(fixture["path"] + " host timezone invariance", lambda fixture=fixture: self.host_timezone_invariance(fixture))
         self.safety()
+        for fixture in self.ntfs_capability_fixtures:
+            self.check("NTFS content " + fixture["capabilityCase"], lambda fixture=fixture: self.ntfs_capability(fixture))
         self.protocol()
         self.check("create EWF fixture", lambda: self.ewf(acquire))
         self.check("all original fixture sources unchanged", self.source_unchanged)
