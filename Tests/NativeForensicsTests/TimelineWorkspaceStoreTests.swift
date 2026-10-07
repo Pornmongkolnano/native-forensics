@@ -118,7 +118,7 @@ struct TimelineWorkspaceStoreTests {
         #expect(!panel.allowsMultipleSelection)
         #expect(panel.canCreateDirectories)
         #expect(!panel.treatsFilePackagesAsDirectories)
-        #expect(!panel.canResolveAliases)
+        #expect(!panel.resolvesAliases)
     }
     @Test func asynchronousFolderChoicePublishesCompleteReport() async throws {
         let value = selection()

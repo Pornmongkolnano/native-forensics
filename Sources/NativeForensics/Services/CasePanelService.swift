@@ -127,7 +127,7 @@ enum CasePanelService {
         panel.prompt = "Choose Folder"
         panel.treatsFilePackagesAsDirectories = false
         panel.allowedContentTypes = [.folder]
-        panel.canResolveAliases = false
+        panel.resolvesAliases = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = false
