@@ -1,5 +1,4 @@
 import CryptoKit
-import Darwin
 import Foundation
 
 /// A disclosure snapshot, never a case manifest or a host-path-bearing engine cache.
@@ -100,8 +99,8 @@ public enum AssistantContextError: Error, LocalizedError, Sendable, Equatable {
 }
 
 public enum AssistantContextBuilder {
-    public static let maximumFileBytes: Int64 = 1_048_576
-    public static let maximumPreviewBytes = 32_768
+    public static let maximumFileBytes = VerifiedContentService.maximumFileBytes
+    public static let maximumPreviewBytes = VerifiedContentService.maximumPreviewBytes
 
     /// A historical metadata snapshot. No source bytes or arbitrary exported
     /// paths are read. Its hashes describe the last verified enumeration.
@@ -126,43 +125,36 @@ public enum AssistantContextBuilder {
         guard !file.isDirectory else { throw AssistantContextError.directoryContent }
         guard file.size <= maximumFileBytes else { throw AssistantContextError.contentTooLarge }
         guard let engine else { throw AssistantContextError.contentEngineUnavailable }
-        try Task.checkCancellation()
-        let scratch = try AssistantScratch()
-        defer { scratch.cleanup() }
-        var extractionOptions = result.options
-        // Every container segment is independently rehashed through
-        // expectedSourceHashes. Retain the historical logical-image hash in the
-        // context without requesting a redundant full logical-image pass.
-        extractionOptions.hashLogicalImage = false
-        let receipt = try await engine.extract(
-            imagePaths: result.sourcePaths.map { URL(fileURLWithPath: $0) },
-            file: file,
-            outputURL: scratch.outputURL,
-            options: extractionOptions,
-            expectedSourceHashes: result.sourceFileHashes,
-            progress: progress
-        )
-        try Task.checkCancellation()
-        let bytes = try scratch.readVerified(receipt: receipt, expectedSize: file.size)
+        let extracted: VerifiedContent
+        do {
+            extracted = try await VerifiedContentService.extract(evidence: evidence, result: result,
+                file: file, engine: engine, progress: progress)
+        } catch let error as VerifiedContentError {
+            throw assistantError(error)
+        }
+        let bytes = extracted.bytes
+        let receipt = ExtractionResult(outputPath: "", byteCount: extracted.receipt.byteCount, sha256: extracted.receipt.sha256)
         let content = try textContent(bytes: bytes, receipt: receipt)
         try Task.checkCancellation()
         return try snapshot(evidence: evidence, result: result, file: file, content: content)
     }
 
     private static func validate(evidence: EvidenceRecord, result: EnumerationResult, file: FilesystemEntry) throws {
-        try EngineValidation.result(result)
-        guard evidence.hashScope == FileHashScope.selectedFileBytes,
-              evidence.byteCount >= 0,
-              EngineValidation.validHash(evidence.sha256),
-              result.sourcePaths.first == evidence.sourcePath,
-              result.sourceFileHashes[evidence.sourcePath] == evidence.sha256,
-              result.sourceIdentities.first.map({ $0.size == evidence.byteCount }) ?? true else {
-            throw AssistantContextError.staleEvidence
+        do {
+            try VerifiedContentService.validateSelection(evidence: evidence, result: result, file: file)
+        } catch let error as VerifiedContentError {
+            throw assistantError(error)
         }
-        guard result.files.first(where: { $0.id == file.id }) == file else {
-            throw AssistantContextError.unknownSelection
+    }
+
+    private static func assistantError(_ error: VerifiedContentError) -> AssistantContextError {
+        switch error {
+        case .staleEvidence: .staleEvidence
+        case .unknownSelection: .unknownSelection
+        case .directoryContent: .directoryContent
+        case .contentTooLarge: .contentTooLarge
+        case .extractedContentMismatch: .extractedContentMismatch
         }
-        try Task.checkCancellation()
     }
 
     private static func snapshot(evidence: EvidenceRecord, result: EnumerationResult, file: FilesystemEntry, content: AssistantTextContent?) throws -> EvidenceAnalysisContext {
@@ -220,111 +212,14 @@ public enum AssistantContextBuilder {
               SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == receipt.sha256 else {
             throw AssistantContextError.extractedContentMismatch
         }
-        guard let fullText = String(data: bytes, encoding: .utf8),
-              fullText.unicodeScalars.allSatisfy({ scalar in
-                  [9, 10, 13].contains(scalar.value)
-                      || (scalar.value >= 32 && scalar.value != 127 && !(128...159).contains(scalar.value))
-              }) else { throw AssistantContextError.unsupportedText }
-        // Cut at a Unicode scalar boundary. A multi-byte character is never
-        // replaced or split, and the disclosed byte counts stay exact.
-        var included = 0
-        var end = fullText.unicodeScalars.startIndex
-        for scalar in fullText.unicodeScalars {
-            let width = scalar.utf8.count
-            guard included + width <= maximumPreviewBytes else { break }
-            included += width
-            end = fullText.unicodeScalars.index(after: end)
-        }
+        guard let prefix = ContentTextDecoder.prefix(bytes: bytes) else { throw AssistantContextError.unsupportedText }
         return AssistantTextContent(
             encoding: "UTF-8",
             fullFileHash: AssistantScopedHash(sha256: receipt.sha256, scope: receipt.hashScope),
             completeByteCount: receipt.byteCount,
-            includedByteCount: included,
-            omittedByteCount: receipt.byteCount - Int64(included),
-            text: String(fullText[..<end])
+            includedByteCount: prefix.byteCount,
+            omittedByteCount: receipt.byteCount - Int64(prefix.byteCount),
+            text: prefix.text
         )
-    }
-}
-
-/// Descriptor-owned scratch storage. Cleanup removes only our known leaf and
-/// empty directory, never recursively deletes unknown contents or symlink targets.
-private final class AssistantScratch {
-    let outputURL: URL
-    private let parentFD: Int32
-    private let directoryFD: Int32
-    private let name: String
-    private let directoryURL: URL
-    private var cleaned = false
-
-    init() throws {
-        let parent = try FileAccess.localURL(FileManager.default.temporaryDirectory)
-        let parentDescriptor = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard parentDescriptor >= 0 else { throw FileAccess.posixError("Cannot open private assistant temporary storage") }
-        let directoryName = ".native-assistant-\(UUID().uuidString)"
-        guard Darwin.mkdirat(parentDescriptor, directoryName, mode_t(0o700)) == 0 else {
-            let error = FileAccess.posixError("Cannot create private assistant temporary storage")
-            Darwin.close(parentDescriptor)
-            throw error
-        }
-        let directoryDescriptor = Darwin.openat(parentDescriptor, directoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard directoryDescriptor >= 0 else {
-            let error = FileAccess.posixError("Cannot open assistant temporary directory")
-            _ = Darwin.unlinkat(parentDescriptor, directoryName, AT_REMOVEDIR)
-            Darwin.close(parentDescriptor)
-            throw error
-        }
-        parentFD = parentDescriptor
-        directoryFD = directoryDescriptor
-        name = directoryName
-        directoryURL = parent.appendingPathComponent(directoryName, isDirectory: true)
-        outputURL = directoryURL.appendingPathComponent("selected-file")
-    }
-
-    func readVerified(receipt: ExtractionResult, expectedSize: Int64) throws -> Data {
-        guard receipt.outputPath == outputURL.path, receipt.byteCount == expectedSize,
-              receipt.byteCount <= AssistantContextBuilder.maximumFileBytes,
-              directoryStillOwned() else { throw AssistantContextError.extractedContentMismatch }
-        let descriptor = try FileAccess.openReadOnly("selected-file", in: directoryFD)
-        defer { Darwin.close(descriptor) }
-        let before = try FileAccess.identity(of: descriptor)
-        guard before.size == receipt.byteCount else { throw AssistantContextError.extractedContentMismatch }
-        var bytes = Data()
-        var buffer = [UInt8](repeating: 0, count: 65_536)
-        while Int64(bytes.count) < before.size {
-            try Task.checkCancellation()
-            let requested = Int(min(Int64(buffer.count), before.size - Int64(bytes.count)))
-            let count = try buffer.withUnsafeMutableBytes { try FileAccess.read(descriptor, into: $0, count: requested) }
-            guard count > 0 else { throw AssistantContextError.extractedContentMismatch }
-            bytes.append(contentsOf: buffer.prefix(count))
-        }
-        guard try FileAccess.identity(of: descriptor) == before,
-              (try? FileAccess.identity(at: "selected-file", in: directoryFD)) == before,
-              directoryStillOwned() else { throw AssistantContextError.extractedContentMismatch }
-        return bytes
-    }
-
-    func cleanup() {
-        guard !cleaned else { return }
-        cleaned = true
-        var leaf = stat()
-        if Darwin.fstatat(directoryFD, "selected-file", &leaf, AT_SYMLINK_NOFOLLOW) == 0,
-           leaf.st_mode & S_IFMT == S_IFREG {
-            _ = Darwin.unlinkat(directoryFD, "selected-file", 0)
-        }
-        if directoryStillOwned() { _ = Darwin.unlinkat(parentFD, name, AT_REMOVEDIR) }
-        Darwin.close(directoryFD)
-        Darwin.close(parentFD)
-    }
-
-    deinit { cleanup() }
-
-    private func directoryStillOwned() -> Bool {
-        var owned = stat(), named = stat(), requested = stat()
-        guard Darwin.fstat(directoryFD, &owned) == 0,
-              Darwin.fstatat(parentFD, name, &named, AT_SYMLINK_NOFOLLOW) == 0,
-              Darwin.lstat(directoryURL.path, &requested) == 0 else { return false }
-        return [named, requested].allSatisfy {
-            $0.st_mode & S_IFMT == S_IFDIR && $0.st_dev == owned.st_dev && $0.st_ino == owned.st_ino
-        }
     }
 }

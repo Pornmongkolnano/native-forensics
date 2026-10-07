@@ -52,6 +52,13 @@ public struct EngineClient: Sendable {
     }
 
     public func extract(imagePaths: [URL], file: FilesystemEntry, outputURL: URL, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> ExtractionResult {
+        try await extractOwned(imagePaths: imagePaths, file: file, outputURL: outputURL, options: options,
+            expectedSourceHashes: expectedSourceHashes, progress: progress).receipt
+    }
+
+    /// Private-content consumers retain publication identity independently of
+    /// the public, serializable receipt. Never adopt a later pathname occupant.
+    func extractOwned(imagePaths: [URL], file: FilesystemEntry, outputURL: URL, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> (receipt: ExtractionResult, identity: SourceIdentity) {
         try options.validate()
         try EngineValidation.file(file)
         guard !file.isDirectory else { throw EngineError.invalidRequest("Choose a regular file for extraction.") }
@@ -78,8 +85,8 @@ public struct EngineClient: Sendable {
         try Task.checkCancellation()
         // RENAME_EXCL makes the final publication race-safe. Existing files,
         // directories and symlinks are preserved, even if created mid-job.
-        try transaction.publish(identity: outputIdentity)
-        return ExtractionResult(outputPath: destination.path, byteCount: receipt.byteCount, sha256: receipt.sha256)
+        let publishedIdentity = try transaction.publish(identity: outputIdentity)
+        return (ExtractionResult(outputPath: destination.path, byteCount: receipt.byteCount, sha256: receipt.sha256), publishedIdentity)
     }
 
     /// Single-file convenience. Multi-segment EWF requires explicit ordered
@@ -218,7 +225,7 @@ private final class EngineOutputTransaction {
         }
     }
 
-    func publish(identity: SourceIdentity) throws {
+    func publish(identity: SourceIdentity) throws -> SourceIdentity {
         var parent = stat(), requestedParent = stat(), staging = stat(), requestedStaging = stat()
         guard Darwin.fstat(parentFD, &parent) == 0,
               Darwin.lstat(destination.deletingLastPathComponent().path, &requestedParent) == 0,
@@ -251,6 +258,14 @@ private final class EngineOutputTransaction {
             rollbackPublished(identity: identity)
             throw EngineError.invalidRequest("The extraction directory moved during publication; its newly created output was removed.")
         }
+        // Rename may change ctime. Capture it from the still-held output
+        // descriptor, then ensure the published name still refers to that file.
+        let publishedIdentity = try FileAccess.identity(of: output)
+        guard (try? FileAccess.identity(at: destination.lastPathComponent, in: parentFD)) == publishedIdentity else {
+            rollbackPublished(identity: publishedIdentity)
+            throw EngineError.helperFailed("The published extraction changed before its receipt was returned.")
+        }
+        return publishedIdentity
     }
 
     func cleanup() {
