@@ -1,6 +1,19 @@
 # แผนพัฒนา NativeForensics
 
-ล่าสุด **0.5.1 / build 14** เพิ่ม source-bound **Export for Autopsy** ใน native UI และแยก blocking process waits ออกจาก cooperative executor ตาม [ผลตรวจรุ่นนี้](NATIVE-0.5.1.md) ช่วง multi-file Codex, artifact timeline และ distribution ยังเป็น milestones ถัดไป
+ล่าสุด **0.6.0 / build 15** มี bounded case-wide content index, two-file Codex comparison, filesystem/Chromium timeline, case integrity audit และ development distribution/source/relink workflow แล้ว ดู [รุ่นปัจจุบัน](NATIVE-0.6.md) และ [actual synthetic workflow](MILESTONE-WORKFLOW.md) ไม่ปิด 1.0 trust/clean-machine/M5 gates จากการผ่าน local tests
+
+## สถานะการดำเนินแผนวันที่ 8 October 2026
+
+| ช่วง | Implementation และขอบเขตปัจจุบัน | Gate ที่ยังเปิด |
+|---|---|---|
+| 1 งานไม่หาย | v1 sidecars, notes/revisions, analysis/extraction history, fresh text/hex preview | ทุก storage/power-loss scenario และ cryptographic authenticity |
+| 2 เอกสาร/ค้นเนื้อหา | verified isolated decoding; bounded literal case-wide index; Thai/short-query/reopen/stale/cancel coverage | OCR/legacy Office, large/cold/mixed RAM measurements; deprecated Seatbelt backend ต้องมี supported distribution replacement |
+| 3 Codex เปรียบเทียบ | สอง UTF-8 files, exact review/redaction, disclosure-bound citations, immutable history/follow-up | live two-file synthetic provider smoke ผ่านแยกจาก fake-provider receipt; PDF disclosure references และ broader provider behavior เป็นงานต่อยอด |
+| 4 Timeline/รายงาน | filesystem + allocated Chromium History/explicit coherent WAL, timezone policy, source navigation, JSON/Markdown | parser families อื่น, deleted/free SQLite pages, PDF report layout |
+| 5 Recovery | JPEG/PNG/PDF/ZIP corpus, independent/updated PDFs, malformed candidates, strict PNG completeness | arbitrary fragmented/damaged media; no original-name/deletion inference |
+| 6 Distribution | deterministic development ZIP, safe installer, pinned sources/licenses/relink recipes/receipts | Developer ID/notarization, clean machine, physical M5, older macOS and thermal/battery measurements |
+
+Phase 1 broad-format gatesด้านล่างคงเปิดตามจริง NTFS 0.1.3 เพิ่ม fail-closed guards และ valid ATTRIBUTE_LIST/uninitialized-tail fixtures; การปฏิเสธ compression/EFS ไม่ใช่การประกาศว่ารองรับการถอดข้อมูลเหล่านี้ แผน 1.0 ยังไม่ complete จน external trust/compatibility และ coverage ที่จะประกาศผ่านการตรวจจริง
 
 Native Mac foundation และ filesystem workflow มี implementation แล้ว ปัจจุบัน **Phase 1 coverage ยัง IN PROGRESS** เวอร์ชัน 0.5 เพิ่ม assignment recovery, bounded UDF VAT history, isolated document previews, selected-document text search และ transactional batch export ตาม [assignment validation](ASSIGNMENT-VALIDATION-2026-10-07.md) ผลนี้ไม่ปิด broad-format, artifact-analysis หรือ distribution gates
 

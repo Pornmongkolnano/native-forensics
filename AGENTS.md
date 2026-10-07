@@ -8,7 +8,7 @@ Build a native macOS evidence workbench. SwiftUI owns desktop state; narrow AppK
 - Evidence sources are read-only. Store generated manifests, indexes and exports outside the source. Never modify a source image, repair it in place, or extract onto it.
 - Only synthetic test data belongs in Git. Do not commit user evidence, cases, absolute personal paths, credentials, runtime binaries, build products or local reports containing them.
 - Keep image-container file hashes distinct from logical/decompressed image hashes. Phase 0 hashes exactly the selected file's bytes.
-- New code is private project code; retain separate dependency provenance and notices when reusing upstream code. Do not copy Strata/Autopsy source into this foundation.
+- New code is project code; retain separate dependency provenance and notices when reusing upstream code. Do not copy Strata/Autopsy source into this foundation.
 - Do not publish, change repository visibility, invite collaborators, or distribute builds unless the user requests it. Initial private repository creation and push are authorized in this task.
 
 ## Layout and workflow
@@ -19,4 +19,4 @@ Build a native macOS evidence workbench. SwiftUI owns desktop state; narrow AppK
 - `docs`: decision record, architecture, roadmap and benchmark method.
 - Run `swift test` and `./script/build_and_run.sh --verify` before reporting a runnable scaffold. Use the `.app` bundle for GUI launch.
 - Never imply Phase 0 provides filesystem enumeration, recovery, artifact parsing or full Autopsy parity. Those are tracked milestones.
-- Keep commits cohesive and verify the GitHub repository is private before every initial push.
+- Keep commits cohesive. The user authorized public visibility on 8 October 2026 and continuing development pushes; verify the intended repository before pushing. Never commit local evidence, cases or credentials.

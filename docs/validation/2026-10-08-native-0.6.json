@@ -1,0 +1,110 @@
+{
+  "actualLocalWorkflow": {
+    "browserEvents": 4,
+    "failedDocuments": 0,
+    "independentPythonOracle": "passed",
+    "indexedDocuments": 2,
+    "partialCoverage": true,
+    "providerExecuted": false,
+    "skippedDocuments": 5,
+    "sourceAndManifestUnchanged": true,
+    "syntheticOnly": true,
+    "timelineEvents": 19
+  },
+  "appBuild": 15,
+  "appVersion": "0.6.0",
+  "assignmentReadOnlyRegression": {
+    "actualPNGSignatures": 0,
+    "decodedDOCX": 4,
+    "pngNamedExportsChecked": 8,
+    "priorStatusAndMIMEUnchanged": true,
+    "providerExecuted": false,
+    "referenceExportsHashSizeIdentityUnchanged": 91,
+    "strictPNGAssignmentCoverage": "not established; no actual PNG in this corpus",
+    "unsupportedUnknown": 4
+  },
+  "ci": "Verify exact pushed head separately; this local receipt does not assert remote CI success",
+  "date": "2026-10-08",
+  "distribution": {
+    "actualInstallerRollback": "ENOSPC restored original; blocked rollback retained exact original backup",
+    "appSourceGraphSHA256": "a968ad7775c9a2efecd8b380c247af2132713ed6c34f3e37995595992fe799a6",
+    "decoderSourceGraphSHA256": "d50221fcad9e69659701873c5bd6ecbb93f6026f902db819bee201cc85984228",
+    "developerIDIdentityCount": 0,
+    "duplicateArchiveBytesIdentical": true,
+    "finalInstallerValidation": "passed verification, fresh install, default refusal and explicit replacement",
+    "mode": "development",
+    "notarized": false,
+    "payloadFileCount": 283,
+    "privateHostPathAudit": "passed",
+    "retainedRelinkFailures": 0,
+    "retainedRelinkNativeChecks": 114,
+    "zipByteCount": 18062250,
+    "zipSHA256": "5fcd59748adee7b7689e5f82b8d50d3b93d4026c7f0d764214a2aa54b4c7ec8e"
+  },
+  "engineVersion": "0.1.3-tsk4.15.0",
+  "finalBundleGUI": {
+    "caseReopen": "passed",
+    "chromiumHistoryAndWAL": "passed",
+    "freshlyVerifiedSources": 1,
+    "postComparisonIntegrityChecks": 6,
+    "sourceGraphValidator": "passed",
+    "sourceUnchanged": true,
+    "timelineEvents": 19,
+    "timelineExportCancelRetainsPriorReport": true,
+    "timelineExportWrittenHashReadback": "passed"
+  },
+  "host": {
+    "chip": "Apple M2",
+    "macOS": "27.0.1",
+    "memoryGiB": 16,
+    "swift": "6.4"
+  },
+  "liveTwoFileSmoke": {
+    "cliVersion": "0.160.1",
+    "followUp": "local reviewed-parent preview; not sent",
+    "freshCitation": "shared marker",
+    "fullRetentionHashReadback": "passed",
+    "hostPathsAbsent": true,
+    "model": "unknown-not-reported",
+    "modelAccuracy": "not established",
+    "providerExecuted": true,
+    "redactedSecretAbsent": true,
+    "requestByteCount": 6788,
+    "requestCount": 1,
+    "requestSHA256": "25be4e428de9b1b6d1022beddd7f5e7c84085af107957949a7164c9e98d3297a",
+    "resolvedCitations": 3,
+    "structuredAnswer": "received",
+    "syntheticOnly": true
+  },
+  "openGates": [
+    "supported App Sandbox/XPC decoder replacement",
+    "broader advertised format and artifact coverage",
+    "large cold mixed RAM and performance profiling",
+    "broader GUI fault and publication scenarios",
+    "Developer ID and notarization",
+    "clean machine and older macOS validation",
+    "physical M5 thermal and battery measurements",
+    "future schema migration and cryptographic authenticity"
+  ],
+  "privacy": "No user evidence, cases, raw provider output, credentials or private host paths included in this summary",
+  "schemaVersion": 1,
+  "scope": "Bounded development milestone; roadmap 1.0 is not complete",
+  "tests": {
+    "debug": {
+      "appDeclarations": 153,
+      "appSuites": 20,
+      "coreDeclarations": 374,
+      "coreSuites": 36
+    },
+    "nativeChecks": 114,
+    "pythonChecks": 90,
+    "release": {
+      "appDeclarations": 153,
+      "appSuites": 20,
+      "coreDeclarations": 374,
+      "coreSuites": 36
+    },
+    "strictCooperativeExecutorProbe": "passed",
+    "swiftDeclarationTotalPerConfiguration": 527
+  }
+}

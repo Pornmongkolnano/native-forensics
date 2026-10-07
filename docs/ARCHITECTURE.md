@@ -1,6 +1,6 @@
 # สถาปัตยกรรม NativeForensics
 
-NativeForensics เป็น evidence workbench สำหรับ macOS ที่แยก desktop state, case persistence และ native analysis jobs ออกจากกัน มี Phase 0 สำหรับเคสและ selected-file SHA-256 และ Phase 1 ชุดแรกสำหรับ RAW/EWF filesystem listing/extraction แล้ว Phase 1 ยังอยู่ระหว่างตรวจ coverage; carving, content index และ artifact parsing เป็นงานระยะถัดไป
+NativeForensics เป็น evidence workbench สำหรับ macOS ที่แยก desktop state, case persistence และ native analysis jobs ออกจากกัน รุ่น 0.6 เพิ่ม bounded case content index, two-file reviewed Codex analysis, filesystem/Chromium timeline และ read-only case integrity audit ต่อจาก RAW/EWF/recovery/UDF workflows Coverage และ distribution gates ยังแยกจากการมี implementation
 
 ## การไหลของข้อมูล
 
@@ -27,10 +27,16 @@ flowchart TD
     Assistant --> Review[Exact question and context review]
     Review -->|Explicit Send| Codex[Owned Codex CLI process]
     Codex --> Provider[OpenAI provider]
-    Results -. Phase 2 and 3 .-> Index[Document content index PDF images artifacts timeline]
+    Results --> Index[Source bound derived content index]
+    Index --> References[Decoder text ranges and explicit partial coverage]
+    Results --> Timeline[Filesystem and verified Chromium WAL events]
+    Timeline --> Reports[Exclusive JSON Markdown and hash receipts]
+    Store --> Comparison[Two verified UTF8 files ranges redaction]
+    Comparison --> Review
+    Work --> Audit[Read only case audit optional fresh source rehash]
 ```
 
-เส้นทึบคือ components ที่มีใน code; เส้นประคือส่วนที่ยังต้องสร้าง Helper ใช้ audited TSK 4.15.0 lineage ตาม [ADR 001](adr/0001-native-foundation.md) แยก process ตาม [ADR 002](adr/0002-engine-process-boundary.md) และสัญญาจริงใน [Engine protocol](ENGINE-PROTOCOL.md) การมี implementation ไม่ได้แทน acceptance coverage ใน [Validation](VALIDATION.md)
+เส้นทึบคือ components ที่มีใน code Helper ใช้ audited TSK 4.15.0 lineage ตาม [ADR 001](adr/0001-native-foundation.md) แยก process ตาม [ADR 002](adr/0002-engine-process-boundary.md) และสัญญาจริงใน [Engine protocol](ENGINE-PROTOCOL.md) การมี implementation ไม่ได้แทน acceptance coverage ใน [Validation](VALIDATION.md)
 
 ## Desktop และ core
 

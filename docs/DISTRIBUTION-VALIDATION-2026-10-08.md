@@ -44,7 +44,46 @@ stapling/Gatekeeper acceptance, fresh-machine GUI launch and physical M5
 measurements remain separate prerequisites. The development installer uses only
 system tools and never removes quarantine or changes Gatekeeper policy.
 
-## Final 0.6.0 / build 15 artifact
+## Final artifact after privacy and Timeline GUI fixes
+
+The final source-bound release build was packaged twice independently. Both ZIPs
+are **18,062,250 bytes**, with 283 inventoried payload files and SHA-256:
+
+`5fcd59748adee7b7689e5f82b8d50d3b93d4026c7f0d764214a2aa54b4c7ec8e`
+
+Output: `dist/NativeForensics-0.6.0-development-arm64.zip`, plus the separately
+usable `.zip.sha256` sidecar. Complete current source graphs, compiler-path
+privacy, signatures and system-only closure passed. Both app and decoder record
+`strip-S-on-staged-release-copy`; raw compiled products/dSYMs are preserved.
+A full archive-member audit found no personal host paths or actual opaque macOS
+temporary directory paths. Intentional guard-prefix definitions and synthetic
+path literals in corresponding source/tests are recognized as code, not host data.
+
+- App graph: `a968ad7775c9a2efecd8b380c247af2132713ed6c34f3e37995595992fe799a6`
+- Decoder graph: `d50221fcad9e69659701873c5bd6ecbb93f6026f902db819bee201cc85984228`
+
+Root's separate actual GUI validation passed the enabled folder picker and a
+19-event Timeline JSON/Markdown export, with independent file-hash readback and
+unchanged synthetic source. Final system-ditto extraction, complete copied-source graph validation, real
+`Install.command --verify-only`, fresh installation, default existing-app refusal
+and explicit replacement all passed. Installed app and retained backup bytes/modes
+match the exact packaged app; owned stage/lock cleanup passed. The real installer
+also passed simulated publication ENOSPC rollback and failed rollback EACCES
+using intentionally modified local test forks: old app bytes/modes/inode/signature
+were restored or retained exactly. Public ZIP/source stayed unchanged. All seven
+recognized test app copies were then archived with verified contents and retired
+without touching `dist`; no installed-copy GUI was launched by installer tests.
+The separate live GUI two-file Codex smoke returned a structured Thai advisory
+answer with three valid references, fresh verified shared-marker content and a
+saved full request whose hash was checked; selected secret redaction and host-path
+exclusion passed. Historical fake-provider tests are distinct. A later follow-up
+was previewed only, not sent as a second provider call. Post-save case integrity
+GUI checks passed six records with one freshly reverified source.
+
+Developer ID/notarization, Gatekeeper trust, clean-machine and physical M5 gates
+remain explicitly unverified.
+
+## Earlier first-package proof and privacy blocker
 
 The first complete-graph app was packaged twice independently. Both runs produced
 the same **18,495,478-byte** ZIP with 283 inventoried payload files:

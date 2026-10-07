@@ -1,10 +1,10 @@
-# Local-use readiness — 7 October 2026
+# Local-use readiness — 8 October 2026
 
-Current development build is **0.5.1 / build 14**. [Native export and scheduling validation](NATIVE-0.5.1.md) records the added UDF-to-Autopsy workflow, current debug/release tests and synthetic GUI export. The assignment and historical gates below retain their original version scopes.
+Current development build is **0.6.0 / build 15**, engine **0.1.3-tsk4.15.0**. [Current validation](NATIVE-0.6.md) covers case content search, two-file Codex comparison, filesystem/Chromium timeline, case integrity audit, NTFS guards, decoder sandbox/PNG correctness and development source/relink packaging. Local debug/release each passed **527 Swift Testing declarations** (374 Core + 153 app), native **114/114**, Python **90/90**, and the actual synthetic local workflow plus independent byte/range/WAL/report oracle passed. No provider was executed in that workflow. The assignment and historical gates below retain their original version scopes.
 
 NativeForensics **0.5.0 / build 13** is verified for the bounded assignment workflows in [the current validation report](ASSIGNMENT-VALIDATION-2026-10-07.md): 14 primary whole-image recovery payloads, 41 comparable filesystem exports and 20 UDF payloads, all checked against independent/reference bytes. Original evidence and Autopsy's frozen baseline were preserved. This is a local development milestone, not general Autopsy parity or a public release.
 
-## Current verified scope
+## Historical 0.5 assignment scope
 
 - Separate filesystem, RAW signature-recovery and UDF-history workspaces; explicit completed/partial/unsupported states and source-bound immutable generations.
 - Whole-image PhotoRec scope, verified source-byte ranges, independent hashes, exclusive file/batch publication and owned process cancellation. PhotoRec remains a required external tool for carving.
@@ -13,17 +13,17 @@ NativeForensics **0.5.0 / build 13** is verified for the bounded assignment work
 - Job-bound recovery assessments and complete-inventory recovery/UDF report exports. Filtered table rows do not narrow the exported UDF inventory. Saved report provenance and independently validated bundle provenance are separate receipts.
 - Observable jobs release controls on completion; source/case transitions clear session export receipts; finite workspace dimensions keep long lists/properties scrollable. Source-only `O_SEARCH` descriptors permit bounded hex reads without directory enumeration, while write paths retain synchronized directory descriptors.
 
-## Current verification
+## Historical 0.5 assignment verification
 
 Debug/release each passed **367 Swift Testing declarations** (259 core + 108 app), with actual helper and optional local UDF-oracle tests enabled. Native checks passed **105/105**, Python checks **55/55**, source-bound assignment comparison **2,198 gates**, and separate GUI publication readbacks **783 batch/recovery gates, 385 UDF-report gates and 466 recovery-report gates**, all with zero mismatches/failures in their recorded scopes. The decoder corpus covers 91 reference exports. The [sanitized receipt](validation/2026-10-07-assignment.json) preserves these boundaries; the latest bundle passed independent signature/hash/architecture/dependency validation. The assignment report explicitly records actual PDF preview/search and 14-candidate recovery-report publication, while manual assessment save/reopened assessment readback remain unobserved because of intermittent UI automation pipe failures. The app remained alive and normal restart/reopen worked.
 
 Observed host: Apple M2 / arm64, macOS 27.0.1, Swift 6.4 / Xcode 27. Runtime engine: unchanged 0.1.2-tsk4.15.0 with five pinned patches. Deployment metadata declares macOS 14. Test-suite durations and historical pipeline timings do not establish a new full-app performance advantage. Read-only Autopsy health reports 30 PASS, 0 FAIL, 0 WARN, 2 INFO and 3 SKIP.
 
-## Current release gates
+## Remaining release gates
 
-1. **Trust and distribution:** ad-hoc development signing; Developer ID/notarization, complete corresponding-source/relink distribution, clean-machine installation and external PhotoRec setup remain unverified. macOS security settings were not weakened.
+1. **Trust and distribution:** ad-hoc development signing; corresponding-source/relink packaging and development installer have locally repeatable checks. Developer ID/notarization, clean-machine launch, a supported replacement for the deprecated Seatbelt backend and external PhotoRec setup remain separate gates. macOS security settings were not weakened.
 2. **Evidence breadth:** general UDF profiles, APFS/FileVault, complex NTFS features, arbitrary damaged/reallocated filesystems and full artifact/browser/email/registry analysis need independent coverage. Legacy Office body decoding, OCR and media playback remain unsupported. Removable-media contents alone cannot answer PC user-action questions.
-3. **Durability and review:** broader publication/cancellation/GUI fault races, crash/power-loss recovery, case-integrity/migration tooling and sidecar cryptographic authenticity remain work. Successful payload export does not prove a former original file is intact or deleted.
+3. **Durability and review:** read-only integrity audit is implemented; broader publication/cancellation/GUI fault races, crash/power-loss recovery, future schema migration and sidecar cryptographic authenticity remain work. Successful payload export does not prove a former original file is intact or deleted.
 4. **Compatibility and performance:** physical M5, supported older macOS, large/cold/mixed datasets, complete-app latency/RAM/battery/thermal profiling and production worker policy remain unverified. No current speed claim follows from earlier workload benchmarks.
 
 ## Historical 0.2.5 readiness receipt

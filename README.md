@@ -1,6 +1,6 @@
 # Native Forensics
 
-แอป forensic สำหรับ macOS ที่ใช้ SwiftUI/AppKit และรักษาความถูกต้องของหลักฐาน โครงการนี้เป็น **private repository** เวอร์ชัน 0.5 เพิ่ม recovery, optical history และ document examination สำหรับงาน assignment โดย **coverage ของ filesystem และ forensic artifacts ยังอยู่ระหว่างพัฒนา**
+แอป forensic สำหรับ macOS ที่ใช้ SwiftUI/AppKit และรักษาความถูกต้องของหลักฐาน โครงการนี้เป็น **public source repository** รุ่น **0.6.0 / build 15** เพิ่มการค้นเนื้อหาทั้งเคส, เปรียบเทียบสองไฟล์กับ Codex, timeline และ integrity audit ต่อจาก recovery/optical/document workflow โดย coverage ยังคงอยู่ภายในขอบเขตที่ทดสอบและประกาศไว้ ดู [รุ่นปัจจุบันและ gates](docs/NATIVE-0.6.md)
 
 ## ฐานที่เลือก
 
@@ -33,6 +33,10 @@
 - **Export for Autopsy**: ส่งออก UDF ทั้ง current/history ไปยังโฟลเดอร์ใหม่จากแอป พร้อมตรวจ saved source hash, payload hashes และ Reports; การค้นหาหรือแถวที่เลือกไม่ลดจำนวนไฟล์ที่จะส่งออก ดู [วิธีใช้ 0.5.1](docs/NATIVE-0.5.1.md)
 - **Verified Document Preview**: helper แยก process ตรวจ image/PDF/text/ZIP/Office จากเนื้อหาจริง แม้นามสกุลไม่ตรง; thumbnails, referenced text และค้นหาภายในไฟล์ที่เลือก โดยบอก partial/unsupported ชัดเจน ไม่มี OCR หรือ Office page-layout renderer
 - **Export Matching Files**: export ทุกไฟล์ที่ตรง filter ทั้งผลการค้นหาไปยัง directory ใหม่ พร้อม per-file hashes และ manifest; ไม่จำกัดเพียง 100 แถวที่แสดงในตาราง
+- **Content Search**: สร้าง derived index จาก filesystem listings ทุก source ในเคส ค้น literal text/ไทย/คำสั้น พร้อม page/range references และจำนวน indexed/skipped/failed/uncovered ที่ชัดเจน [ขอบเขต](docs/CONTENT-INDEX.md)
+- **Compare Evidence**: เลือกสองไฟล์ UTF-8 ใน evidence เดียว ตรวจ bytes, เลือก ranges/redactions, review exact aggregate request, ตรวจ citations และบันทึก full/digest-only พร้อม follow-up parent [วิธีใช้](docs/MULTI-EVIDENCE-CODEX.md)
+- **Timeline**: filesystem timestamps กับ Chromium History/committed WAL ของไฟล์ที่เลือก แยก parser observations จาก examiner notes พร้อม JSON/Markdown/hash receipts [ขอบเขต](docs/TIMELINE.md)
+- **Case Integrity**: audit เคสแบบ read-only ตรวจ schemas/sidecars/derived stores และเลือก fresh source rehash แยกจาก historical/offline status [วิธีใช้](docs/CASE-INTEGRITY.md)
 
 Engine ส่งข้อมูลผ่าน [versioned NDJSON](docs/ENGINE-PROTOCOL.md) กำหนด frame ไม่เกิน 1 MiB, listing ไม่เกิน 50,000 records และ response/cache ไม่เกิน 64 MiB Limits แสดงเป็น partial/failure states; ขนาดเหล่านี้เป็น data limits ไม่ใช่ข้อรับรอง peak RAM ของ process
 
@@ -47,9 +51,9 @@ Hash scopes แยกกันชัดเจน:
 
 Helper ตรวจ EWF segment order/completeness และปฏิเสธ segments ที่ถูกเปิดนอก ordered set ที่ผู้ใช้ระบุ Selected-file hash เพียงค่าเดียวไม่แทน logical-image hash หรือพิสูจน์ว่า split image ครบ
 
-TSK adapter ชุดนี้ **ไม่มี UDF**; Optical History ใช้ bounded Swift adapter แยก รองรับเฉพาะ profile ที่ระบุ APFS/FileVault, OCR, legacy Office body decoding และ computer activity artifact analysis ยังไม่มี File/path filtering ใช้ชื่อไฟล์ ส่วน content search ครอบคลุมข้อความที่ decoder อ่านได้ในไฟล์ที่เลือก ไม่ใช่ case-wide index Deleted metadata และ hash ที่ตรงไม่รับรองว่า content สมบูรณ์
+TSK adapter ชุดนี้ **ไม่มี UDF**; Optical History ใช้ bounded Swift adapter แยก รองรับเฉพาะ profile ที่ระบุ APFS/FileVault, OCR, legacy Office body decoding และ artifact families อื่นยังไม่รองรับ Content Search ครอบคลุม decoded text จาก bounded filesystem listings ของเคส ไม่รวม carved candidates/UDF history; omitted/partial coverage แสดงชัดเจน [NTFS guards](docs/NTFS-CAPABILITIES.md) ปฏิเสธ encrypted/compressed/incomplete initialized data แทนส่งออก bytes ที่รับรองไม่ได้ Deleted metadata และ hash ที่ตรงไม่รับรองว่า original content สมบูรณ์
 
-เวอร์ชัน **0.5.1 / build 14** เพิ่ม [UDF export ในแอปและการแก้ process scheduling](docs/NATIVE-0.5.1.md) ต่อยอด [case work/local preview 0.4](docs/CASE-WORK.md) และ [Codex file analysis](docs/CODEX-ANALYSIS.md) ดู [assignment comparison](docs/ASSIGNMENT-VALIDATION-2026-10-07.md) สำหรับผล 0.5.0 ที่เทียบ exact exported bytes, content validation และข้อจำกัดของโจทย์ ส่วน [repaired Autopsy benchmark](docs/AUTOPSY-COMPARISON-2026-10-07.md) เป็นผล 0.4 เฉพาะ workload ที่ระบุ ไม่ใช่ timing ของฟีเจอร์ใหม่หรือ full application parity
+รุ่น **0.6.0 / build 15** ใช้ engine **0.1.3-tsk4.15.0** และ [sandbox decoder](docs/DOCUMENT-SANDBOX.md) พร้อม strict PNG completeness validation ผล [synthetic end-to-end workflow](docs/MILESTONE-WORKFLOW.md) แยกจาก [assignment comparison 0.5](docs/ASSIGNMENT-VALIDATION-2026-10-07.md) และ [repaired Autopsy benchmark 0.4](docs/AUTOPSY-COMPARISON-2026-10-07.md) ผล timing เดิมไม่ใช่ full-app speedup ของรุ่นใหม่ ดู [ชุดติดตั้ง development/source/relink](docs/DISTRIBUTION.md); Developer ID/notarization และเครื่อง M5 จริงยังเป็น gates แยก
 
 เริ่มใช้งานตาม [คู่มือ assignment](docs/ASSIGNMENT-WORKFLOW.md) ซึ่งแยก recovery, deleted filesystem files และ optical history พร้อมขอบเขตความหมายของผลตรวจ
 
