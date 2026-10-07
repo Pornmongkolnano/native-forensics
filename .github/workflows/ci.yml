@@ -28,17 +28,24 @@ jobs:
         run: python3 script/build_native_engine.py
       - name: Native filesystem regressions
         run: python3 Tests/NativeEngine/run_tests.py --helper .engine/bin/NFTSKEngine --output local/ci-native
-      - name: Synthetic correctness tests
+      # Older SwiftPM combines test targets in one process. Native AppKit
+      # initialization must not delay the core's real helper/lock deadlines.
+      # Each invocation keeps parallel tests within its target; none are skipped.
+      - name: Synthetic core correctness tests
         env:
           NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
-        run: swift test
+        run: swift test --filter ForensicsCoreTests
+      - name: Native workspace correctness tests
+        run: swift test --skip-build --filter NativeForensicsTests
       - name: Build native app bundle
         run: ./script/build_and_run.sh --build-only
       - name: Verify packaged app provenance and runtime closure
         run: python3 script/validate_app_bundle.py dist/NativeForensics.app
-      - name: Optimized correctness tests
+      - name: Optimized core correctness tests
         env:
           NFTSK_ENGINE_HELPER: ${{ github.workspace }}/.engine/bin/NFTSKEngine
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
-        run: swift test -c release
+        run: swift test -c release --filter ForensicsCoreTests
+      - name: Optimized native workspace correctness tests
+        run: swift test -c release --skip-build --filter NativeForensicsTests

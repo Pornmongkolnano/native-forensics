@@ -86,6 +86,13 @@
     "synthetic test pipes close on exec, cancellation barriers observe actual progress without blocking the cooperative executor"
   ],
   "ci": {
+    "initialPhase04Run": 37570940960,
+    "initialPhase04Commit": "7a0a7d4323b814b4516a6ddce69f503b008d9616",
+    "initialPhase04Conclusion": "native engine/corpus and Python passed; combined Swift debug runner found a queued-lock observer deadline and two late explicit-cancellation cases",
+    "runnerDifference": "CI Swift 6.3.3 combined all 202 declarations in one process; local Swift 6.4 separates target runners",
+    "repair": "invoke complete core and app targets separately in debug/release; lock observation runs on a dedicated thread, caller cancellation runs from actual helper progress; no tests skipped or product deadlines weakened",
+    "cancellationNegativeControl": "temporarily omitting only progress-triggered caller cancellation made both protocol cases fail with the same inactivity-timeout symptom; restored fixture passed debug/release",
+    "lockBarrierNegativeControl": "temporarily suppressing matching-FD readiness failed exactly one expectation at the three-second watchdog; restored readiness suite passed 6 declarations",
     "commitSpecificResult": "recorded separately in GitHub Actions after push; local results are not a CI-success claim",
     "checks": "pinned engine build, standalone native corpus, Python harness, real-helper Swift debug/release, app bundle provenance",
     "providerCalls": false
