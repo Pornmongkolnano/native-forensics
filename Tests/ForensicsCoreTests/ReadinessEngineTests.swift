@@ -155,23 +155,31 @@ struct ReadinessEngineTests {
         sys.exit(2)
         """)
         let receivedProgress = ReadinessProgressFlag()
+        let cancellation = ReadinessExtractionCancellation()
         let timeouts = EngineTimeouts(startup: 5, inactivity: deadline ? 0.3 : 5, cancellationGrace: 1, terminationGrace: 0.1)
         let task = Task {
             try await EngineClient(helperURL: helper, timeouts: timeouts).extract(
                 imageURL: fixture.source,
                 file: FilesystemEntry(id: "synthetic-file", path: "/file", name: "file", fsOffsetBytes: 0, metaAddress: 1, size: 3, isDirectory: false, isDeleted: false),
                 outputURL: output,
-                progress: { if $0.stage == "waiting-for-cancel" { receivedProgress.mark() } })
+                progress: { update in
+                    if update.stage == "waiting-for-cancel" {
+                        receivedProgress.mark()
+                        // Cancel the caller synchronously from the actual helper
+                        // progress callback. Its handler requests protocol
+                        // cancellation without waiting for the test to be scheduled.
+                        if !deadline { cancellation.cancel() }
+                    }
+                })
         }
+        cancellation.install(task)
         if deadline {
             await #expect(throws: EngineError.timeout("The native engine stopped reporting activity before its stage deadline.")) {
                 _ = try await task.value
             }
         } else {
-            for _ in 0..<500 where !receivedProgress.value { try await Task.sleep(for: .milliseconds(10)) }
-            #expect(receivedProgress.value)
-            task.cancel()
             await #expect(throws: CancellationError.self) { _ = try await task.value }
+            #expect(receivedProgress.value)
         }
         let pid = try #require(Int32(try String(contentsOf: pidFile, encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) == -1)
@@ -210,6 +218,22 @@ private final class ReadinessProgressFlag: @unchecked Sendable {
     private var received = false
     func mark() { lock.lock(); received = true; lock.unlock() }
     var value: Bool { lock.lock(); defer { lock.unlock() }; return received }
+}
+
+/// The handle is installed before the test's first suspension. A very early
+/// progress callback still retains its request until installation completes.
+private final class ReadinessExtractionCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<ExtractionResult, any Error>?
+    private var requested = false
+    func install(_ task: Task<ExtractionResult, any Error>) {
+        lock.lock(); self.task = task; let cancel = requested; lock.unlock()
+        if cancel { task.cancel() }
+    }
+    func cancel() {
+        lock.lock(); requested = true; let task = task; lock.unlock()
+        task?.cancel()
+    }
 }
 
 private struct ReadinessEngineFixture {

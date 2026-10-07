@@ -82,14 +82,20 @@ private final class ExitTestPipe {
     init() throws {
         var descriptors: [Int32] = [-1, -1]
         guard Darwin.pipe(&descriptors) == 0 else { throw FileAccess.posixError("Cannot create test pipe") }
-        readFD = descriptors[0]; writeFD = descriptors[1]
         for descriptor in descriptors {
             let flags = fcntl(descriptor, F_GETFL)
-            guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
-                Darwin.close(readFD); Darwin.close(writeFD)
+            let descriptorFlags = fcntl(descriptor, F_GETFD)
+            // Other tests launch Foundation helpers concurrently. Neither end
+            // may survive exec and accidentally extend a fixture writer's life.
+            guard flags >= 0, descriptorFlags >= 0,
+                  fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0,
+                  fcntl(descriptor, F_SETFD, descriptorFlags | FD_CLOEXEC) == 0,
+                  fcntl(descriptor, F_GETFD) & FD_CLOEXEC != 0 else {
+                Darwin.close(descriptors[0]); Darwin.close(descriptors[1])
                 throw FileAccess.posixError("Cannot configure test pipe")
             }
         }
+        readFD = descriptors[0]; writeFD = descriptors[1]
     }
 
     deinit {

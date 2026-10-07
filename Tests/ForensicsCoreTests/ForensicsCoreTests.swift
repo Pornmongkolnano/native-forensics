@@ -154,25 +154,20 @@ struct ForensicsCoreTests {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let source = try directory.write("cancel active.dd", bytes: Data(repeating: 0x55, count: 2_100_000))
-        let reachedProgress = DispatchSemaphore(value: 0)
-        let resume = DispatchSemaphore(value: 0)
+        let progress = ProgressRecorder()
         let task = Task {
             try await ImageInspector.inspect(url: source, progress: { update in
+                progress.append(update)
                 if update.bytesRead > 0 {
-                    reachedProgress.signal()
-                    _ = resume.wait(timeout: .now() + 10)
+                    // This callback runs inside the real detached read worker.
+                    // Cancel it at observed positive progress without blocking
+                    // a cooperative-executor thread while its parent is queued.
+                    withUnsafeCurrentTask { $0?.cancel() }
                 }
             })
         }
-        let reached = await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(returning: reachedProgress.wait(timeout: .now() + 10) == .success)
-            }
-        }
-        #expect(reached)
-        task.cancel()
-        resume.signal()
         await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(progress.values.contains(where: { $0.bytesRead > 0 }))
     }
 
     @Test("Case JSON roundtrip and evidence persistence")
