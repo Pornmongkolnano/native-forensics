@@ -105,6 +105,7 @@ final class RecoveryExaminationStore {
         retainDraft()
         generation = UUID()
         self.result = result
+        reportURL = nil
         annotations = [:]
         analyses = [:]
         analysisOrder = []
@@ -228,6 +229,8 @@ final class RecoveryExaminationStore {
         let selectedGeneration = generation, id = UUID()
         let savedAnalyses = analyses, savedAnnotations = annotations
         isExportingReport = true
+        errorMessage = nil
+        statusMessage = "Choose a new destination for the recovery report…"
         let task = Task { [weak self] in
             guard let self else { return }
             defer { self.jobs[id] = nil; if self.generation == selectedGeneration { self.isExportingReport = false } }

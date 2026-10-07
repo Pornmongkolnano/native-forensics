@@ -126,6 +126,20 @@ private struct RecoveryControlsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+            if let reportURL = store.examination.reportURL {
+                Label("Report saved: \(reportURL.lastPathComponent)", systemImage: "doc.badge.checkmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .help(reportURL.path)
+            }
+            if let error = store.examination.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         }
         .controlSize(.small)
     }
