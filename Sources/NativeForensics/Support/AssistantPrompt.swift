@@ -2,6 +2,8 @@ import Foundation
 import ForensicsCore
 
 enum AssistantPrompt {
+    static let templateVersion = "1"
+
     static func make(context: EvidenceAnalysisContext, question: String) throws -> String {
         guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               question.utf8.count <= 4096, !question.utf8.contains(0) else {

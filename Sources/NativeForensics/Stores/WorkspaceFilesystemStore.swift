@@ -52,7 +52,7 @@ extension WorkspaceStore {
     }
 
     var canAnalyzeFilesystem: Bool {
-        selectedEvidence != nil && currentCase != nil && !isBusy && !isLoadingFilesystem
+        selectedEvidence != nil && currentCase != nil && !isBusy && !isLoadingFilesystem && caseWork.canChangeSelection
             && TimeZone(identifier: evidenceTimezone) != nil
             && validatedEngineMaxFiles != nil
     }
@@ -380,6 +380,8 @@ extension WorkspaceStore {
 
     func cancelCurrentJob() {
         assistant.cancel()
+        contentPreview.cancel()
+        caseWork.cancelPendingWork()
         if isFilteringFilesystem {
             filesystemSearchText = ""
             filesystemCategory = .all
@@ -428,10 +430,12 @@ extension WorkspaceStore {
             byID[file.id] = file
         }
         filesystemFilesByID = byID
+        refreshSelectedFileWork()
     }
 
     private func extract(file: FilesystemEntry, evidence: EvidenceRecord, to destination: URL, options: EngineOptions, sourcePaths: [URL], sourceHashes: [String: String]) {
-        guard !isBusy else { return }
+        guard !isBusy, let forensicCase = currentCase, let recordedAnalysis = selectedFilesystemResult,
+              recordedAnalysis.files.first(where: { $0.id == file.id }) == file else { return }
         let jobID = beginEngineJob(label: "Verifying source before extraction…")
         engineTask = Task { [weak self] in
             guard let self else { return }
@@ -452,6 +456,8 @@ extension WorkspaceStore {
                 try await self.verifySource(evidence, jobID: jobID)
                 try Task.checkCancellation()
                 self.extractionReceiptIsVerified = true
+                self.caseWork.recordExtraction(receipt: receipt, forensicCase: forensicCase,
+                    evidence: evidence, result: recordedAnalysis, file: file)
                 self.statusMessage = "Extracted \(EvidenceFormatting.bytes(receipt.byteCount)) to a new file. Source SHA-256 matches the evidence record."
             } catch is CancellationError {
                 self.statusMessage = self.extractionReceipt == nil

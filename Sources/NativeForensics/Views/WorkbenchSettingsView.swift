@@ -21,7 +21,9 @@ struct WorkbenchSettingsView: View {
             }
             Section("Analysis scope") {
                 Text("Filesystem listing and extraction for RAW/EWF images. FAT16, FAT32, exFAT and NTFS are covered by synthetic tests.")
-                Text("File Views use filename hints. Content search, file previews, carving and artifact analysis are unavailable.")
+                Text("Local text/hex previews support files up to 1 MiB, showing up to 32 KiB. Examiner notes, bookmarks, saved AI analyses and export history are stored separately from evidence.")
+                    .foregroundStyle(.secondary)
+                Text("File Views use filename hints. Document-content search, PDF/image previews, carving and artifact analysis are unavailable.")
                     .foregroundStyle(.secondary)
                 Text("APFS, FileVault and UDF are unavailable. Deleted-file contents may have been overwritten.")
                     .foregroundStyle(.secondary)

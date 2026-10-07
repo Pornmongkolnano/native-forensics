@@ -36,7 +36,15 @@ final class WorkspaceStore {
     var currentCase: ForensicCase?
     var section: WorkspaceSection? = .evidence
     var selectedEvidenceID: UUID? {
-        didSet { if oldValue != selectedEvidenceID { refreshFilesystemSelection() } }
+        didSet {
+            guard oldValue != selectedEvidenceID else { return }
+            guard isClosing || caseWork.canChangeSelection else {
+                selectedEvidenceID = oldValue
+                errorMessage = "Save or discard the oversized note draft before changing files."
+                return
+            }
+            refreshFilesystemSelection()
+        }
     }
     var searchText = ""
     var showInspector = true
@@ -51,7 +59,17 @@ final class WorkspaceStore {
     var filesystemResults: [UUID: EnumerationResult] = [:]
     var filesystemRows: [FilesystemEntry] = []
     var filesystemFilesByID: [String: FilesystemEntry] = [:]
-    var selectedFileID: String?
+    var selectedFileID: String? {
+        didSet {
+            guard oldValue != selectedFileID else { return }
+            guard isClosing || caseWork.canChangeSelection else {
+                selectedFileID = oldValue
+                errorMessage = "Save or discard the oversized note draft before changing files."
+                return
+            }
+            refreshSelectedFileWork()
+        }
+    }
     var filesystemSearchText = "" {
         didSet { if oldValue != filesystemSearchText { refreshFilesystemRows() } }
     }
@@ -95,17 +113,24 @@ final class WorkspaceStore {
     @ObservationIgnored private var inspectionID: UUID?
     @ObservationIgnored let engineHelperURL: URL
     let assistant = AssistantAnalysisStore()
+    let contentPreview = ContentPreviewStore()
+    let caseWork = CaseWorkWorkspaceStore()
 
     init(helperURL: URL? = nil) {
         engineHelperURL = helperURL ?? Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/NFTSKEngine")
+        assistant.onAnalysisSaved = { [weak self] _ in self?.caseWork.refresh() }
     }
 
-    var isBusy: Bool { isClosing || isPresentingPanel || isInspecting || isEngineRunning || assistant.isPresented || assistant.hasActiveWork }
-    var hasActiveWork: Bool {
-        inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil || assistant.hasActiveWork
+    var isBusy: Bool {
+        isClosing || isPresentingPanel || isInspecting || isEngineRunning
+            || assistant.isPresented || assistant.hasActiveWork || contentPreview.isLoading || caseWork.hasActivePublication
     }
-    var canInspectImage: Bool { currentCase != nil && !isBusy }
+    var hasActiveWork: Bool {
+        inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
+            || assistant.hasActiveWork || contentPreview.hasActiveWork || caseWork.hasActiveWork
+    }
+    var canInspectImage: Bool { currentCase != nil && !isBusy && caseWork.canChangeSelection }
 
     var rows: [EvidenceRow] {
         let rows = (currentCase?.manifest.evidence ?? []).map(EvidenceRow.init(record:))
@@ -122,6 +147,7 @@ final class WorkspaceStore {
 
     func createCase() {
         guard !isBusy else { return }
+        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
@@ -138,6 +164,7 @@ final class WorkspaceStore {
 
     func chooseCase() {
         guard !isBusy else { return }
+        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
@@ -153,6 +180,7 @@ final class WorkspaceStore {
             errorMessage = "Finish or cancel the current job or file dialog before opening a different case."
             return
         }
+        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         do {
             load(try CaseStore.open(at: url))
             statusMessage = "Case opened. Evidence records describe the files at the time they were inspected."
@@ -172,7 +200,7 @@ final class WorkspaceStore {
     }
 
     func inspectImage(at url: URL) {
-        guard let forensicCase = currentCase, !isBusy else { return }
+        guard let forensicCase = currentCase, canInspectImage else { return }
         let jobID = UUID()
         inspectionID = jobID
         inspectionFilename = url.lastPathComponent
@@ -231,13 +259,19 @@ final class WorkspaceStore {
     func prepareForClosing() {
         isClosing = true
         assistant.prepareForTermination()
+        caseWork.selectedAnalysis = nil
+        caseWork.selectedFinding = nil
+        caseWork.selectedExtraction = nil
+        _ = contentPreview.beginShutdown()
+        _ = caseWork.beginShutdown()
     }
 
     /// Awaiting the owning tasks also drains their detached workers and native
     /// helper cleanup. Cancellation alone does not make an in-flight write stop.
     func beginShutdown() -> [Task<Void, Never>] {
         prepareForClosing()
-        let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask, assistant.beginShutdown()].compactMap { $0 }
+        let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask,
+                       assistant.beginShutdown(), contentPreview.beginShutdown(), caseWork.beginShutdown()].compactMap { $0 }
         cancelCurrentJob()
         return pending
     }
@@ -249,6 +283,8 @@ final class WorkspaceStore {
 
     private func load(_ forensicCase: ForensicCase) {
         errorMessage = nil
+        contentPreview.reset()
+        _ = caseWork.reset()
         cancelFilesystemSearch()
         filesystemSearchIndex = FilesystemSearchIndex(files: [])
         filesystemSelectionID = nil

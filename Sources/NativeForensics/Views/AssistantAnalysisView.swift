@@ -7,6 +7,7 @@ struct AssistantAnalysisView: View {
     @Bindable var store: AssistantAnalysisStore
     @State private var selectedTab: Tab = .context
     @State private var allowSending = false
+    @State private var isReviewingSave = false
 
     private enum Tab: String, CaseIterable {
         case context = "Context"
@@ -47,6 +48,9 @@ struct AssistantAnalysisView: View {
         }
         .onChange(of: store.isWorking) { _, isWorking in
             if isWorking { allowSending = false }
+        }
+        .sheet(isPresented: $isReviewingSave) {
+            SaveAnalysisView(save: store.saveAnalysis)
         }
     }
 
@@ -226,6 +230,13 @@ struct AssistantAnalysisView: View {
                     .disabled(store.outboundPrompt.isEmpty)
                 if store.result != nil {
                     Button("Copy Answer", action: store.copyResponse)
+                    Button {
+                        isReviewingSave = true
+                    } label: {
+                        Label(store.savedAnalysisID == nil ? "Save Analysis…" : "Saved", systemImage: "tray.and.arrow.down")
+                    }
+                    .disabled(!store.canSaveAnalysis)
+                    .help("Save a local historical AI record with an explicit retention choice")
                 }
             }
             Spacer(minLength: 8)

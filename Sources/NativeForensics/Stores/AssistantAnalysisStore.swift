@@ -8,18 +8,21 @@ import Observation
 @Observable
 final class AssistantAnalysisStore {
     typealias Analyze = @Sendable (String, URL) async throws -> CodexAnalysisResult
+    typealias Save = @Sendable (AnalysisRecord, URL) async throws -> Void
     var isPresented = false
     var question = "สรุปข้อมูลที่ไฟล์นี้แสดง แยกสิ่งที่สังเกตได้จากข้อสันนิษฐาน และระบุข้อมูลที่ยังขาด" {
-        didSet { if oldValue != question { result = nil } }
+        didSet { if oldValue != question { invalidateAnswer() } }
     }
     var includeText = false {
-        didSet { if oldValue != includeText { result = nil } }
+        didSet { if oldValue != includeText { invalidateAnswer() } }
     }
     var context: EvidenceAnalysisContext?
     var isWorking = false
     var phase = "Prepare the selected context locally before sending."
     var errorMessage: String?
     var result: CodexAnalysisResult?
+    private(set) var savedAnalysisID: UUID?
+    private(set) var isSaving = false
     var cliPath: String
     var selectedFilePath: String { selection?.file.path ?? "" }
     var connectionStatus: String {
@@ -37,26 +40,39 @@ final class AssistantAnalysisStore {
             && !outboundPrompt.isEmpty && CodexCLIAvailability.issue(for: cliPath) == nil
     }
     var hasActiveWork: Bool { jobTask != nil }
+    var canSaveAnalysis: Bool {
+        !isWorking && !isClosing && isPresented && savedAnalysisID == nil
+            && completedAnalysis?.selection.forensicCase != nil
+            && completedAnalysis?.result == result
+            && completedAnalysis?.prompt == outboundPrompt
+    }
 
     @ObservationIgnored private var selection: Selection?
     @ObservationIgnored private var preparedIncludesText = false
     @ObservationIgnored private var generation: UUID?
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private let analyzeRequest: Analyze
+    @ObservationIgnored private let saveRecord: Save
+    @ObservationIgnored private var completedAnalysis: CompletedAnalysis?
+    @ObservationIgnored var onAnalysisSaved: (@MainActor (UUID) -> Void)?
     @ObservationIgnored private(set) var jobTask: Task<Void, Never>?
 
-    init(executableURL: URL? = nil, analyze: Analyze? = nil) {
+    init(executableURL: URL? = nil, save: Save? = nil, analyze: Analyze? = nil) {
         cliPath = executableURL?.path ?? CodexCLIAvailability.configuredPath
+        saveRecord = save ?? { record, caseURL in
+            try CaseWorkStore.saveAnalysis(record, in: caseURL)
+        }
         analyzeRequest = analyze ?? { prompt, executable in
             try await CodexAnalysisClient(executableURL: executable, timeout: 180).analyze(prompt: prompt)
         }
     }
 
-    func configure(evidence: EvidenceRecord, result: EnumerationResult, file: FilesystemEntry, helperURL: URL) {
+    func configure(evidence: EvidenceRecord, result: EnumerationResult, file: FilesystemEntry, helperURL: URL,
+                   forensicCase: ForensicCase? = nil) {
         guard !isWorking && !isClosing else { return }
-        selection = Selection(evidence: evidence, result: result, file: file, helperURL: helperURL)
+        selection = Selection(evidence: evidence, result: result, file: file, helperURL: helperURL, forensicCase: forensicCase)
         context = nil
-        self.result = nil
+        invalidateAnswer()
         errorMessage = nil
         includeText = false
         isPresented = true
@@ -70,7 +86,7 @@ final class AssistantAnalysisStore {
         generation = jobID
         isWorking = true
         context = nil
-        result = nil
+        invalidateAnswer()
         errorMessage = nil
         phase = wantsText ? "Verifying sources and preparing UTF-8 text locally…" : "Preparing historical metadata locally…"
         jobTask = Task { [weak self] in
@@ -101,7 +117,8 @@ final class AssistantAnalysisStore {
 
     /// The exact reviewed prompt is checked again at the transmission boundary.
     func analyze(confirmedPrompt: String) {
-        guard canAnalyze, !confirmedPrompt.isEmpty, confirmedPrompt == outboundPrompt else {
+        guard canAnalyze, !confirmedPrompt.isEmpty, confirmedPrompt == outboundPrompt,
+              let selection, let context else {
             errorMessage = "Prepare and review the current question and context before sending."
             return
         }
@@ -109,9 +126,10 @@ final class AssistantAnalysisStore {
         let prompt = confirmedPrompt
         let executable = URL(fileURLWithPath: cliPath).standardizedFileURL.resolvingSymlinksInPath()
         let operation = analyzeRequest
+        let reviewedQuestion = question
         generation = jobID
         isWorking = true
-        result = nil
+        invalidateAnswer()
         errorMessage = nil
         phase = "Codex is analyzing the reviewed context…"
         jobTask = Task { [weak self] in
@@ -125,6 +143,8 @@ final class AssistantAnalysisStore {
                 let expectedHash = SHA256.hash(data: Data(prompt.utf8)).map { String(format: "%02x", $0) }.joined()
                 guard response.requestSHA256 == expectedHash else { throw CodexAnalysisError.invalidProtocol }
                 self.result = response
+                self.completedAnalysis = CompletedAnalysis(selection: selection, context: context,
+                    prompt: prompt, question: reviewedQuestion, result: response)
                 self.phase = "AI interpretation received. Verify it against the evidence."
             } catch is CancellationError {
                 self.phase = "Analysis cancelled. A request already sent may still count toward account usage."
@@ -137,13 +157,57 @@ final class AssistantAnalysisStore {
 
     func cancel() { jobTask?.cancel() }
 
+    /// Saving is a separate local action. Freeze the completed transaction,
+    /// never reconstruct its prompt from a later question/template/selection.
+    func saveAnalysis(retention: AnalysisRetention) {
+        guard canSaveAnalysis, let completed = completedAnalysis,
+              let forensicCase = completed.selection.forensicCase else { return }
+        let jobID = UUID()
+        let save = saveRecord
+        generation = jobID
+        isWorking = true
+        isSaving = true
+        errorMessage = nil
+        phase = "Saving the analysis receipt locally…"
+        jobTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isSaving = false; self.finish(jobID) }
+            do {
+                // Publication owns its detached worker until it finishes. Quit
+                // drains this task even if cancellation arrives after commit.
+                let worker = Task.detached(priority: .utility) {
+                    let binding = try CaseWorkBinding.make(caseID: forensicCase.manifest.id,
+                        evidence: completed.selection.evidence, result: completed.selection.result,
+                        file: completed.selection.file)
+                    let record = try AnalysisRecord.make(binding: binding, context: completed.context,
+                        prompt: completed.prompt, question: completed.question, result: completed.result,
+                        retention: retention, cliVersion: nil, promptTemplateVersion: AssistantPrompt.templateVersion)
+                    try await save(record, forensicCase.bundleURL)
+                    return record
+                }
+                let saved = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: { worker.cancel() }
+                guard self.generation == jobID else { return }
+                self.savedAnalysisID = saved.id
+                self.phase = "Analysis saved to this case. It remains an AI interpretation of historical evidence."
+                self.onAnalysisSaved?(saved.id)
+            } catch is CancellationError {
+                self.phase = "Saving cancelled before publication completed. Reload history before retrying."
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.phase = "Saving did not complete normally. Reload case history before retrying."
+            }
+        }
+    }
+
     func close() {
         let pending = beginShutdown()
         Task {
             if let pending { await pending.value }
             isPresented = false
             context = nil
-            result = nil
+            invalidateAnswer()
             selection = nil
             // Reopening the sheet is allowed; window shutdown also retains
             // isPresented until its owning task has completed cleanup.
@@ -189,10 +253,25 @@ final class AssistantAnalysisStore {
         generation = nil
     }
 
+    private func invalidateAnswer() {
+        result = nil
+        completedAnalysis = nil
+        savedAnalysisID = nil
+    }
+
     private struct Selection: Sendable {
         let evidence: EvidenceRecord
         let result: EnumerationResult
         let file: FilesystemEntry
         let helperURL: URL
+        let forensicCase: ForensicCase?
+    }
+
+    private struct CompletedAnalysis: Sendable {
+        let selection: Selection
+        let context: EvidenceAnalysisContext
+        let prompt: String
+        let question: String
+        let result: CodexAnalysisResult
     }
 }

@@ -316,9 +316,9 @@ struct AssistantStoreTests {
     }
 
     private func makeStore(_ fixture: AssistantStoreFixture, gate: AssistantRequestGate) -> AssistantAnalysisStore {
-        AssistantAnalysisStore(executableURL: fixture.executable) { prompt, executable in
+        AssistantAnalysisStore(executableURL: fixture.executable, analyze: { prompt, executable in
             try await gate.analyze(prompt: prompt, executable: executable)
-        }
+        })
     }
 
     private func prepare(_ store: AssistantAnalysisStore, fixture: AssistantStoreFixture) async throws {

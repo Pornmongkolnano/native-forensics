@@ -8,6 +8,8 @@ struct FilesystemInspectorView: View {
 
     private enum InspectorPane: String, CaseIterable {
         case properties = "Properties"
+        case content = "Content"
+        case findings = "Findings"
         case integrity = "Integrity"
     }
 
@@ -88,6 +90,12 @@ struct FilesystemInspectorView: View {
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
+                    } else if pane == .content {
+                        ContentPreviewView(store: workspace.contentPreview)
+                            .disabled(workspace.isBusy && !workspace.contentPreview.isLoading)
+                    } else if pane == .findings {
+                        CaseWorkView(store: workspace.caseWork)
+                            .disabled(workspace.isBusy && !workspace.caseWork.hasActivePublication)
                     } else {
                         if let receipt = workspace.extractionReceipt {
                             FilesystemExtractionReceiptView(receipt: receipt, verified: workspace.extractionReceiptIsVerified)

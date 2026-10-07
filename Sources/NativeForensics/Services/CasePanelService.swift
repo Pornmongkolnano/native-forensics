@@ -28,9 +28,14 @@ enum CasePanelService {
         panel.title = "Open Forensic Case"
         panel.message = "Choose a .nativecase case folder."
         panel.prompt = "Open Case"
-        panel.canChooseFiles = false
+        // Configure types/packages before explicit eligibility: macOS 27
+        // rewrites canChooseFiles/canChooseDirectories in those setters.
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowedContentTypes = [caseType, .folder]
+        // Registered .nativecase folders are packages, so permit both their
+        // file representation and legacy folders. CaseStore validates the URL.
+        panel.canChooseFiles = true
         panel.canChooseDirectories = true
-        panel.treatsFilePackagesAsDirectories = true
         panel.allowsMultipleSelection = false
         return await present(panel)
     }

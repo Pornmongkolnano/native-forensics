@@ -9,6 +9,11 @@ final class WorkspaceLifecycle {
 
     var count: Int { workspaces.count }
     var hasActiveWork: Bool { workspaces.values.contains(where: \.hasActiveWork) }
+    var unsavedNoteCount: Int { workspaces.values.reduce(0) { $0 + $1.caseWork.retainedDraftCount } }
+
+    func discardUnsavedNotes() {
+        for workspace in workspaces.values { workspace.caseWork.discardAllDrafts() }
+    }
 
     func register(_ workspace: WorkspaceStore) {
         workspaces[ObjectIdentifier(workspace)] = workspace

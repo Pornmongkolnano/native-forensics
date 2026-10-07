@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func requestGracefulTermination() {
         guard requestedTerminationTask == nil else { return }
         let lifecycle = WorkspaceLifecycle.shared
+        guard UnsavedNotesGuard.confirmDiscardForQuit(count: lifecycle.unsavedNoteCount) else { return }
+        lifecycle.discardUnsavedNotes()
         lifecycle.prepareForTermination()
         CasePanelService.cancelActivePanels()
         requestedTerminationTask = Task { [weak self] in
@@ -66,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard terminationTask == nil else { return .terminateLater }
         let lifecycle = WorkspaceLifecycle.shared
+        guard UnsavedNotesGuard.confirmDiscardForQuit(count: lifecycle.unsavedNoteCount) else { return .terminateCancel }
+        lifecycle.discardUnsavedNotes()
         lifecycle.prepareForTermination()
         CasePanelService.cancelActivePanels()
         guard lifecycle.hasActiveWork else { return .terminateNow }
@@ -84,6 +88,9 @@ private struct WorkbenchWindow: View {
 
     var body: some View {
         ContentView(workspace: workspace)
+            .background(UnsavedNotesWindowGuard {
+                UnsavedNotesGuard.confirmDiscardForClose(count: workspace.caseWork.retainedDraftCount)
+            })
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .focusedSceneValue(\.forensicWorkspace, workspace)
             .onAppear { WorkspaceLifecycle.shared.register(workspace) }

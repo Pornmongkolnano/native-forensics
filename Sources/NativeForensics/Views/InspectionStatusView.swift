@@ -63,6 +63,19 @@ struct InspectionStatusView: View {
                     }
                 }
                 .monospacedDigit()
+            } else if workspace.contentPreview.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.contentPreview.phase).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: workspace.contentPreview.cancel)
+                }
+            } else if workspace.caseWork.hasActivePublication {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.caseWork.statusMessage).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                }
             } else if workspace.isLoadingFilesystem {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
