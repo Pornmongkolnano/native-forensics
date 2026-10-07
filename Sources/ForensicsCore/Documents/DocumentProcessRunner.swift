@@ -6,6 +6,7 @@ struct DocumentProcessRunner {
     let timeout: TimeInterval
     let cancellation: DocumentCancellation
     let started: (@Sendable (Int32) -> Void)?
+    let sandboxPolicy: DocumentSandboxPolicy
 
     func run(_ input: DocumentInput) throws -> DocumentAnalysis {
         if cancellation.isCancelled { throw CancellationError() }
@@ -22,7 +23,7 @@ struct DocumentProcessRunner {
         guard request.count <= 16 * 1_024 else { throw DocumentAnalysisError.invalidInput }
         let channels = try DocumentChannels()
         defer { channels.close() }
-        let child = try spawn(executable, channels: channels)
+        let child = try spawn(executable, input: input, channels: channels)
         channels.closeChildEnds()
         defer { terminateAndReap(child) }
         started?(child)
@@ -40,7 +41,8 @@ struct DocumentProcessRunner {
         }
     }
 
-    private func spawn(_ executable: URL, channels: DocumentChannels) throws -> pid_t {
+    private func spawn(_ executable: URL, input: DocumentInput, channels: DocumentChannels) throws -> pid_t {
+        let launch = try DocumentSandbox.launch(helper: executable, input: input.fileURL, policy: sandboxPolicy)
         var actions: posix_spawn_file_actions_t?, attributes: posix_spawnattr_t?
         guard posix_spawn_file_actions_init(&actions) == 0 else { throw DocumentAnalysisError.launchFailed }
         defer { posix_spawn_file_actions_destroy(&actions) }
@@ -60,7 +62,7 @@ struct DocumentProcessRunner {
               posix_spawnattr_setsigdefault(&attributes, &defaults) == 0,
               posix_spawnattr_setsigmask(&attributes, &mask) == 0,
               posix_spawnattr_setpgroup(&attributes, 0) == 0 else { throw DocumentAnalysisError.launchFailed }
-        let argvPointers = [strdup(executable.path)]
+        let argvPointers = launch.arguments.map { strdup($0) }
         // No credentials, loader overrides, proxy settings or evidence paths
         // enter the process environment. The request arrives only over stdin.
         let envStrings: [String] = ["PATH=/usr/bin:/bin", "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8"]
@@ -69,7 +71,7 @@ struct DocumentProcessRunner {
         var argv = argvPointers + [nil], environment = envPointers + [nil], child: pid_t = 0
         let status = argv.withUnsafeMutableBufferPointer { arguments in
             environment.withUnsafeMutableBufferPointer { env in
-                posix_spawn(&child, executable.path, &actions, &attributes, arguments.baseAddress!, env.baseAddress!)
+                posix_spawn(&child, launch.executable.path, &actions, &attributes, arguments.baseAddress!, env.baseAddress!)
             }
         }
         guard status == 0, child > 0 else { throw DocumentAnalysisError.launchFailed }
@@ -156,6 +158,84 @@ struct DocumentProcessRunner {
     private func uptime() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000 }
 }
 
+/// A development Seatbelt backend, not an App Sandbox entitlement or a claim of
+/// future macOS compatibility. The only public client mode is `required`.
+enum DocumentSandboxPolicy: Sendable {
+    case required
+    case disabledForTesting
+}
+
+enum DocumentSandbox {
+    static let launcherURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+
+    /// No writable location, internet/Unix sockets, Mach service lookups, fork,
+    /// or executable other than this request's decoder is allowed. Stdio pipes
+    /// are the only inherited descriptors. Data reads are exact input/helper
+    /// plus Apple runtime/font/resources. Metadata traversal is intentionally
+    /// wider than data reads; file contents outside these grants stay denied.
+    /// Dyld needs the root directory and its narrowly listed signature fcntls.
+    static let profile = """
+    (version 1)
+    (deny default)
+    (allow syscall*)
+    (allow mach-bootstrap)
+    (allow sysctl-read)
+    (allow signal (target self))
+    (allow file-read-metadata)
+    (allow file-read* (literal "/"))
+    (allow system-fcntl (fcntl-command F_ADDFILESIGS_RETURN F_CHECK_LV F_GETPATH))
+    (allow system-mac-syscall (require-all (mac-policy-name "Sandbox") (mac-syscall-number 2)))
+    (allow process-exec (literal (param "NF_HELPER")))
+    (allow file-read-data
+        (literal (param "NF_INPUT"))
+        (literal (param "NF_HELPER"))
+        (subpath "/System/Library")
+        (subpath "/System/Cryptexes/OS")
+        (subpath "/System/Volumes/Preboot/Cryptexes/OS")
+        (subpath "/usr/lib")
+        (subpath "/usr/share"))
+    (allow file-map-executable
+        (literal (param "NF_HELPER"))
+        (subpath "/System/Library")
+        (subpath "/System/Cryptexes/OS")
+        (subpath "/System/Volumes/Preboot/Cryptexes/OS")
+        (subpath "/usr/lib"))
+    """
+
+    struct Launch {
+        let executable: URL
+        let arguments: [String]
+    }
+
+    static func launch(helper: URL, input: URL, policy: DocumentSandboxPolicy,
+                       launcher: URL = launcherURL) throws -> Launch {
+        if policy == .disabledForTesting {
+            return Launch(executable: helper, arguments: [helper.path])
+        }
+        var metadata = stat()
+        guard launcher.isFileURL, Darwin.lstat(launcher.path, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFREG, Darwin.access(launcher.path, X_OK) == 0 else {
+            throw DocumentAnalysisError.sandboxUnavailable
+        }
+        // -D arguments are opaque profile parameters, not code interpolation.
+        // Use the POSIX canonical pathname that Seatbelt actually matches.
+        // Foundation resolvingSymlinksInPath may retain the friendly /var or
+        // /tmp alias instead of /private/var or /private/tmp, even after asking
+        // it to resolve symlinks. The source keeps its separately held identity.
+        let canonicalHelper = try canonicalPath(helper, failure: .unavailable)
+        let canonicalInput = try canonicalPath(input, failure: .sourceChanged)
+        return Launch(executable: launcher, arguments: [launcher.path,
+            "-D", "NF_HELPER=" + canonicalHelper, "-D", "NF_INPUT=" + canonicalInput,
+            "-p", profile, canonicalHelper])
+    }
+
+    private static func canonicalPath(_ url: URL, failure: DocumentAnalysisError) throws -> String {
+        guard let resolved = Darwin.realpath(url.path, nil) else { throw failure }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+}
+
 private final class DocumentChannels {
     var inputRead: Int32 = -1, inputWrite: Int32 = -1
     var outputRead: Int32 = -1, outputWrite: Int32 = -1
@@ -179,7 +259,21 @@ private final class DocumentChannels {
     static func pipe() throws -> (Int32, Int32) {
         var fds: [Int32] = [-1, -1]
         guard Darwin.pipe(&fds) == 0 else { throw DocumentAnalysisError.launchFailed }
-        return (fds[0], fds[1])
+        do {
+            for index in fds.indices where fds[index] <= STDERR_FILENO {
+                // A host with closed stdio must not allocate request channels
+                // at 0/1/2: later addclose actions would close the child's
+                // newly duplicated standard streams instead of old pipe ends.
+                let duplicate = fcntl(fds[index], F_DUPFD_CLOEXEC, STDERR_FILENO + 1)
+                guard duplicate >= 0 else { throw DocumentAnalysisError.launchFailed }
+                Darwin.close(fds[index])
+                fds[index] = duplicate
+            }
+            return (fds[0], fds[1])
+        } catch {
+            for fd in fds { Darwin.close(fd) }
+            throw error
+        }
     }
     func closeChildEnds() {
         for fd in [inputRead, outputWrite, errorWrite] where fd >= 0 { Darwin.close(fd) }

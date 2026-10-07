@@ -216,7 +216,20 @@ private final class CodexChannels {
     static func pipe() throws -> (Int32, Int32) {
         var descriptors: [Int32] = [-1, -1]
         guard Darwin.pipe(&descriptors) == 0 else { throw CodexAnalysisError.launchFailed }
-        return (descriptors[0], descriptors[1])
+        do {
+            for index in descriptors.indices where descriptors[index] <= STDERR_FILENO {
+                // Keep original channel ends distinct from dup2's stdio
+                // destinations even when the calling host closed 0, 1 or 2.
+                let duplicate = fcntl(descriptors[index], F_DUPFD_CLOEXEC, STDERR_FILENO + 1)
+                guard duplicate >= 0 else { throw CodexAnalysisError.launchFailed }
+                Darwin.close(descriptors[index])
+                descriptors[index] = duplicate
+            }
+            return (descriptors[0], descriptors[1])
+        } catch {
+            for descriptor in descriptors { Darwin.close(descriptor) }
+            throw error
+        }
     }
     func closeChildEnds() {
         for descriptor in [inputRead, outputWrite, errorWrite] where descriptor >= 0 { Darwin.close(descriptor) }

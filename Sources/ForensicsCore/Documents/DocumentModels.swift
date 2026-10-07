@@ -119,13 +119,14 @@ public enum DocumentLimits {
 }
 
 public enum DocumentAnalysisError: Error, LocalizedError, Sendable, Equatable {
-    case invalidInput, integrityMismatch, sourceChanged, unavailable, launchFailed, timeout, outputLimit, invalidResponse
+    case invalidInput, integrityMismatch, sourceChanged, unavailable, sandboxUnavailable, launchFailed, timeout, outputLimit, invalidResponse
     public var errorDescription: String? {
         switch self {
         case .invalidInput: "Document inspection requires a regular recovered file within the 128 MiB size limit and its size/hash receipt."
         case .integrityMismatch: "The recovered file does not match its size/hash receipt."
         case .sourceChanged: "The recovered file changed during document inspection."
         case .unavailable: "The isolated document decoder is unavailable."
+        case .sandboxUnavailable: "The required read-only/no-network document sandbox is unavailable on this macOS version. Inspection has been stopped; the decoder will not run without it."
         case .launchFailed: "The isolated document decoder could not start."
         case .timeout: "Document inspection reached its time limit."
         case .outputLimit: "Document inspection exceeded the bounded response limit."

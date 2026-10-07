@@ -4,12 +4,21 @@ import Foundation
 
 /// ImageIO/PDFKit run only in the bundled helper, never in the desktop process.
 /// Cancellation and timeout terminate and reap the request's own process group.
+/// The public client always requires the bounded read-only/no-network policy;
+/// missing platform support never falls back to an unrestricted decoder.
 public struct DocumentAnalysisClient: Sendable {
     public let helperURL: URL
     public let timeout: TimeInterval
+    let sandboxPolicy: DocumentSandboxPolicy
 
     public init(helperURL: URL, timeout: TimeInterval = DocumentLimits.timeout) {
-        self.helperURL = helperURL; self.timeout = timeout
+        self.helperURL = helperURL; self.timeout = timeout; self.sandboxPolicy = .required
+    }
+
+    /// Only @testable fixture code may select an unrestricted fake helper. Real
+    /// application/CLI callers cannot disable the decoder's required policy.
+    init(helperURL: URL, timeout: TimeInterval = DocumentLimits.timeout, sandboxPolicy: DocumentSandboxPolicy) {
+        self.helperURL = helperURL; self.timeout = timeout; self.sandboxPolicy = sandboxPolicy
     }
 
     public func analyze(_ input: DocumentInput) async throws -> DocumentAnalysis {
@@ -28,7 +37,7 @@ public struct DocumentAnalysisClient: Sendable {
             let result = try await withTaskCancellationHandler {
                 try await BlockingWork.run {
                     try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
-                        cancellation: cancellation, started: started).run(normalized)
+                        cancellation: cancellation, started: started, sandboxPolicy: sandboxPolicy).run(normalized)
                 }
             } onCancel: {
                 cancellation.cancel()

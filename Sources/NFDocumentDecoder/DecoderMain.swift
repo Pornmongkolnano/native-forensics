@@ -80,7 +80,9 @@ enum DecoderMain {
     }
 
     /// Wall-clock timeout and process-group cleanup belong to the parent. These
-    /// are additional best-effort limits, not a claim of a macOS sandbox.
+    /// are additional best-effort limits. The parent applies the required
+    /// read-only/no-network sandbox before this executable starts; invoking
+    /// this CLI directly does not apply that parent-owned policy.
     private static func resourceLimits() {
         var core = rlimit(rlim_cur: 0, rlim_max: 0)
         _ = Darwin.setrlimit(RLIMIT_CORE, &core)

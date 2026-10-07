@@ -48,7 +48,7 @@ struct DocumentClientTests {
         let (stream, continuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let work = Task {
             defer { continuation.finish() }
-            return try await DocumentAnalysisClient(helperURL: fixture.helper, timeout: 1).analyze(fixture.input,
+            return try await DocumentAnalysisClient(helperURL: fixture.helper, timeout: 1, sandboxPolicy: .disabledForTesting).analyze(fixture.input,
                 started: { continuation.yield($0) })
         }
         var iterator = stream.makeAsyncIterator()
@@ -71,7 +71,7 @@ struct DocumentClientTests {
         let (stream, continuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let work = Task {
             defer { continuation.finish() }
-            return try await DocumentAnalysisClient(helperURL: fixture.helper).analyze(fixture.input, started: { pid in
+            return try await DocumentAnalysisClient(helperURL: fixture.helper, sandboxPolicy: .disabledForTesting).analyze(fixture.input, started: { pid in
                 continuation.yield(pid)
                 // Hold the owned worker at a known boundary until this test
                 // explicitly cancels its caller. No poll/sleep guesses and no
@@ -105,7 +105,7 @@ struct DocumentClientTests {
 private struct DocumentMockFixture {
     let root: URL, source: URL, helper: URL, marker: URL
     let input: DocumentInput
-    var client: DocumentAnalysisClient { DocumentAnalysisClient(helperURL: helper, timeout: 2) }
+    var client: DocumentAnalysisClient { DocumentAnalysisClient(helperURL: helper, timeout: 2, sandboxPolicy: .disabledForTesting) }
 
     init(responseHash: String? = nil, mutation: Bool = false, hang: Bool = false, customScript: String? = nil) throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-document-test-\(UUID().uuidString)")

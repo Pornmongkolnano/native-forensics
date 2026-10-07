@@ -28,6 +28,14 @@ enum DocumentDecoder {
     }
 
     private static func image(_ source: VerifiedDocument, mimeType: String, expectedType: String) -> DocumentAnalysis {
+        var pngUnusedIDATBytes = 0
+        if expectedType == "public.png" {
+            switch PNGStructureValidator.validate(source.data) {
+            case .malformed: return failed(source, kind: .image, mime: mimeType, code: "MALFORMED_IMAGE")
+            case .imagePixelLimit: return failed(source, kind: .image, mime: mimeType, code: "IMAGE_PIXEL_LIMIT")
+            case .complete(let unused): pngUnusedIDATBytes = unused
+            }
+        }
         guard let imageSource = CGImageSourceCreateWithData(source.data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let type = CGImageSourceGetType(imageSource), type as String == expectedType,
               CGImageSourceGetCount(imageSource) > 0,
@@ -62,6 +70,9 @@ enum DocumentDecoder {
             }
         }
         var warnings: [String] = []
+        if pngUnusedIDATBytes > 0 {
+            warnings.append("PNG contains \(pngUnusedIDATBytes) unused trailing IDAT bytes. They are preserved in the recovered file but are not interpreted as image data.")
+        }
         if CGImageSourceGetCount(imageSource) > 1 { warnings.append("Only image frame 1 was decoded and previewed.") }
         if thumbnail == nil { warnings.append("Thumbnail exceeded the bounded preview size.") }
         let metadata = boundedMetadata(properties)
