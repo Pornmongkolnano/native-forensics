@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "packageRevision": "20261007.2",
+  "testedHost": "Apple M2 / macOS 27.0.1",
+  "M5Observed": false,
+  "GUIObserved": false,
+  "udfScope": "RAW UDF 2.01, 2048-byte sectors, physical/virtual partition with VAT history",
+  "coreTests": {
+    "declared": 265,
+    "suites": 24,
+    "status": "PASS"
+  },
+  "appTests": {
+    "declared": 108,
+    "suites": 15,
+    "status": "PASS"
+  },
+  "realAutopsyLogicalImport": {
+    "status": "COMPLETED",
+    "exactSourcePayloads": 20,
+    "targetPayloads": 20,
+    "exactDetectedTypes": 20,
+    "VATStates": 9,
+    "currentPayloads": 3,
+    "historicalDeletedAncestorPayloads": 17,
+    "sourceUnchanged": true,
+    "originalSourceTimesImported": false,
+    "originalSourceDeletionFlagsImported": false,
+    "modules": [
+      "File Type Identification",
+      "Extension Mismatch Detector",
+      "Embedded File Extractor",
+      "Picture Analyzer"
+    ],
+    "embeddedDerivatives": 392,
+    "knownRuntimeLimits": [
+      "Headless Image Gallery initialization warning",
+      "Unavailable HEIC decoder; HEIC not in targets"
+    ]
+  },
+  "installerControls": {
+    "tampered_package_rejected_before_install": "PASS",
+    "actual_install_to_spaced_private_destination": "PASS",
+    "identical_reinstall_is_no_op": "PASS",
+    "installed_udf_shortcut_and_helper": "PASS",
+    "installed_relocated_app_native_checks_9": "PASS",
+    "installed_launcher_uses_destination_bundle": "PASS",
+    "native_boot_and_defaults_and_existing_preferences_and_bundle_sealing": "PASS",
+    "different_existing_app_preserved": "PASS",
+    "atomic_publish_refuses_existing_destination": "PASS",
+    "staging_cleanup": "PASS"
+  },
+  "staticAudit": {
+    "arm64MachO": 159,
+    "externalLoadDependencies": 0,
+    "strictSignatures": "PASS",
+    "internalSymlinks": 210
+  },
+  "signature": "ad-hoc",
+  "notarized": false,
+  "sourceEvidenceCasesExportsInDistribution": false,
+  "notes": [
+    "Original UDF times, extents and ancestor deletion proofs are in companion reports.",
+    "This adds a verified export/import workflow, not a UDF filesystem parser to TSK.",
+    "The source helper and actual packaged helper additionally run the pinned synthetic UDF self-test."
+  ]
+}
