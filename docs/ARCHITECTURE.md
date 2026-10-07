@@ -17,6 +17,13 @@ flowchart TD
     Helper --> Evidence
     Client --> Results[Bounded versioned JSON listing cache]
     Client --> Export[Verified staging and exclusive file publication]
+    Store --> Assistant[Selected file advisory analysis]
+    Results --> Assistant
+    Assistant --> Content[Optional fresh verified UTF8 excerpt]
+    Content --> Client
+    Assistant --> Review[Exact question and context review]
+    Review -->|Explicit Send| Codex[Owned Codex CLI process]
+    Codex --> Provider[OpenAI provider]
     Results -. Phase 2 and 3 .-> Index[Content index previews artifacts timeline]
 ```
 
@@ -75,7 +82,8 @@ Phase 2 เลือก document text extraction และ content indexing ห�
 - ตรวจ path overlap, symlink และ source identity ก่อนเขียน generated data; ใช้ destination validation อีกครั้งก่อน publish export
 - Persist output แบบ atomic และรักษาข้อมูลเคสเมื่อ write ไม่สำเร็จ
 - ส่ง cancellation ไปเฉพาะ tasks/processes ที่ app สร้าง เก็บ partial state และล้างเฉพาะ scratch ของ job นั้น
-- ไม่มี evidence network upload ใน runtime; build-time source downloads แยกจาก evidence workflow Logs ที่นำออกจากเครื่องต้อง redact paths, filenames และ secrets
+- Engine/case/hash/preview preparation ทำงานในเครื่อง การใช้ Analyze with Codex ส่งคำถามกับ metadata และ optional bounded UTF-8 excerpt ไปยัง OpenAI หลังผู้ใช้ทบทวน exact prompt และกด Send; ไม่ส่ง raw disk image และไม่ส่งอัตโนมัติ การเปิด preview/เตรียม metadata ไม่ใช่การอนุญาต upload ดู disclosure, CLI permissions และข้อจำกัดใน [Codex analysis](CODEX-ANALYSIS.md)
+- Build-time source downloads แยกจาก evidence workflow Logs ที่นำออกจากเครื่องต้อง redact paths, filenames และ secrets
 - Git เก็บโค้ดและ synthetic fixtures เท่านั้น Runtime case manifests สามารถมี local references ที่จำเป็นต่อการ reopen แต่ไม่ถูกนำขึ้น repository
 
 ## Performance ที่ต้องวัด
