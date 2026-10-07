@@ -142,15 +142,14 @@ public struct EngineClient: Sendable {
         let cancellation = EngineCancellation()
         let helper = helperURL
         let limits = timeouts
-        let worker = Task.detached(priority: .userInitiated) {
-            try EngineRunner(helperURL: helper, timeouts: limits, cancellation: cancellation).run(
-                imagePaths: imagePaths, operation: operation, options: options, file: file,
-                outputPath: outputPath, progress: progress
-            )
-        }
         do {
             let outcome = try await withTaskCancellationHandler {
-                try await worker.value
+                try await BlockingWork.run {
+                    try EngineRunner(helperURL: helper, timeouts: limits, cancellation: cancellation).run(
+                        imagePaths: imagePaths, operation: operation, options: options, file: file,
+                        outputPath: outputPath, progress: progress
+                    )
+                }
             } onCancel: {
                 cancellation.cancel()
             }

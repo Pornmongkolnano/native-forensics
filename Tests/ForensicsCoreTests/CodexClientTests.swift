@@ -137,7 +137,7 @@ struct CodexClientTests {
         let helper = try fixture.helper(body: """
         sys.\(channel).write('x' * (3 * 1024 * 1024))
         sys.\(channel).flush()
-        time.sleep(30)
+        signal.pause()
         """)
         await #expect(throws: CodexAnalysisError.outputLimit) {
             _ = try await CodexAnalysisClient(executableURL: helper, timeout: 5).analyze(prompt: "Synthetic context")
@@ -148,34 +148,34 @@ struct CodexClientTests {
     func ownedProcessCleanup(_ explicitCancellation: Bool) async throws {
         let fixture = try CodexMockFixture()
         defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.root)
+        defer { gate.close() }
         let record = fixture.root.appendingPathComponent("owned-pids.json")
         let helper = try fixture.helper(body: """
-        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         child = os.fork()
         if child == 0:
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            time.sleep(30)
+            os.read(os.open(\(CodexMockFixture.literal(gate.holdURL.path)), os.O_RDONLY), 1)
             os._exit(0)
         with open(\(CodexMockFixture.literal(record.path)), 'x') as output:
             json.dump(dict(parent=os.getpid(), child=child, cwd=os.getcwd()), output)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        time.sleep(30)
+        with open(\(CodexMockFixture.literal(gate.readyURL.path)), 'wb', buffering=0) as ready:
+            ready.write(b'R')
+        os.read(os.open(\(CodexMockFixture.literal(gate.holdURL.path)), os.O_RDONLY), 1)
         """)
-        let unrelated = Process()
-        unrelated.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        unrelated.arguments = ["30"]
-        try unrelated.run()
-        defer {
-            if unrelated.isRunning { unrelated.terminate() }
-            unrelated.waitUntilExit()
-        }
+        let unrelated = try HeldOpenTestProcess()
+        defer { unrelated.close() }
         let task = Task {
             try await CodexAnalysisClient(executableURL: helper, timeout: explicitCancellation ? 10 : 5).analyze(prompt: "Synthetic context")
         }
-        for _ in 0..<1_000 where !FileManager.default.fileExists(atPath: record.path) { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(FileManager.default.fileExists(atPath: record.path))
-        if explicitCancellation {
+        do {
+            try await gate.waitUntilReady { if explicitCancellation { task.cancel() } }
+        } catch {
             task.cancel()
+            _ = try? await task.value
+            throw error
+        }
+        if explicitCancellation {
             await #expect(throws: CancellationError.self) { _ = try await task.value }
         } else {
             await #expect(throws: CodexAnalysisError.timeout) { _ = try await task.value }
@@ -183,12 +183,9 @@ struct CodexClientTests {
         let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any])
         let parent = try #require(json["parent"] as? Int32)
         let child = try #require(json["child"] as? Int32)
-        #expect(Darwin.kill(parent, 0) == -1)
-        #expect(errno == ESRCH)
-        for _ in 0..<200 where Darwin.kill(child, 0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(Darwin.kill(child, 0) == -1)
-        #expect(errno == ESRCH)
-        #expect(unrelated.isRunning)
+        await ProcessTestGate.expectStopped(parent)
+        await ProcessTestGate.expectStopped(child)
+        #expect(unrelated.process.isRunning)
         let scratch = try #require(json["cwd"] as? String)
         #expect(!FileManager.default.fileExists(atPath: scratch))
     }
@@ -248,15 +245,16 @@ struct CodexClientTests {
     func detachedPipeChild(_ validResponse: Bool) async throws {
         let fixture = try CodexMockFixture()
         defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.root)
+        defer { gate.close() }
         let record = fixture.root.appendingPathComponent("detached-child.json")
         let helper = try fixture.helper(body: """
-        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         child = os.fork()
         if child == 0:
             for descriptor in [0, 1, 2]:
                 os.close(descriptor)
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            time.sleep(30)
+            os.read(os.open(\(CodexMockFixture.literal(gate.holdURL.path)), os.O_RDONLY), 1)
             os._exit(0)
         with open(\(CodexMockFixture.literal(record.path)), 'x') as output:
             json.dump(dict(parent=os.getpid(), child=child), output)
@@ -272,11 +270,8 @@ struct CodexClientTests {
         let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any])
         let parent = try #require(json["parent"] as? Int32)
         let child = try #require(json["child"] as? Int32)
-        #expect(Darwin.kill(parent, 0) == -1)
-        #expect(errno == ESRCH)
-        for _ in 0..<200 where Darwin.kill(child, 0) == 0 { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(Darwin.kill(child, 0) == -1)
-        #expect(errno == ESRCH)
+        await ProcessTestGate.expectStopped(parent)
+        await ProcessTestGate.expectStopped(child)
     }
 
     @Test("A provider that closes stdin early cannot claim a result for the complete request")
@@ -370,7 +365,7 @@ private struct CodexMockFixture {
         let url = root.appendingPathComponent("mock-codex")
         let script = """
         #!/usr/bin/env python3
-        import sys, json, os, time
+        import sys, json, os, time, signal
         prompt = \(readInput ? "sys.stdin.read()" : "''")
         def emit(value):
             print(json.dumps(value), flush=True)

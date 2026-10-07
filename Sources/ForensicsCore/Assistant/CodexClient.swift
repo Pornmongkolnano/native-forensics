@@ -23,12 +23,11 @@ public struct CodexAnalysisClient: Sendable {
         let cancellation = CodexCancellation()
         let executable = executableURL
         let deadline = timeout
-        let worker = Task.detached(priority: .userInitiated) {
-            try CodexProcessRunner(executableURL: executable, timeout: deadline, cancellation: cancellation).run(prompt: prompt)
-        }
         do {
             let outcome = try await withTaskCancellationHandler {
-                try await worker.value
+                try await BlockingWork.run {
+                    try CodexProcessRunner(executableURL: executable, timeout: deadline, cancellation: cancellation).run(prompt: prompt)
+                }
             } onCancel: {
                 cancellation.cancel()
             }

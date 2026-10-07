@@ -24,13 +24,12 @@ public struct DocumentAnalysisClient: Sendable {
         let cancellation = DocumentCancellation()
         let normalized = DocumentInput(fileURL: input.fileURL.standardizedFileURL,
             expectedSHA256: input.expectedSHA256.lowercased(), expectedByteCount: input.expectedByteCount)
-        let worker = Task.detached(priority: .userInitiated) {
-            try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
-                cancellation: cancellation, started: started).run(normalized)
-        }
         do {
             let result = try await withTaskCancellationHandler {
-                try await worker.value
+                try await BlockingWork.run {
+                    try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
+                        cancellation: cancellation, started: started).run(normalized)
+                }
             } onCancel: {
                 cancellation.cancel()
             }

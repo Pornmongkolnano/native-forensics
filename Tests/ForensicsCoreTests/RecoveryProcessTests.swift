@@ -67,43 +67,48 @@ struct RecoveryProcessTests {
     func timeoutOwnsOnlyItsGroup() async throws {
         let fixture = try RecoveryProcessFixture()
         defer { fixture.remove() }
-        let unrelated = Process()
-        unrelated.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        unrelated.arguments = ["30"]
-        try unrelated.run()
-        defer { if unrelated.isRunning { unrelated.terminate() }; unrelated.waitUntilExit() }
+        let gate = try ProcessTestGate(in: fixture.workspace)
+        defer { gate.close() }
+        let unrelated = try HeldOpenTestProcess()
+        defer { unrelated.close() }
         #expect(throws: RecoveryError.timeout) {
-            _ = try fixture.run(RecoveryProcessFixture.descendants, timeout: 0.5)
+            _ = try fixture.run(gate.shellDescendants, timeout: 0.5)
         }
-        #expect(unrelated.isRunning)
-        try await fixture.expectStoppedProcesses()
+        #expect(unrelated.process.isRunning)
+        try await gate.expectStoppedProcesses()
     }
 
     @Test("Task cancellation stops a running owned group and propagates cancellation")
     func cancellationStopsGroup() async throws {
         let fixture = try RecoveryProcessFixture()
         defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.workspace)
+        defer { gate.close() }
         let task = Task.detached {
-            try fixture.run(RecoveryProcessFixture.descendants, timeout: 10)
+            try fixture.run(gate.shellDescendants, timeout: 10)
         }
-        for _ in 0..<300 where !fixture.hasProcessRecord {
-            try await Task.sleep(for: .milliseconds(10))
+        do {
+            try await gate.waitUntilReady { task.cancel() }
+        } catch {
+            task.cancel()
+            _ = try? await task.value
+            throw error
         }
-        let started = fixture.hasProcessRecord
-        task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
-        #expect(started)
-        if started { try await fixture.expectStoppedProcesses() }
+        try await gate.expectStoppedProcesses()
     }
 
     @Test("Exited leaders do not leave descendants holding inherited pipes open", arguments: [0, 7])
     func exitedLeaderStillStopsDescendant(_ status: Int) async throws {
         let fixture = try RecoveryProcessFixture()
         defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.workspace)
+        defer { gate.close() }
         let start = DispatchTime.now().uptimeNanoseconds
         let result = try fixture.run("""
+        trap '' TERM
         printf '%s\n' "$$" > leader.pid
-        /bin/sleep 30 &
+        /bin/sh -c \(ProcessTestGate.quote("IFS= read -r held < " + ProcessTestGate.quote(gate.holdURL.path))) &
         printf '%s\n' "$!" > child.pid
         printf 'complete'
         exit \(status)
@@ -111,22 +116,24 @@ struct RecoveryProcessTests {
         #expect(result.exitStatus == Int32(status))
         #expect(result.stdout == Data("complete".utf8))
         #expect(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000_000 < 4)
-        try await fixture.expectStoppedProcesses()
+        try await gate.expectStoppedProcesses()
     }
 
     @Test("Periodic output-file monitoring can stop a running group with its original error")
     func monitorStopsTool() async throws {
         let fixture = try RecoveryProcessFixture()
         defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.workspace)
+        defer { gate.close() }
         var checks = 0
         #expect(throws: RecoveryError.outputLimit) {
-            _ = try fixture.run(RecoveryProcessFixture.descendants, timeout: 5) {
+            _ = try fixture.run(gate.shellDescendants, timeout: 5) {
                 checks += 1
                 if checks >= 2 { throw RecoveryError.outputLimit }
             }
         }
         #expect(checks == 2)
-        try await fixture.expectStoppedProcesses()
+        try await gate.expectStoppedProcesses()
     }
 
     @Test("A borrowed directory descriptor pins relative output across a workspace path replacement")
@@ -188,33 +195,4 @@ private struct RecoveryProcessFixture: Sendable {
         )
     }
 
-    static let descendants = """
-    trap '' TERM
-    printf '%s\n' "$$" > leader.pid
-    /bin/sleep 30 &
-    printf '%s\n' "$!" > child.pid
-    wait
-    """
-
-    var hasProcessRecord: Bool {
-        guard let leader = try? String(contentsOf: workspace.appendingPathComponent("leader.pid"), encoding: .utf8),
-              let child = try? String(contentsOf: workspace.appendingPathComponent("child.pid"), encoding: .utf8) else { return false }
-        return Int32(leader.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
-            && Int32(child.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
-    }
-
-    func expectStoppedProcesses() async throws {
-        let leader = try #require(Int32(String(contentsOf: workspace.appendingPathComponent("leader.pid"), encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)))
-        let child = try #require(Int32(String(contentsOf: workspace.appendingPathComponent("child.pid"), encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)))
-        #expect(leader > 0 && child > 0)
-        #expect(Darwin.kill(leader, 0) == -1)
-        #expect(errno == ESRCH)
-        // A killed descendant may briefly remain an orphaned zombie until the
-        // OS reaper consumes it. No process with that PID may remain afterward.
-        for _ in 0..<300 where Darwin.kill(child, 0) == 0 { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(Darwin.kill(child, 0) == -1)
-        #expect(errno == ESRCH)
-    }
 }

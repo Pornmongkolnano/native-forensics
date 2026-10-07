@@ -38,6 +38,10 @@ jobs:
         run: swift test --filter ForensicsCoreTests
       - name: Native workspace correctness tests
         run: swift test --skip-build --filter NativeForensicsTests
+      - name: Cooperative executor blocking regression
+        env:
+          SWIFT_CONCURRENCY_COOPERATIVE_POOL_STRICT: "1"
+        run: swift test --skip-build --filter BlockingWorkTests
       - name: Build native app bundle
         run: ./script/build_and_run.sh --build-only
       - name: Verify packaged app provenance and runtime closure

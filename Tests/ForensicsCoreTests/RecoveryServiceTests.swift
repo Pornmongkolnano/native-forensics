@@ -98,15 +98,20 @@ struct RecoveryServiceTests {
     @Test("Cancellation drains owned child and leaves the existing case unchanged")
     func cancellation() async throws {
         let fixture = try await RecoveryServiceFixture.make(); defer { fixture.remove() }
-        let signal = RecoveryServiceSignal()
+        let gate = try ProcessTestGate(in: fixture.root)
+        defer { gate.close() }
         let task = Task {
-            try await fixture.service(mode: "wait").recover(evidence: fixture.evidence, in: fixture.forensicCase) {
-                if $0.stage == "Recovering signature candidates" { signal.mark() }
-            }
+            try await fixture.service(mode: "wait", gate: gate).recover(evidence: fixture.evidence, in: fixture.forensicCase)
         }
-        for _ in 0..<500 where !signal.value { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(signal.value); task.cancel()
+        do {
+            try await gate.waitUntilReady { task.cancel() }
+        } catch {
+            task.cancel()
+            _ = try? await task.value
+            throw error
+        }
         await #expect(throws: CancellationError.self) { try await task.value }
+        try await gate.expectStoppedProcesses()
         #expect(try RecoveryResultStore.latest(evidenceID: fixture.evidence.id, in: fixture.forensicCase.bundleURL) == nil)
         #expect(try Data(contentsOf: fixture.source) == fixture.sourceBytes)
     }
@@ -204,7 +209,8 @@ private struct RecoveryServiceFixture: Sendable {
             sourceBytes: data, forensicCase: forensicCase)
     }
 
-    func service(mode: String) throws -> PhotoRecRecoveryService {
+    func service(mode: String, gate: ProcessTestGate? = nil) throws -> PhotoRecRecoveryService {
+        let waitScript = mode == "wait" ? try #require(gate).shellDescendants : ""
         let url = root.appendingPathComponent("photorec-\(mode).sh")
         let payload: String
         switch mode {
@@ -221,7 +227,7 @@ private struct RecoveryServiceFixture: Sendable {
         if [ "$1" = /version ]; then printf 'PhotoRec 7.2 synthetic fixture\\n'; exit 0; fi
         printf started > \(Self.quote(marker.path))
         \(mode == "failure" ? "exit 7" : "")
-        \(mode == "wait" ? "/bin/sleep 30" : "")
+        \(waitScript)
         /bin/mkdir recovered.1
         \(payload)
         \(mode == "thumbnail" ? "/bin/mv recovered.1/f0000001.txt recovered.1/f0000001.jpg\nprintf '\\377\\330\\377thumbnail\\377\\331' > recovered.1/t0000001.jpg" : "")
@@ -236,11 +242,4 @@ private struct RecoveryServiceFixture: Sendable {
     static func hash(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
     static func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'" }
     func remove() { try? FileManager.default.removeItem(at: root) }
-}
-
-private final class RecoveryServiceSignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var marked = false
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return marked }
-    func mark() { lock.lock(); marked = true; lock.unlock() }
 }
