@@ -9,6 +9,143 @@ private func udfTestFlock(_ descriptor: Int32, _ operation: Int32) -> Int32
 
 @Suite("Bounded read-only UDF history")
 struct UDFHistoryTests {
+    @Test("Autopsy logical import publishes exact current/history bytes with complete source metadata")
+    func autopsyLogicalImport() async throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        let output = fixture.directory.appendingPathComponent("Autopsy Import")
+        let exported = try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: output)
+        #expect(exported.status == "completed")
+        #expect(exported.entries.count == 2)
+        #expect(exported.sourceSHA256 == fixture.evidence.sha256)
+        let historyBytes = try Data(contentsOf: output.appendingPathComponent("Reports/udf-history.json"))
+        let history = try JSONDecoder().decode(UDFInspectionResult.self, from: historyBytes)
+        #expect(exported.historyJSONSHA256 == UDFFixture.hash(historyBytes))
+        #expect(history.snapshots.count == 2)
+        #expect(history.entries.first(where: { $0.state == .historicalDeletedAncestor })?.deletedAncestorProof.count == 1)
+        #expect(history.entries.first(where: { $0.state == .historicalDeletedAncestor })?.sourceExtents.count == 2)
+        for entry in exported.entries {
+            let bytes = try Data(contentsOf: output.appendingPathComponent(entry.outputRelativePath))
+            #expect(UDFFixture.hash(bytes) == entry.sha256)
+            #expect(bytes.count == entry.byteCount)
+            #expect(entry.outputRelativePath.hasPrefix("LogicalFiles/\(entry.state.rawValue)/\(entry.entryID)/"))
+            #expect(entry.outputRelativePath.hasSuffix(entry.originalPath))
+        }
+        let report = try Data(contentsOf: output.appendingPathComponent("Reports/udf-history.md"))
+        #expect(UDFFixture.hash(report) == exported.historyReportSHA256)
+        #expect(try JSONDecoder().decode(UDFLogicalFilesExport.self, from: Data(contentsOf: output.appendingPathComponent("Reports/manifest.json"))) == exported)
+        let reopened = try CaseStore.open(at: output.appendingPathComponent("Reports/UDF Source Receipt.nativecase"))
+        #expect(try UDFInspector.loadLatest(in: reopened, evidenceID: history.sourceEvidenceID) == history)
+        #expect(try Data(contentsOf: fixture.source) == fixture.image)
+        // Packaging may request this fully synthetic fixture. No user evidence
+        // is involved; an existing generated fixture must already be identical.
+        if let path = ProcessInfo.processInfo.environment["NF_UDF_SHARE_FIXTURE_OUTPUT"] {
+            let target = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: target.path) {
+                #expect(try Data(contentsOf: target) == fixture.image)
+            } else { try fixture.image.write(to: target, options: .withoutOverwriting) }
+        }
+    }
+
+    @Test("Logical import does not overwrite outputs or follow a source/output symlink")
+    func autopsyLogicalSafety() async throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        let output = fixture.directory.appendingPathComponent("Exists")
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
+        let sentinel = Data("Keep examiner output".utf8)
+        try sentinel.write(to: output.appendingPathComponent("keep.txt"))
+        await #expect(throws: (any Error).self) {
+            try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: output)
+        }
+        #expect(try Data(contentsOf: output.appendingPathComponent("keep.txt")) == sentinel)
+        let linked = fixture.directory.appendingPathComponent("symlink.dd")
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: fixture.source)
+        await #expect(throws: (any Error).self) {
+            try await UDFLogicalFilesExporter.export(sourceURL: linked, to: fixture.directory.appendingPathComponent("Linked Import"))
+        }
+        let parent = fixture.directory.appendingPathComponent("Output Alias")
+        try FileManager.default.createSymbolicLink(at: parent, withDestinationURL: output)
+        await #expect(throws: (any Error).self) {
+            try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: parent.appendingPathComponent("New"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: output.appendingPathComponent("New").path))
+        #expect(try Data(contentsOf: fixture.source) == fixture.image)
+    }
+
+    @Test("Logical import cancellation and overall timeout never publish an incomplete collection")
+    func autopsyLogicalCancellation() async throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        let cancelledOutput = fixture.directory.appendingPathComponent("Cancelled")
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: cancelledOutput)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: cancelledOutput.path))
+        let timeoutOutput = fixture.directory.appendingPathComponent("TimedOut")
+        await #expect(throws: UDFError.timeout) {
+            try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: timeoutOutput,
+                beforePublication: { usleep(50_000) }, timeoutSeconds: 0.01)
+        }
+        #expect(!FileManager.default.fileExists(atPath: timeoutOutput.path))
+        #expect(try Data(contentsOf: fixture.source) == fixture.image)
+    }
+
+    @Test("Modified payload/manifest, extra files or changed sources cannot publish a completed logical import", arguments: ["payload", "manifest", "extra", "source"])
+    func autopsyLogicalPublication(_ mutation: String) async throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        let output = fixture.directory.appendingPathComponent("MustNotPublish")
+        await #expect(throws: (any Error).self) {
+            try await UDFLogicalFilesExporter.export(sourceURL: fixture.source, to: output, beforePublication: {
+                let children = try FileManager.default.contentsOfDirectory(at: fixture.directory, includingPropertiesForKeys: nil)
+                let stage = try #require(children.first { $0.lastPathComponent.hasPrefix(".udf-logical-import-") })
+                let manifestURL = stage.appendingPathComponent("Reports/manifest.json")
+                let manifest = try JSONDecoder().decode(UDFLogicalFilesExport.self, from: Data(contentsOf: manifestURL))
+                let changed: URL
+                switch mutation {
+                case "manifest": changed = manifestURL
+                case "extra": changed = stage.appendingPathComponent("LogicalFiles/unclaimed.txt")
+                case "source": changed = fixture.source
+                default: changed = stage.appendingPathComponent(manifest.entries[0].outputRelativePath)
+                }
+                try Data("tampered".utf8).write(to: changed)
+            })
+        }
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+        if mutation != "source" { #expect(try Data(contentsOf: fixture.source) == fixture.image) }
+    }
+
+    @Test("Logical import path mapping preserves names, escapes traversal hazards and separates versions")
+    func autopsyLogicalPathMapping() throws {
+        let fixture = try UDFFixture(); defer { fixture.remove() }
+        let reference = try #require(fixture.parse().entries.first)
+        func entry(path: String, id: String = String(repeating: "a", count: 64)) -> UDFFileEntry {
+            .init(id: id, originalPath: path, state: .current, fidCharacteristics: reference.fidCharacteristics,
+                fidSourceOffset: reference.fidSourceOffset, deletedAncestorProof: [], byteCount: reference.byteCount,
+                sha256: reference.sha256, icb: reference.icb, sourceExtents: reference.sourceExtents,
+                timestamps: reference.timestamps, snapshotIDs: reference.snapshotIDs)
+        }
+        let a = try UDFLogicalFilesExporter.relativePath(for: entry(path: "/folder/document.docx"))
+        #expect(a.path.hasSuffix("/folder/document.docx"))
+        #expect(try UDFLogicalFilesExporter.relativePath(for: entry(path: "/name:with%colon.txt")).path.hasSuffix("/name%3Awith%25colon.txt"))
+        #expect(try UDFLogicalFilesExporter.relativePath(for: entry(path: "/NAME.txt", id: String(repeating: "b", count: 64))).path != UDFLogicalFilesExporter.relativePath(for: entry(path: "/name.txt")).path)
+        let long = try UDFLogicalFilesExporter.relativePath(for: entry(path: "/" + String(repeating: "long-component/", count: 100) + "file.txt"))
+        #expect(long.path.utf8.count < 600)
+        #expect(long.note.contains("long namespace"))
+        #expect(throws: (any Error).self) { try UDFLogicalFilesExporter.relativePath(for: entry(path: "/../escape")) }
+        #expect(throws: (any Error).self) { try UDFLogicalFilesExporter.relativePath(for: entry(path: "/double//empty")) }
+        #expect(throws: (any Error).self) { try UDFLogicalFilesExporter.relativePath(for: entry(path: "/valid", id: "../escape")) }
+    }
+
+    @Test("A selected UDF image can be read through a search-only parent without folder enumeration")
+    func searchOnlyParent() throws {
+        let fixture = try UDFFixture()
+        defer { _ = Darwin.chmod(fixture.directory.path, mode_t(0o700)); fixture.remove() }
+        #expect(Darwin.chmod(fixture.directory.path, mode_t(0o100)) == 0)
+        let result = try fixture.parse()
+        #expect(result.entries.count == 2)
+        #expect(try Data(contentsOf: fixture.source) == fixture.image)
+    }
+
     @Test("Current and historical namespaces preserve original names, ancestor proof, exact extents and UTC times")
     func namespacesAndExtents() throws {
         let fixture = try UDFFixture(); defer { fixture.remove() }

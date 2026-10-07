@@ -7,12 +7,14 @@ let package = Package(
     products: [
         .library(name: "ForensicsCore", targets: ["ForensicsCore"]),
         .executable(name: "NativeForensics", targets: ["NativeForensics"]),
-        .executable(name: "NFDocumentDecoder", targets: ["NFDocumentDecoder"])
+        .executable(name: "NFDocumentDecoder", targets: ["NFDocumentDecoder"]),
+        .executable(name: "AutopsyUDFExport", targets: ["AutopsyUDFExport"])
     ],
     targets: [
         .target(name: "ForensicsCore"),
         .executableTarget(name: "NativeForensics", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "NFDocumentDecoder", dependencies: ["ForensicsCore"]),
+        .executableTarget(name: "AutopsyUDFExport", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "FilesystemSearchBenchmark", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "ForensicsPipelineBenchmark", dependencies: ["ForensicsCore"]),
         .executableTarget(name: "AssignmentWorkflowProbe", dependencies: ["ForensicsCore"]),

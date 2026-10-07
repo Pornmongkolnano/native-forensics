@@ -21,7 +21,10 @@ final class UDFPinnedSource: @unchecked Sendable {
         }
         self.evidence = evidence
         sourceURL = URL(fileURLWithPath: evidence.sourcePath).standardizedFileURL
-        parent = try EvidenceViewFiles.openDirectory(sourceURL.deletingLastPathComponent())
+        // A selected image requires directory traversal, not enumeration of
+        // Downloads/Documents. Preserve the same pinned no-follow chain while
+        // avoiding an unnecessary broader macOS folder permission request.
+        parent = try EvidenceViewFiles.openDirectory(sourceURL.deletingLastPathComponent(), searchOnly: true)
         do {
             descriptor = try FileAccess.openReadOnly(sourceURL.lastPathComponent, in: parent)
         } catch { Darwin.close(parent); throw error }
@@ -38,7 +41,7 @@ final class UDFPinnedSource: @unchecked Sendable {
     deinit { Darwin.close(descriptor); Darwin.close(parent) }
 
     func validate() throws {
-        try EvidenceViewFiles.validateDirectory(sourceURL.deletingLastPathComponent(), descriptor: parent)
+        try EvidenceViewFiles.validateDirectory(sourceURL.deletingLastPathComponent(), descriptor: parent, searchOnly: true)
         guard try FileAccess.identity(of: descriptor) == identity,
               try FileAccess.identity(at: sourceURL.lastPathComponent, in: parent) == identity else {
             throw ForensicsError.sourceChanged
