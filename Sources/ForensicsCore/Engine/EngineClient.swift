@@ -560,39 +560,14 @@ private struct EngineRunner {
         var outgoing = try JSONEncoder().encode(request)
         guard outgoing.count <= EngineValidation.frameLimit else { throw EngineError.limitExceeded("The engine request exceeds 1 MiB.") }
         outgoing.append(10)
-        let input = Pipe(), output = Pipe(), errors = Pipe()
-        // Foundation's pipe endpoints may be inheritable. A concurrently
-        // spawned child must not retain an engine writer and withhold EOF.
-        // The helper's explicit standard-stream duplication remains intact.
-        for handle in [input.fileHandleForReading, input.fileHandleForWriting,
-                       output.fileHandleForReading, output.fileHandleForWriting,
-                       errors.fileHandleForReading, errors.fileHandleForWriting] {
-            guard fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC) == 0 else {
-                throw FileAccess.posixError("Cannot protect engine pipe inheritance")
-            }
-        }
-        let process = Process()
-        process.executableURL = helper
-        process.arguments = []
-        process.standardInput = input; process.standardOutput = output; process.standardError = errors
-        try process.run()
-        try? input.fileHandleForReading.close()
-        try? output.fileHandleForWriting.close()
-        try? errors.fileHandleForWriting.close()
-        defer {
-            if process.isRunning { terminate(process, grace: timeouts.terminationGrace) }
-            try? input.fileHandleForWriting.close()
-            try? output.fileHandleForReading.close()
-            try? errors.fileHandleForReading.close()
-        }
-        let stdoutFD = output.fileHandleForReading.fileDescriptor
-        let stderrFD = errors.fileHandleForReading.fileDescriptor
-        let stdinFD = input.fileHandleForWriting.fileDescriptor
-        for fd in [stdoutFD, stderrFD, stdinFD] {
-            let flags = fcntl(fd, F_GETFL)
-            guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else { throw FileAccess.posixError("Cannot configure engine pipe") }
-        }
-        guard fcntl(stdinFD, F_SETNOSIGPIPE, 1) == 0 else { throw FileAccess.posixError("Cannot protect engine request pipe") }
+        let channels = try EngineChannels()
+        defer { channels.close() }
+        let process = try EngineProcess(executable: helper, channels: channels)
+        channels.closeChildEnds()
+        defer { process.terminateAndReap(grace: timeouts.terminationGrace) }
+        let stdoutFD = channels.outputRead
+        let stderrFD = channels.errorRead
+        let stdinFD = channels.inputWrite
         var stream = EngineStream(jobID: jobID, operation: operation, options: options, outcome: EngineOutcome(sources: identities))
         var stderr = Data()
         var outputEOF = false, errorEOF = false, inputClosed = false
@@ -607,7 +582,7 @@ private struct EngineRunner {
         var buffer = [UInt8](repeating: 0, count: 65_536)
         while true {
             let now = uptime()
-            let isRunning = process.isRunning
+            let isRunning = try process.isRunning()
             if !isRunning && exitedAt == nil { exitedAt = now }
             if cancellation.isCancelled && cancelledAt == nil {
                 cancelledAt = now
@@ -625,11 +600,11 @@ private struct EngineRunner {
                 }
             }
             if let cancelledAt, isRunning, now - cancelledAt >= timeouts.cancellationGrace, terminatedAt == nil {
-                _ = Darwin.kill(process.processIdentifier, SIGTERM)
+                process.signal(SIGTERM)
                 terminatedAt = now
             }
             if let terminatedAt, isRunning, now - terminatedAt >= timeouts.terminationGrace {
-                _ = Darwin.kill(process.processIdentifier, SIGKILL)
+                process.signal(SIGKILL)
             }
             if outputEOF && errorEOF && !isRunning { break }
             var polling = [
@@ -682,23 +657,22 @@ private struct EngineRunner {
             )
             if !inputClosed && polling[2].revents != 0 {
                 if polling[2].revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
-                    try? input.fileHandleForWriting.close(); inputClosed = true
+                    channels.closeInput(); inputClosed = true
                 } else {
                     let written = outgoing.withUnsafeBytes {
                         Darwin.write(stdinFD, $0.baseAddress?.advanced(by: outgoingOffset), $0.count - outgoingOffset)
                     }
                     if written > 0 { outgoingOffset += written }
                     else if written < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK {
-                        if errno == EPIPE { try? input.fileHandleForWriting.close(); inputClosed = true }
+                        if errno == EPIPE { channels.closeInput(); inputClosed = true }
                         else { throw FileAccess.posixError("Cannot write engine request") }
                     }
                 }
             }
             if stream.outcome.status != nil && !inputClosed {
-                try? input.fileHandleForWriting.close(); inputClosed = true
+                channels.closeInput(); inputClosed = true
             }
         }
-        process.waitUntilExit()
         if let timeoutError { throw timeoutError }
         if cancellation.isCancelled { throw CancellationError() }
         for (index, source) in identities.enumerated() {
@@ -710,16 +684,6 @@ private struct EngineRunner {
 
     private func uptime() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000 }
 
-    private func terminate(_ process: Process, grace: TimeInterval) {
-        guard process.isRunning else { return }
-        _ = Darwin.kill(process.processIdentifier, SIGTERM)
-        let deadline = uptime() + grace
-        while process.isRunning && uptime() < deadline {
-            _ = Darwin.poll(nil, 0, 20)
-        }
-        if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
-        process.waitUntilExit()
-    }
 }
 
 /// Keeps the original two-second post-exit bound for live output writers, but

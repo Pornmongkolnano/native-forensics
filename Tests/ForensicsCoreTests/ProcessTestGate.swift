@@ -122,21 +122,128 @@ final class ProcessTestGate: @unchecked Sendable {
 /// Unlike a finite sleep, this unrelated process cannot end naturally while a
 /// heavily loaded test executor delays an assertion. The test owns its stdin.
 final class HeldOpenTestProcess {
-    let process = Process()
-    private let input = Pipe()
+    let process: HeldTestProcess
+    private var inputWriter: Int32
 
     init() throws {
-        process.executableURL = URL(fileURLWithPath: "/bin/cat")
-        process.standardInput = input
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        try input.fileHandleForReading.close()
+        var input: [Int32] = [-1, -1]
+        guard Darwin.pipe(&input) == 0 else { throw HeldProcessError.launch }
+        var ownsWriter = true
+        defer {
+            Darwin.close(input[0])
+            if ownsWriter { Darwin.close(input[1]) }
+        }
+        for index in input.indices {
+            input[index] = try Self.aboveStdio(input[index])
+            guard fcntl(input[index], F_SETFD, FD_CLOEXEC) == 0 else { throw HeldProcessError.launch }
+        }
+        var null = Darwin.open("/dev/null", O_WRONLY | O_CLOEXEC)
+        guard null >= 0 else { throw HeldProcessError.launch }
+        defer { Darwin.close(null) }
+        null = try Self.aboveStdio(null)
+        process = try HeldTestProcess(input: input[0], output: null)
+        inputWriter = input[1]
+        ownsWriter = false
     }
 
+    deinit { close() }
+
     func close() {
-        try? input.fileHandleForWriting.close()
-        if process.isRunning { process.terminate() }
-        process.waitUntilExit()
+        if inputWriter >= 0 { Darwin.close(inputWriter); inputWriter = -1 }
+        process.stopAndReap()
+    }
+
+    private static func aboveStdio(_ descriptor: Int32) throws -> Int32 {
+        guard descriptor <= STDERR_FILENO else { return descriptor }
+        let duplicate = Darwin.fcntl(descriptor, F_DUPFD_CLOEXEC, 3)
+        guard duplicate >= 0 else { throw HeldProcessError.launch }
+        Darwin.close(descriptor)
+        return duplicate
     }
 }
+
+/// The unrelated sentinel must not itself extend any other test's pipe
+/// lifetime. CLOEXEC_DEFAULT closes every unlisted descriptor at spawn,
+/// including descriptors concurrently created before their CLOEXEC flag.
+final class HeldTestProcess {
+    private(set) var processIdentifier: pid_t = 0
+
+    init(input: Int32, output: Int32) throws {
+        var actions: posix_spawn_file_actions_t?
+        var attributes: posix_spawnattr_t?
+        guard posix_spawn_file_actions_init(&actions) == 0 else { throw HeldProcessError.launch }
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        guard posix_spawnattr_init(&attributes) == 0 else { throw HeldProcessError.launch }
+        defer { posix_spawnattr_destroy(&attributes) }
+        for (source, target) in [(input, STDIN_FILENO), (output, STDOUT_FILENO), (output, STDERR_FILENO)] {
+            guard posix_spawn_file_actions_adddup2(&actions, source, target) == 0 else { throw HeldProcessError.launch }
+        }
+        for descriptor in [input, output] {
+            guard posix_spawn_file_actions_addclose(&actions, descriptor) == 0 else { throw HeldProcessError.launch }
+        }
+        var defaults = sigset_t(), mask = sigset_t()
+        sigemptyset(&defaults); sigemptyset(&mask)
+        for signal in [SIGTERM, SIGINT, SIGQUIT, SIGHUP, SIGPIPE, SIGCHLD] { sigaddset(&defaults, signal) }
+        guard posix_spawnattr_setflags(&attributes, Int16(
+            POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK
+        )) == 0,
+              posix_spawnattr_setsigdefault(&attributes, &defaults) == 0,
+              posix_spawnattr_setsigmask(&attributes, &mask) == 0 else { throw HeldProcessError.launch }
+        let arguments = [strdup("/bin/cat"), nil]
+        let environment = [strdup("LC_ALL=C"), nil]
+        defer { for pointer in arguments + environment { free(pointer) } }
+        guard arguments[0] != nil, environment[0] != nil else { throw HeldProcessError.launch }
+        var argv = arguments, env = environment, child: pid_t = 0
+        let status = argv.withUnsafeMutableBufferPointer { argv in
+            env.withUnsafeMutableBufferPointer { env in
+                posix_spawn(&child, "/bin/cat", &actions, &attributes, argv.baseAddress!, env.baseAddress!)
+            }
+        }
+        guard status == 0, child > 0 else { throw HeldProcessError.launch }
+        processIdentifier = child
+    }
+
+    var isRunning: Bool {
+        guard processIdentifier > 0 else { return false }
+        var information = siginfo_t()
+        var observed: Int32
+        repeat {
+            observed = Darwin.waitid(P_PID, id_t(processIdentifier), &information, WEXITED | WNOHANG | WNOWAIT)
+        } while observed < 0 && errno == EINTR
+        if observed < 0 && errno == ECHILD {
+            // A later deferred cleanup must not signal a reusable PID after
+            // any unexpected external reaping.
+            processIdentifier = 0
+        }
+        return observed == 0 && information.si_pid == 0
+    }
+
+    func stopAndReap() {
+        guard processIdentifier > 0 else { return }
+        let child = processIdentifier
+        var information = siginfo_t()
+        var observed: Int32
+        repeat {
+            observed = Darwin.waitid(P_PID, id_t(child), &information, WEXITED | WNOHANG | WNOWAIT)
+        } while observed < 0 && errno == EINTR
+        // Refuse to signal a PID if an external reaper broke our ownership.
+        guard observed == 0 else {
+            #expect(observed == 0, "The held fixture lost ownership of its unreaped child.")
+            processIdentifier = 0
+            return
+        }
+        // Retain the unreaped PID throughout graceful shutdown. The child
+        // cannot be reused as an unrelated PID before our fallback signal.
+        _ = Darwin.kill(child, SIGTERM)
+        let deadline = DispatchTime.now().uptimeNanoseconds + 250_000_000
+        while isRunning && DispatchTime.now().uptimeNanoseconds < deadline { _ = Darwin.poll(nil, 0, 10) }
+        if isRunning { _ = Darwin.kill(child, SIGKILL) }
+        var status: Int32 = 0
+        var reaped: pid_t
+        repeat { reaped = Darwin.waitpid(child, &status, 0) } while reaped < 0 && errno == EINTR
+        #expect(reaped == child)
+        processIdentifier = 0
+    }
+}
+
+private enum HeldProcessError: Error { case launch }

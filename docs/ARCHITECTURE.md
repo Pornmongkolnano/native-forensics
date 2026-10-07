@@ -46,11 +46,13 @@ Case root เป็น `.nativecase` bundle ที่เลือกแยกจ
 
 Swift client เปิด helper หนึ่ง process ต่อหนึ่ง request ไม่มี shell และใช้ poll loop อ่าน stdout/stderr พร้อมกัน Protocol v1 ตรวจ hello, job ID, sequence, frames และ terminal status ต้องมี complete result และ exit 0 จึงนับ success Partial มี warnings และไม่ถูกแปลงเป็น completed; crash/protocol failure/cancellation ไม่เขียนทับ prior historical cache
 
-ใน 0.5.1 ตัวรอผล engine, Codex และ document helper ทำงานบน concurrent DispatchQueue ผ่าน checked continuation เพื่อไม่ยึด Swift cooperative executor ระหว่าง blocking poll แต่ละ client ยังคง cancellation token เดิมและรอ cleanup/reaping จบก่อนคืนผล ส่วน PhotoRec recovery pipeline ยังใช้ detached Task เพราะขั้นตอน copy/hash/publication ตรวจ Task cancellation โดยตรง การเปลี่ยนนี้ไม่เพิ่ม worker policy หรือเปลี่ยน process ownership/deadlines
+ใน 0.5.1 ตัวรอผล engine, Codex และ document helper ทำงานบน concurrent DispatchQueue ผ่าน checked continuation เพื่อไม่ยึด Swift cooperative executor ระหว่าง blocking poll แต่ละ client ยังคง cancellation token เดิมและรอ cleanup/reaping จบก่อนคืนผล ส่วน PhotoRec recovery pipeline ยังใช้ detached Task เพราะขั้นตอน copy/hash/publication ตรวจ Task cancellation โดยตรง การเปลี่ยน queue นี้ไม่เพิ่ม worker policy หรือเปลี่ยน deadlines
+
+Engine ใช้ explicit POSIX spawn ที่ปิด unrelated descriptors ใน child ด้วย `POSIX_SPAWN_CLOEXEC_DEFAULT` แม้ parent thread อื่นเพิ่งสร้าง pipe และยังไม่ตั้ง CLOEXEC ส่งต่อเฉพาะ stdin/stdout/stderr ที่กำหนดไว้ สร้าง process group ของงานและคืน signal mask/defaults; `waitid(WNOWAIT)` เก็บ leader ไว้จน cleanup หยุด group และ reap จบ หากพบ `ECHILD` จะเลิกถือ ownership และไม่ส่ง signal ต่อ ส่วน environment คงแบบเดิม
 
 NDJSON frame จำกัด 1 MiB, file batches ไม่เกิน 128 rows, listing ceiling 50,000 records และ serialized response/cache ceiling 64 MiB พร้อม bounded stderr capture Limits ทำให้ได้ explicit partial/failure แทน silent truncation ตัวเลขนี้จำกัด serialized data ไม่ใช่ hard RSS cap หรือ measured peak RAM
 
-Cancellation เริ่มจาก protocol request และตามด้วย SIGTERM/SIGKILL เฉพาะ owned helper PID หลัง grace periods Client มี startup/inactivity deadlines และตรวจ source identity ที่ held descriptors/canonical paths ก่อนและหลังงาน ยังไม่มี parallel worker scheduler ในแอป มี [helper concurrency experiment 1/2/4](BENCHMARKS.md) แยกจาก Swift/GUI สำหรับใช้ตัดสินใจงานต่อไป
+Cancellation เริ่มจาก protocol request และตามด้วย SIGTERM/SIGKILL เฉพาะ owned helper process group หลัง grace periods Client มี startup/inactivity deadlines และตรวจ source identity ที่ held descriptors/canonical paths ก่อนและหลังงาน ยังไม่มี parallel worker scheduler ในแอป มี [helper concurrency experiment 1/2/4](BENCHMARKS.md) แยกจาก Swift/GUI สำหรับใช้ตัดสินใจงานต่อไป
 
 ## Hash scopes และ split images
 

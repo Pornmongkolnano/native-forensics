@@ -187,6 +187,43 @@ struct EngineProtocolTests {
         await #expect(throws: EngineError.sourceChanged) { try await EngineClient(helperURL: helper).enumerate(imageURL: fixture.source) }
     }
 
+    @Test("Cancellation reaps the owned engine group and preserves another process")
+    func cancellationDescendants() async throws {
+        let fixture = try EngineTestFixture()
+        defer { fixture.remove() }
+        let gate = try ProcessTestGate(in: fixture.url)
+        defer { gate.close() }
+        let other = try HeldOpenTestProcess()
+        defer { other.close() }
+        let helper = try fixture.helper(body: """
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        child = os.fork()
+        if child == 0:
+            with open(\(pythonString(gate.holdURL.path)), 'rb', buffering=0) as hold:
+                hold.read(1)
+            os._exit(0)
+        with open(\(pythonString(gate.leaderURL.path)), 'x') as output:
+            output.write(str(os.getpid()))
+        with open(\(pythonString(gate.childURL.path)), 'x') as output:
+            output.write(str(child))
+        emit('progress', stage='owned-group-ready', completed=0, unit='files')
+        os.waitpid(child, 0)
+        """)
+        let cancellation = EngineEnumerationCancellation()
+        let client = EngineClient(helperURL: helper,
+            timeouts: EngineTimeouts(startup: 10, inactivity: 10, cancellationGrace: 0.2, terminationGrace: 0.1))
+        let task = Task {
+            try await client.enumerate(imageURL: fixture.source, progress: { update in
+                if update.stage == "owned-group-ready" { cancellation.cancel() }
+            })
+        }
+        cancellation.install(task)
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        try await gate.expectStoppedProcesses()
+        #expect(other.process.isRunning)
+        #expect(try Data(contentsOf: fixture.source) == Data("abc".utf8))
+    }
+
     @Test("Only regular local paths are accepted and duplicate inputs are rejected")
     func sourceValidation() async throws {
         let fixture = try EngineTestFixture()

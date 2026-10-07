@@ -5,6 +5,40 @@ import Testing
 
 @Suite("Exited engine pipe draining")
 struct EngineExitPipeTests {
+    @Test("Native engine spawn closes an unrelated writer before its parent sets CLOEXEC")
+    func spawnDescriptorIsolation() throws {
+        var unrelated: [Int32] = [-1, -1]
+        try #require(Darwin.pipe(&unrelated) == 0)
+        defer {
+            for descriptor in unrelated where descriptor >= 0 { Darwin.close(descriptor) }
+        }
+        // Deliberately preserve the creation-to-fcntl race state throughout
+        // spawn. The child must close these even without a parent CLOEXEC flag.
+        for descriptor in unrelated {
+            try #require(fcntl(descriptor, F_SETFD, 0) == 0)
+            #expect(fcntl(descriptor, F_GETFD) & FD_CLOEXEC == 0)
+        }
+        let channels = try EngineChannels()
+        defer { channels.close() }
+        let process = try EngineProcess(executable: URL(fileURLWithPath: "/bin/cat"), channels: channels)
+        channels.closeChildEnds()
+        defer { process.terminateAndReap(grace: 0.1) }
+        // cat remains alive on its own stdin. EOF here therefore proves the
+        // unrelated writer was not retained by a still-running engine child.
+        #expect(try process.isRunning())
+        Darwin.close(unrelated[1]); unrelated[1] = -1
+        var readiness = pollfd(fd: unrelated[0], events: Int16(POLLIN), revents: 0)
+        try #require(Darwin.poll(&readiness, 1, 0) >= 0)
+        try #require(readiness.revents & Int16(POLLHUP) != 0)
+        var byte: UInt8 = 0
+        #expect(Darwin.read(unrelated[0], &byte, 1) == 0)
+        #expect(try process.isRunning())
+        process.terminateAndReap(grace: 0.1)
+        var status: Int32 = 0
+        #expect(Darwin.waitpid(process.processIdentifier, &status, WNOHANG) == -1)
+        #expect(errno == ECHILD)
+    }
+
     // Synthetic clock values model a worker returning after a scheduler stall
     // without sleeping or changing a production timeout. Readiness comes from
     // real nonblocking Darwin pipes, including their writer lifetime.
