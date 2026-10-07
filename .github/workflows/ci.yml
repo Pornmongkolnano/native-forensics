@@ -23,7 +23,7 @@ jobs:
       - name: Toolchain
         run: swift --version
       - name: Benchmark harness safety regressions
-        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline test_benchmark_process_timing test_stage_autopsy_repaired_profile test_app_bundle
+        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline test_benchmark_process_timing test_stage_autopsy_repaired_profile test_app_bundle test_native_distribution
       - name: Build pinned native engine
         run: python3 script/build_native_engine.py
       - name: Native filesystem regressions
@@ -55,3 +55,12 @@ jobs:
         run: swift test -c release --filter ForensicsCoreTests --experimental-maximum-parallelization-width 4
       - name: Optimized native workspace correctness tests
         run: swift test -c release --skip-build --filter NativeForensicsTests
+      - name: Independent synthetic end-to-end workflow
+        run: |
+          python3 script/milestone_fixture_oracle.py --generate local/ci-milestone-fixture
+          mkdir -p local/ci-milestone
+          products_dir=$(swift build -c release --show-bin-path)
+          "$products_dir/MilestoneWorkflowProbe" --image "$PWD/local/ci-milestone-fixture/milestone-fat16.raw" --engine "$PWD/.engine/bin/NFTSKEngine" --decoder "$products_dir/NFDocumentDecoder" --output "$PWD/local/ci-milestone/workflow"
+          python3 script/milestone_fixture_oracle.py --verify local/ci-milestone/workflow --fixture local/ci-milestone-fixture
+      - name: Development distribution source and privacy gate
+        run: python3 script/package_native_distribution.py --app dist/NativeForensics.app --output dist/NativeForensics-development-arm64.zip --mode development
