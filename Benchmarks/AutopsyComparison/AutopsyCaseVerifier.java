@@ -79,6 +79,9 @@ public final class AutopsyCaseVerifier {
         row.put("nameFlags", file.getDirFlagAsString());
         row.put("metaFlags", file.getMetaFlagsAsString());
         row.put("isDirectory", file.isDir());
+        row.put("isFile", file.isFile());
+        row.put("nameType", file.getDirType().getValue());
+        row.put("metaType", file.getMetaType().getValue());
         row.put("metaAddress", file.getMetaAddr());
         row.put("attributeType", file.getAttrType().getValue());
         row.put("attributeID", file.getAttributeId());

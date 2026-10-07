@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import signal
@@ -30,10 +31,14 @@ import urllib.request
 import uuid
 import zipfile
 
+from benchmark_process_timing import ProcessExitObserver
+
 REPO = Path(__file__).resolve().parents[1]
 LOCAL = REPO / "local/autopsy-comparison"
 SETUP_VERSION = 2
 VARIANTS = ("original-mac-compatible", "installed-adapted")
+RUN_VARIANTS = (*VARIANTS, "repaired-mac")
+JNI_RESOURCE = "NATIVELIBS/aarch64/mac/libtsk_jni.dylib"
 MODULES = ("org-sleuthkit-autopsy-core.jar", "org-sleuthkit-autopsy-keywordsearch.jar",
            "org-sleuthkit-autopsy-recentactivity.jar")
 ARM64_TSK_JAR_SHA = "9e888f8dfb14eb9e5ebce8f8199f550d149615ac2a7002df3fabbf5b24f69b3b"
@@ -51,6 +56,58 @@ def write_json(path: Path, data):
     with path.open("x") as stream:
         json.dump(data, stream, indent=2, ensure_ascii=False)
         stream.write("\n")
+
+
+def effective_runtime_files(runtime: Path, jdk: Path) -> list[dict]:
+    """Freeze copied launch/configuration files, not only their installed originals."""
+    paths = [path for path in runtime.rglob("*") if path.is_file()
+             and not path.is_symlink() and
+             (path.relative_to(runtime).as_posix().startswith(("bin/", "etc/", "autopsy/solr/"))
+              or path.relative_to(runtime).as_posix() == "platform/lib/nbexec")]
+    paths.append(jdk / "bin/java")
+    return [{"path": str(path), "sha256": digest(path)} for path in sorted(set(paths))]
+
+
+def jni_resource_receipt(selected: dict) -> dict:
+    jar = Path(selected["runtime"]) / "autopsy/modules/ext/sleuthkit-4.15.0.jar"
+    jar_hash = digest(jar)
+    if selected.get("tskJarSHA256") and jar_hash != selected["tskJarSHA256"]:
+        raise ValueError("Effective TSK Java datamodel JAR changed")
+    entry = selected.get("jniResourceEntry", JNI_RESOURCE)
+    with zipfile.ZipFile(jar) as archive:
+        resource_hash = hashlib.sha256(archive.read(entry)).hexdigest()
+    if selected.get("jniResourceSHA256") and resource_hash != selected["jniResourceSHA256"]:
+        raise ValueError("Effective JNI resource differs from its build receipt")
+    return {"jarSHA256": jar_hash, "resourceEntry": entry, "sha256": resource_hash}
+
+
+def loaded_jni_receipt(trace: str, selected: dict, allowed_directories: list[Path]) -> dict:
+    """Require every traced JNI load to be an owned extraction of this JAR resource."""
+    expected = jni_resource_receipt(selected)
+    roots = [path.resolve() for path in allowed_directories]
+    lines = [line for line in trace.splitlines() if "dyld[" in line and "libtsk_jni" in line]
+    if not lines:
+        raise AssertionError("No extracted JNI resource load was traced")
+    files = []
+    for line in lines:
+        match = re.search(r"(/[^\n]*libtsk_jni[^/\n]*\.dylib)\s*$", line)
+        if not match:
+            raise AssertionError("Could not identify the traced JNI resource path")
+        path = Path(match.group(1))
+        resolved = path.resolve(strict=True)
+        if path.is_symlink() or not path.is_file() or not any(resolved.is_relative_to(root) for root in roots):
+            raise AssertionError("JNI loaded outside its owned extraction directory")
+        actual = digest(path)
+        if actual != expected["sha256"]:
+            raise AssertionError("Loaded JNI resource hash differs from the effective JAR")
+        files.append({"path": str(resolved), "sha256": actual})
+    return {"passed": True, **expected, "loadedFiles": files, "loadTrace": lines}
+
+
+def retain_error(record: dict, phase: str, error: BaseException):
+    description = type(error).__name__ + ": " + str(error)
+    record.setdefault("errors", []).append({"phase": phase, "error": description})
+    record.setdefault("error", description)
 
 
 def owned_path(path: Path) -> Path:
@@ -259,6 +316,10 @@ def prepare(output: Path, runtime: Path, installer: Path, java_home: Path,
             "nativeDirectory": str(native), "modules": [
                 {"name": name, "sha256": digest(tree / "autopsy/modules" / name)} for name in MODULES],
             "nativeFiles": [{"path": str(p), "sha256": digest(p)} for p in sorted(native.iterdir())]}
+        setup["variants"][variant]["effectiveFiles"] = effective_runtime_files(tree, jdk)
+        jni = jni_resource_receipt(setup["variants"][variant])
+        setup["variants"][variant].update(tskJarSHA256=jni["jarSHA256"],
+            jniResourceEntry=jni["resourceEntry"], jniResourceSHA256=jni["sha256"])
     setup["protectedFiles"] = [{"path": str(p), "sha256": digest(p)} for p in sorted(set(tracked))]
     write_json(metadata_path, setup)
     return setup
@@ -271,13 +332,22 @@ def verify_setup(setup: dict):
     for row in setup["inputs"].values():
         if digest(Path(row["path"])) != row["sha256"]:
             raise ValueError("Synthetic source changed")
-    for variant in setup["variants"].values():
+    for name, variant in setup["variants"].items():
+        if name == "repaired-mac" and not variant.get("effectiveFiles"):
+            raise ValueError("Repaired profile must freeze effective launch/configuration files")
+        if name == "repaired-mac" and not all(variant.get(key) for key in ("tskJarSHA256", "jniResourceEntry", "jniResourceSHA256")):
+            raise ValueError("Repaired profile must freeze its effective datamodel JAR and JNI resource")
         for row in variant["modules"]:
             if digest(Path(variant["runtime"]) / "autopsy/modules" / row["name"]) != row["sha256"]:
                 raise ValueError("Staged module changed")
         for row in variant["nativeFiles"]:
             if digest(Path(row["path"])) != row["sha256"]:
                 raise ValueError("Staged native library changed")
+        for row in variant.get("effectiveFiles", []):
+            if digest(Path(row["path"])) != row["sha256"]:
+                raise ValueError("Effective staged launch/configuration file changed: " + row["path"])
+        if name == "repaired-mac" or variant.get("jniResourceSHA256"):
+            jni_resource_receipt(variant)
 
 
 def stop_owned_group(process: subprocess.Popen):
@@ -482,7 +552,7 @@ def sqlite_receipt(case_db: Path, expected: dict) -> dict:
 def run_pipeline(setup: dict, output: Path, variant: str, image: str,
                  label: str = "smoke", timeout: float = 120) -> dict:
     """One bounded isolated run; call serially inside root's paired experiment."""
-    if variant not in VARIANTS or image not in setup["inputs"] or not (0 < timeout <= 120):
+    if variant not in RUN_VARIANTS or variant not in setup["variants"] or image not in setup["inputs"] or not (0 < timeout <= 120):
         raise ValueError("Invalid fixed workload/variant/timeout")
     if not label or len(label) > 64 or not all(c.isascii() and (c.isalnum() or c in "-_") for c in label):
         raise ValueError("Run label must contain only ASCII letters, numbers, hyphens or underscores")
@@ -527,24 +597,33 @@ def run_pipeline(setup: dict, output: Path, variant: str, image: str,
         environment.pop(name, None)
     record = {"schemaVersion": 1, "variant": variant, "image": image,
         "scope": setup["scope"], "runDirectory": str(run), "command": command,
-        "warmCache": True, "verificationIncludedInTiming": False, "solrBefore": solr_before}
+        "warmCache": True, "verificationIncludedInTiming": False, "solrBefore": solr_before,
+        "structuralGatePassed": False, "errors": []}
     process = None
     sampler = None
-    started = time.monotonic()
+    started = None
+    fatal_error = None
     try:
         with (run / "stdout.log").open("xb") as log:
+            started = time.monotonic()
             process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                 cwd=run, env=environment, start_new_session=True, stdin=subprocess.DEVNULL)
+            observer = ProcessExitObserver(process, timeout)
             record["ownedProcessGroup"] = process.pid
             sampler = OwnedGroupSampler(process.pid)
             sampler.start()
             try:
-                code = process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
+                exited = observer.wait()
+                code = exited.returncode
+                record["wallSeconds"] = exited.exit_monotonic - started
+                record["processWaitMethod"] = exited.method
+            except subprocess.TimeoutExpired as error:
                 record["timedOut"] = True
+                record["wallSeconds"] = error.observed_monotonic - started
+                record["processWaitMethod"] = "Blocking waiter with bounded watchdog; timeout observation"
+                retain_error(record, "watchdog", error)
                 stop_owned_group(process)
                 code = process.returncode
-            record["wallSeconds"] = time.monotonic() - started
             record["exitCode"] = code
             sampler.stop()
             record["resources"] = sampler.receipt()
@@ -553,33 +632,63 @@ def run_pipeline(setup: dict, output: Path, variant: str, image: str,
         record["nativeLoadedTrace"] = [line for line in trace.splitlines() if native_path in line and "dyld[" in line]
         record["unintendedInstalledNativeTrace"] = [line for line in trace.splitlines()
             if "dyld[" in line and "/libtsk.23.dylib" in line and native_path not in line]
+        record["jniResourceLoaded"] = loaded_jni_receipt(trace, selected,
+            [run / "tmp/Autopsy_temp", run / "jni"])
         databases = list((run / "cases").rglob("autopsy.db"))
         record["caseDatabases"] = [str(path) for path in databases]
-        if code != 0 or not record["nativeLoadedTrace"] or record["unintendedInstalledNativeTrace"] or len(databases) != 1:
+        if code != 0 or record.get("timedOut") or not record["nativeLoadedTrace"] or record["unintendedInstalledNativeTrace"] or len(databases) != 1:
             raise AssertionError("Full NetBeans run failed or exact native baseline was not loaded; inspect stdout.log")
         record["sqlite"] = sqlite_receipt(databases[0], setup["inputs"][image])
         record["structuralGatePassed"] = True
         record["exactExportsVerified"] = False
-    except Exception as error:
-        record["error"] = type(error).__name__ + ": " + str(error)
+    except BaseException as error:
+        retain_error(record, "pipeline", error)
         record["structuralGatePassed"] = False
-    finally:
+        if started is not None:
+            record.setdefault("wallSeconds", time.monotonic() - started)
         if process is not None:
-            stop_owned_group(process)
-        if sampler is not None:
-            sampler.stop()
-            record["forcedCleanupRemainingPIDs"] = sampler.cleanup_remaining()
-            record["resources"] = sampler.receipt()
-            if record["forcedCleanupRemainingPIDs"]:
-                record["ownedServicePersistedAfterAppExit"] = True
-                record["serviceCleanupScope"] = "Exact registered owned process identities/group, outside app wall interval"
-        record["solrAfter"] = solr_snapshot()
-        record["existingSolrUnchanged"] = record["solrAfter"] == solr_before
-        free_ports(ports.values())
-        record["ownedSolrPortsFreeAfterCleanup"] = True
-        verify_setup(setup)
-        record["protectedFilesAndSourcesUnchanged"] = True
-        write_json(run / "receipt.json", record)
+            record.setdefault("exitCode", process.returncode)
+        if not isinstance(error, Exception):
+            fatal_error = error
+    finally:
+        try:
+            if process is not None:
+                try:
+                    stop_owned_group(process)
+                except BaseException as error:
+                    retain_error(record, "processCleanup", error)
+            if sampler is not None:
+                try:
+                    sampler.stop()
+                    record["forcedCleanupRemainingPIDs"] = sampler.cleanup_remaining()
+                    if record["forcedCleanupRemainingPIDs"]:
+                        record["ownedServicePersistedAfterAppExit"] = True
+                        record["serviceCleanupScope"] = "Exact registered owned process identities/group, outside app wall interval"
+                except BaseException as error:
+                    retain_error(record, "dependencyCleanup", error)
+                finally:
+                    record["resources"] = sampler.receipt()
+            record["solrAfter"] = solr_snapshot()
+            record["existingSolrUnchanged"] = record["solrAfter"] == solr_before
+            record["ownedSolrPortsFreeAfterCleanup"] = False
+            record["protectedFilesAndSourcesUnchanged"] = False
+            for phase, action, field in (
+                    ("portsAfterCleanup", lambda: free_ports(ports.values()), "ownedSolrPortsFreeAfterCleanup"),
+                    ("sourceAndRuntimeAfter", lambda: verify_setup(setup), "protectedFilesAndSourcesUnchanged")):
+                try:
+                    action()
+                    record[field] = True
+                except BaseException as error:
+                    retain_error(record, phase, error)
+            if record["errors"]:
+                record["structuralGatePassed"] = False
+        except BaseException as error:
+            retain_error(record, "receiptFinalization", error)
+            record["structuralGatePassed"] = False
+        finally:
+            write_json(run / "receipt.json", record)
+    if fatal_error is not None:
+        raise fatal_error
     return record
 
 
