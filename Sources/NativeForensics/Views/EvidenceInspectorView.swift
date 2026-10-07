@@ -55,6 +55,23 @@ struct EvidenceInspectorView: View {
                         field("Inspected At", evidence.addedAt.formatted(date: .abbreviated, time: .standard))
 
                         Divider()
+                        Button(action: workspace.inspectSelectedOpticalHistory) {
+                            Label("Inspect UDF History", systemImage: "opticaldisc")
+                        }
+                        .disabled(!workspace.canInspectOpticalHistory)
+                        Text("Inspect current and linked historical namespaces using the bounded UDF 2.01 virtual partition / VAT profile. Unsupported profiles stop with a diagnostic.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button(action: workspace.recoverSelectedEvidence) {
+                            Label("Recover Files", systemImage: "arrow.uturn.backward.circle")
+                        }
+                        .disabled(!workspace.canRecoverFiles)
+                        Text(workspace.recovery.recoveryUnavailableReason ?? "Scan signatures in the whole single RAW image even when filesystem analysis is unsupported. Original names and deletion status are not inferred.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Divider()
                         Text("This record stores file-level metadata. It does not establish filesystem contents, recoverability, or the current state of the source file.")
                             .font(.caption)
                             .foregroundStyle(.secondary)

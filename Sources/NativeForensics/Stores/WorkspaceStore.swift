@@ -5,6 +5,8 @@ import Observation
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case evidence
     case filesystem
+    case recovery
+    case optical
     case caseDetails
 
     var id: Self { self }
@@ -12,6 +14,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         switch self {
         case .evidence: "Data Sources"
         case .filesystem: "File Views"
+        case .recovery: "Recovered Files"
+        case .optical: "Optical History"
         case .caseDetails: "Case Details"
         }
     }
@@ -19,6 +23,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         switch self {
         case .evidence: "externaldrive"
         case .filesystem: "list.bullet.rectangle"
+        case .recovery: "arrow.uturn.backward.circle"
+        case .optical: "opticaldisc"
         case .caseDetails: "folder"
         }
     }
@@ -38,12 +44,14 @@ final class WorkspaceStore {
     var selectedEvidenceID: UUID? {
         didSet {
             guard oldValue != selectedEvidenceID else { return }
-            guard isClosing || caseWork.canChangeSelection else {
+            guard isClosing || (caseWork.canChangeSelection && recovery.canChangeSelection) else {
                 selectedEvidenceID = oldValue
                 errorMessage = "Save or discard the oversized note draft before changing files."
                 return
             }
             refreshFilesystemSelection()
+            recovery.configure(evidence: selectedEvidence, in: currentCase)
+            optical.configure(evidence: selectedEvidence, in: currentCase)
         }
     }
     var searchText = ""
@@ -109,28 +117,44 @@ final class WorkspaceStore {
     @ObservationIgnored var filesystemSearchTask: Task<Void, Never>?
     @ObservationIgnored var filesystemSearchID: UUID?
 
+    @ObservationIgnored var filesystemBatchPanelTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
     @ObservationIgnored let engineHelperURL: URL
     let assistant = AssistantAnalysisStore()
     let contentPreview = ContentPreviewStore()
     let caseWork = CaseWorkWorkspaceStore()
+    let recovery: RecoveryWorkspaceStore
+    let optical: OpticalWorkspaceStore
+    let filesystemDocumentPreview: FilesystemDocumentPreviewStore
+    let filesystemBatchExport: FilesystemBatchExportStore
 
-    init(helperURL: URL? = nil) {
-        engineHelperURL = helperURL ?? Bundle.main.bundleURL
+    init(helperURL: URL? = nil, recovery: RecoveryWorkspaceStore? = nil, optical: OpticalWorkspaceStore? = nil,
+         filesystemBatchExport: FilesystemBatchExportStore? = nil) {
+        self.optical = optical ?? OpticalWorkspaceStore()
+        self.recovery = recovery ?? RecoveryWorkspaceStore()
+        let resolvedHelperURL = helperURL ?? Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/NFTSKEngine")
+        engineHelperURL = resolvedHelperURL
+        filesystemDocumentPreview = FilesystemDocumentPreviewStore(engineHelperURL: resolvedHelperURL)
+        self.filesystemBatchExport = filesystemBatchExport ?? FilesystemBatchExportStore(engineHelperURL: resolvedHelperURL)
         assistant.onAnalysisSaved = { [weak self] _ in self?.caseWork.refresh() }
     }
 
     var isBusy: Bool {
         isClosing || isPresentingPanel || isInspecting || isEngineRunning
             || assistant.isPresented || assistant.hasActiveWork || contentPreview.isLoading || caseWork.hasActivePublication
+            || recovery.isRecovering || recovery.isPreviewing || recovery.isExporting
+            || recovery.examination.isReadingRaw || recovery.examination.isSaving || recovery.examination.isExportingReport
+            || optical.isInspecting || optical.isPreviewing || optical.isExporting || optical.isExportingReport
+            || filesystemDocumentPreview.isLoading || filesystemBatchExport.isExporting
     }
     var hasActiveWork: Bool {
         inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
-            || assistant.hasActiveWork || contentPreview.hasActiveWork || caseWork.hasActiveWork
+            || assistant.hasActiveWork || contentPreview.hasActiveWork || caseWork.hasActiveWork || recovery.hasActiveWork || optical.hasActiveWork || filesystemDocumentPreview.hasActiveWork || filesystemBatchExport.hasActiveWork
+            || filesystemBatchPanelTask != nil
     }
-    var canInspectImage: Bool { currentCase != nil && !isBusy && caseWork.canChangeSelection }
+    var canInspectImage: Bool { currentCase != nil && !isBusy && caseWork.canChangeSelection && recovery.canChangeSelection }
 
     var rows: [EvidenceRow] {
         let rows = (currentCase?.manifest.evidence ?? []).map(EvidenceRow.init(record:))
@@ -147,7 +171,7 @@ final class WorkspaceStore {
 
     func createCase() {
         guard !isBusy else { return }
-        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
+        guard caseWork.canChangeSelection && recovery.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
@@ -164,7 +188,7 @@ final class WorkspaceStore {
 
     func chooseCase() {
         guard !isBusy else { return }
-        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
+        guard caseWork.canChangeSelection && recovery.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         isPresentingPanel = true
         Task {
             defer { isPresentingPanel = false }
@@ -180,7 +204,7 @@ final class WorkspaceStore {
             errorMessage = "Finish or cancel the current job or file dialog before opening a different case."
             return
         }
-        guard caseWork.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
+        guard caseWork.canChangeSelection && recovery.canChangeSelection else { errorMessage = "Save or discard the oversized note draft before changing cases."; return }
         do {
             load(try CaseStore.open(at: url))
             statusMessage = "Case opened. Evidence records describe the files at the time they were inspected."
@@ -262,6 +286,11 @@ final class WorkspaceStore {
         caseWork.selectedAnalysis = nil
         caseWork.selectedFinding = nil
         caseWork.selectedExtraction = nil
+        filesystemBatchPanelTask?.cancel()
+        _ = filesystemDocumentPreview.beginShutdown()
+        _ = filesystemBatchExport.beginShutdown()
+        _ = optical.beginShutdown()
+        _ = recovery.beginShutdown()
         _ = contentPreview.beginShutdown()
         _ = caseWork.beginShutdown()
     }
@@ -271,7 +300,8 @@ final class WorkspaceStore {
     func beginShutdown() -> [Task<Void, Never>] {
         prepareForClosing()
         let pending = [inspectionTask, engineTask, filesystemLoadTask, filesystemSearchTask,
-                       assistant.beginShutdown(), contentPreview.beginShutdown(), caseWork.beginShutdown()].compactMap { $0 }
+                       assistant.beginShutdown(), contentPreview.beginShutdown(), caseWork.beginShutdown(), recovery.beginShutdown(), optical.beginShutdown(),
+                       filesystemDocumentPreview.beginShutdown(), filesystemBatchExport.beginShutdown(), filesystemBatchPanelTask].compactMap { $0 }
         cancelCurrentJob()
         return pending
     }
@@ -283,6 +313,10 @@ final class WorkspaceStore {
 
     private func load(_ forensicCase: ForensicCase) {
         errorMessage = nil
+        filesystemDocumentPreview.reset()
+        filesystemBatchExport.reset()
+        optical.reset()
+        recovery.reset()
         contentPreview.reset()
         _ = caseWork.reset()
         cancelFilesystemSearch()
@@ -304,6 +338,8 @@ final class WorkspaceStore {
         searchText = ""
         selectedEvidenceID = forensicCase.manifest.evidence.first?.id
         refreshFilesystemSelection()
+        recovery.configure(evidence: selectedEvidence, in: currentCase)
+        optical.configure(evidence: selectedEvidence, in: currentCase)
     }
 
     private func present(_ error: Error) {

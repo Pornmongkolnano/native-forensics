@@ -23,9 +23,9 @@ struct WorkbenchSettingsView: View {
                 Text("Filesystem listing and extraction for RAW/EWF images. FAT16, FAT32, exFAT and NTFS are covered by synthetic tests.")
                 Text("Local text/hex previews support files up to 1 MiB, showing up to 32 KiB. Examiner notes, bookmarks, saved AI analyses and export history are stored separately from evidence.")
                     .foregroundStyle(.secondary)
-                Text("File Views use filename hints. Document-content search, PDF/image previews, carving and artifact analysis are unavailable.")
+                Text("File Views use filename hints. Verified document previews inspect supported image, PDF, text, ZIP and Office content locally. Search covers decoded text in the selected file; partial text is labeled.")
                     .foregroundStyle(.secondary)
-                Text("APFS, FileVault and UDF are unavailable. Deleted-file contents may have been overwritten.")
+                Text("Recovery uses a separately installed PhotoRec executable for one RAW image. Optical History supports a bounded UDF 2.01 VAT profile. APFS, FileVault, OCR and computer activity artifacts remain unavailable. Deleted-file contents may have been overwritten.")
                     .foregroundStyle(.secondary)
             }
             Section("Codex file analysis") {

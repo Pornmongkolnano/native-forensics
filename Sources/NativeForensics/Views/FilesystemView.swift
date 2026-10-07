@@ -83,6 +83,14 @@ private struct FilesystemControlsView: View {
                 }
                 .help("Extract the selected file to a new destination (⇧⌘E)")
                 .disabled(!workspace.canExtractFilesystemFile)
+                Button(action: workspace.exportMatchingFilesystemFiles) {
+                    Label("Export Matching Files (\(workspace.matchingExportableFiles.count.formatted()))…", systemImage: "folder.badge.plus")
+                }
+                .help("Export all matching regular files, including rows on other table pages, to a new folder. Source verification runs for every file.")
+                .disabled(!workspace.canExtractAllMatched)
+            }
+            if workspace.filesystemBatchExport.isExporting || workspace.filesystemBatchExport.result != nil || workspace.filesystemBatchExport.errorMessage != nil {
+                FilesystemBatchExportView(store: workspace.filesystemBatchExport)
             }
             DisclosureGroup(isExpanded: $optionsExpanded) {
                 VStack(alignment: .leading, spacing: 12) {

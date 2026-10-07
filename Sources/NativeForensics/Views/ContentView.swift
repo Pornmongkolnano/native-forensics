@@ -12,12 +12,25 @@ struct ContentView: View {
                 if let forensicCase = workspace.currentCase {
                     CaseHeaderView(workspace: workspace)
                     Divider()
-                    if workspace.section == .caseDetails {
-                        CaseDetailsView(forensicCase: forensicCase)
-                    } else if workspace.section == .filesystem {
-                        FilesystemView(workspace: workspace)
-                    } else {
-                        EvidenceTableView(workspace: workspace)
+                    // Native tables can contribute their unbounded content height
+                    // to NavigationSplitView's minimum size. Give the work area
+                    // a window-sized viewport so long tables cannot push every
+                    // split column, including the sidebar, outside the window.
+                    GeometryReader { _ in
+                        Group {
+                            if workspace.section == .caseDetails {
+                                CaseDetailsView(forensicCase: forensicCase)
+                            } else if workspace.section == .optical {
+                                OpticalWorkspaceView(workspace: workspace)
+                            } else if workspace.section == .recovery {
+                                RecoveryWorkspaceView(workspace: workspace)
+                            } else if workspace.section == .filesystem {
+                                FilesystemView(workspace: workspace)
+                            } else {
+                                EvidenceTableView(workspace: workspace)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     WelcomeView(workspace: workspace)
@@ -30,7 +43,11 @@ struct ContentView: View {
                 set: { workspace.showInspector = $0 }
             )) {
                 Group {
-                    if workspace.section == .filesystem {
+                    if workspace.section == .optical {
+                        OpticalInspectorView(workspace: workspace)
+                    } else if workspace.section == .recovery {
+                        RecoveryInspectorView(workspace: workspace)
+                    } else if workspace.section == .filesystem {
                         FilesystemInspectorView(workspace: workspace)
                     } else {
                         EvidenceInspectorView(workspace: workspace)
@@ -68,6 +85,18 @@ struct ContentView: View {
                 }
                 .help("Analyze the selected evidence image (⇧⌘A)")
                 .disabled(!workspace.canAnalyzeFilesystem)
+
+                Button(action: workspace.inspectSelectedOpticalHistory) {
+                    Label("Inspect UDF History", systemImage: "opticaldisc")
+                }
+                .help("Inspect bounded UDF optical namespace and VAT history (⌥⌘U)")
+                .disabled(!workspace.canInspectOpticalHistory)
+
+                Button(action: workspace.recoverSelectedEvidence) {
+                    Label("Recover Files", systemImage: "arrow.uturn.backward.circle")
+                }
+                .help("Recover file signatures from the whole selected RAW image (⇧⌘R)")
+                .disabled(!workspace.canRecoverFiles)
 
                 Button(action: workspace.chooseExtractionDestination) {
                     Label("Extract Selected File", systemImage: "square.and.arrow.up")

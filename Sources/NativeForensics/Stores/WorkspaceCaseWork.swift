@@ -8,6 +8,7 @@ extension WorkspaceStore {
         guard let forensicCase = currentCase, let evidence = selectedEvidence,
               let result = selectedFilesystemResult, let file = selectedFilesystemFile,
               result.files.first(where: { $0.id == file.id }) == file else {
+            filesystemDocumentPreview.reset()
             contentPreview.reset()
             _ = caseWork.reset()
             return
@@ -16,6 +17,7 @@ extension WorkspaceStore {
             errorMessage = caseWork.errorMessage ?? "Save or discard the note draft before changing files."
             return
         }
+        filesystemDocumentPreview.configure(evidence: evidence, result: result, file: file)
         contentPreview.configure(evidence: evidence, result: result, file: file, helperURL: engineHelperURL)
     }
 }

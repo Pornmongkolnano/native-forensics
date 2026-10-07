@@ -30,7 +30,7 @@ struct CaseDetailsView: View {
 
             Section("Available in This Version") {
                 Text("Read a selected file, calculate SHA-256, record file-level metadata, and reopen the saved case.")
-                Text("Filesystem enumeration, recovery, content search, and artifact analysis are planned milestones.")
+                Text("Select evidence to analyze its filesystem, recover RAW file candidates or inspect supported optical history. Source bytes stay read-only; content readability and metadata provenance are separate checks.")
                     .foregroundStyle(.secondary)
             }
         }

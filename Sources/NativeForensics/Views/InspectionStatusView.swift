@@ -5,7 +5,32 @@ struct InspectionStatusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if workspace.isEngineRunning {
+            if workspace.filesystemBatchExport.isExporting {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.filesystemBatchExport.statusMessage).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: workspace.filesystemBatchExport.cancel)
+                }
+            } else if workspace.filesystemDocumentPreview.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.filesystemDocumentPreview.phase).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: workspace.filesystemDocumentPreview.cancel)
+                }
+            } else if workspace.optical.isInspecting || workspace.optical.isPreviewing || workspace.optical.isExporting || workspace.optical.isExportingReport {
+                OpticalStatusView(store: workspace.optical)
+            } else if workspace.recovery.examination.hasActiveWork {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.recovery.examination.statusMessage).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: workspace.recovery.examination.cancel)
+                }
+            } else if workspace.recovery.isRecovering || workspace.recovery.isPreviewing || workspace.recovery.isExporting {
+                RecoveryStatusView(store: workspace.recovery)
+            } else if workspace.isEngineRunning {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.2")
                         .foregroundStyle(.secondary)

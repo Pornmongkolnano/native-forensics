@@ -6,6 +6,8 @@ extension WorkspaceStore {
         switch section {
         case .evidence: return .overview
         case .caseDetails: return .caseDetails
+        case .recovery: return .recovery
+        case .optical: return .optical
         case .filesystem:
             if !filesystemNavigationShowsCategory, let selectedEvidenceID {
                 return .dataSource(selectedEvidenceID)
@@ -20,6 +22,8 @@ extension WorkspaceStore {
         switch selection {
         case .overview: section = .evidence
         case .caseDetails: section = .caseDetails
+        case .recovery: showRecoveredFiles()
+        case .optical: showOpticalHistory()
         case .dataSource(let evidenceID): chooseDataSource(evidenceID)
         case .fileView(let category): chooseFileView(category)
         }
@@ -149,6 +153,9 @@ extension WorkspaceStore {
         guard !isClosing else { return }
         let selectedCaseID = currentCase?.manifest.id
         guard filesystemSelectionID != selectedEvidenceID || filesystemSelectionCaseID != selectedCaseID else { return }
+        // A completed export is historical output for the previous source.
+        // Clear its presentation without touching its published folder.
+        filesystemBatchExport.reset()
         filesystemSelectionID = selectedEvidenceID
         filesystemSelectionCaseID = selectedCaseID
         cancelFilesystemLoad()
@@ -379,6 +386,11 @@ extension WorkspaceStore {
     }
 
     func cancelCurrentJob() {
+        filesystemDocumentPreview.cancel()
+        filesystemBatchExport.cancel()
+        filesystemBatchPanelTask?.cancel()
+        optical.cancel()
+        recovery.cancel()
         assistant.cancel()
         contentPreview.cancel()
         caseWork.cancelPendingWork()

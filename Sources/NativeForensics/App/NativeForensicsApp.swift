@@ -89,7 +89,7 @@ private struct WorkbenchWindow: View {
     var body: some View {
         ContentView(workspace: workspace)
             .background(UnsavedNotesWindowGuard {
-                UnsavedNotesGuard.confirmDiscardForClose(count: workspace.caseWork.retainedDraftCount)
+                UnsavedNotesGuard.confirmDiscardForClose(count: workspace.caseWork.retainedDraftCount + workspace.recovery.retainedDraftCount)
             })
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .focusedSceneValue(\.forensicWorkspace, workspace)

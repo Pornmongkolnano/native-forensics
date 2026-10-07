@@ -9,6 +9,7 @@ struct FilesystemInspectorView: View {
     private enum InspectorPane: String, CaseIterable {
         case properties = "Properties"
         case content = "Content"
+        case document = "Preview"
         case findings = "Findings"
         case integrity = "Integrity"
     }
@@ -80,6 +81,13 @@ struct FilesystemInspectorView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(!workspace.canExtractFilesystemFile)
+                            Button {
+                                pane = .document
+                            } label: {
+                                Label("Inspect Document Content", systemImage: "doc.text.viewfinder")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .disabled(file.isDirectory)
                             Button(action: workspace.openAssistant) {
                                 Label("Analyze with Codex…", systemImage: "sparkles")
                                     .frame(maxWidth: .infinity)
@@ -93,6 +101,9 @@ struct FilesystemInspectorView: View {
                     } else if pane == .content {
                         ContentPreviewView(store: workspace.contentPreview)
                             .disabled(workspace.isBusy && !workspace.contentPreview.isLoading)
+                    } else if pane == .document {
+                        FilesystemDocumentPreviewView(store: workspace.filesystemDocumentPreview,
+                            isExternallyBusy: workspace.isBusy && !workspace.filesystemDocumentPreview.isLoading)
                     } else if pane == .findings {
                         CaseWorkView(store: workspace.caseWork)
                             .disabled(workspace.isBusy && !workspace.caseWork.hasActivePublication)

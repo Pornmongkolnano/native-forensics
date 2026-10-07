@@ -49,13 +49,25 @@ struct ForensicCommands: Commands {
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(workspace?.canAnalyzeFilesystem != true)
 
+            Button("Inspect UDF History") { workspace?.inspectSelectedOpticalHistory() }
+                .keyboardShortcut("u", modifiers: [.command, .option])
+                .disabled(workspace?.canInspectOpticalHistory != true)
+
+            Button("Recover Files from Selected RAW Image") { workspace?.recoverSelectedEvidence() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(workspace?.canRecoverFiles != true)
+
             Button("Extract Selected File…") { workspace?.chooseExtractionDestination() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(workspace?.canExtractFilesystemFile != true)
 
+            Button("Export Matching Files…") { workspace?.exportMatchingFilesystemFiles() }
+                .keyboardShortcut("e", modifiers: [.command, .option, .shift])
+                .disabled(workspace?.canExtractAllMatched != true)
+
             Button("Cancel Current Job") { workspace?.cancelCurrentJob() }
                 .keyboardShortcut(".", modifiers: .command)
-                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true && workspace?.assistant.isWorking != true)
+                .disabled(workspace?.isInspecting != true && workspace?.isEngineRunning != true && workspace?.assistant.isWorking != true && workspace?.recovery.hasActiveWork != true && workspace?.optical.hasActiveWork != true && workspace?.filesystemBatchExport.hasActiveWork != true && workspace?.filesystemDocumentPreview.hasActiveWork != true && workspace?.filesystemBatchPanelTask == nil)
 
             Button("Analyze with Codex…") { workspace?.openAssistant() }
                 .keyboardShortcut("a", modifiers: [.command, .option])

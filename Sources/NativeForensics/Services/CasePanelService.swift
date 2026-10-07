@@ -71,6 +71,82 @@ enum CasePanelService {
         return result
     }
 
+    static func newFilesystemBatchDestination() async -> URL? {
+        let panel = NSSavePanel()
+        let delegate = NewFilePanelDelegate()
+        panel.delegate = delegate
+        panel.title = "Export Matching Files to a New Folder"
+        panel.message = "Enter a new folder name outside the evidence source and case. All matching regular files, including rows on other table pages, are exported with hash receipts. Existing folders cannot be replaced."
+        panel.nameFieldLabel = "New export folder:"
+        panel.nameFieldStringValue = "Filesystem Export"
+        panel.prompt = "Export Files"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        let result = await present(panel)
+        withExtendedLifetime(delegate) {}
+        return result
+    }
+
+    static func newOpticalFile(named filename: String) async -> URL? {
+        let panel = NSSavePanel()
+        let delegate = NewFilePanelDelegate()
+        panel.delegate = delegate
+        panel.title = "Export Recorded UDF File"
+        panel.message = "Create a new file from the recorded UDF extents after source and payload verification. Existing files cannot be replaced."
+        panel.prompt = "Export UDF File"
+        panel.nameFieldStringValue = URL(fileURLWithPath: filename).lastPathComponent.replacingOccurrences(of: ":", with: " - ")
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        let result = await present(panel)
+        withExtendedLifetime(delegate) {}
+        return result
+    }
+
+    static func newOpticalReport() async -> URL? {
+        let panel = NSSavePanel()
+        let delegate = NewFilePanelDelegate()
+        panel.delegate = delegate
+        panel.title = "Export UDF Inventory Report"
+        panel.message = "Create a new Markdown report with recorded paths, current and historical states, UDF timestamp fields, source extents and hashes."
+        panel.prompt = "Export Report"
+        panel.nameFieldStringValue = "UDF Inventory Report.md"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        let result = await present(panel)
+        withExtendedLifetime(delegate) {}
+        return result
+    }
+
+    static func newRecoveryReport() async -> URL? {
+        let panel = NSSavePanel()
+        let delegate = NewFilePanelDelegate()
+        panel.delegate = delegate
+        panel.title = "Export Recovery Report"
+        panel.message = "Create a new Markdown report with source and recovered-file hashes, decoder results and saved examiner assessments. Unsaved note drafts are excluded."
+        panel.prompt = "Export Report"
+        panel.nameFieldStringValue = "Recovery Report.md"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        let result = await present(panel)
+        withExtendedLifetime(delegate) {}
+        return result
+    }
+
+    static func newRecoveredFile(named filename: String) async -> URL? {
+        let panel = NSSavePanel()
+        let delegate = NewFilePanelDelegate()
+        panel.delegate = delegate
+        panel.title = "Export Recovered File"
+        panel.message = "Export verified historical recovered bytes to a new file. Existing files cannot be replaced. This does not establish that the original file was deleted."
+        panel.prompt = "Export"
+        panel.nameFieldStringValue = URL(fileURLWithPath: filename).lastPathComponent.replacingOccurrences(of: ":", with: " - ")
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        let result = await present(panel)
+        withExtendedLifetime(delegate) {}
+        return result
+    }
+
     static func additionalImageSegments() async -> [URL]? {
         let panel = NSOpenPanel()
         panel.title = "Add Image Segments"
@@ -101,16 +177,22 @@ enum CasePanelService {
         activePanels[panelID] = panel
         defer { activePanels[panelID] = nil }
         NSApp.activate(ignoringOtherApps: true)
-        return await withCheckedContinuation { continuation in
-            let completion: (NSApplication.ModalResponse) -> Void = { response in
-                continuation.resume(returning: response == .OK ? panel.url : nil)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let completion: (NSApplication.ModalResponse) -> Void = { response in
+                    continuation.resume(returning: response == .OK ? panel.url : nil)
+                }
+                if let window = presentationWindow() {
+                    window.makeKeyAndOrderFront(nil)
+                    panel.beginSheetModal(for: window, completionHandler: completion)
+                } else {
+                    panel.begin(completionHandler: completion)
+                }
             }
-            if let window = presentationWindow() {
-                window.makeKeyAndOrderFront(nil)
-                panel.beginSheetModal(for: window, completionHandler: completion)
-            } else {
-                panel.begin(completionHandler: completion)
-            }
+        } onCancel: {
+            // Cancel only this task's panel; other workbench windows retain
+            // their own dialogs. Resuming its completion also drains shutdown.
+            Task { @MainActor in activePanels[panelID]?.cancel(nil) }
         }
     }
 
@@ -132,7 +214,7 @@ private final class NewFilePanelDelegate: NSObject, NSOpenSavePanelDelegate {
         guard !FileManager.default.fileExists(atPath: url.path),
               (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) == nil else {
             throw NSError(domain: "NativeForensics.Export", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "This path already exists. Choose a new filename; extraction cannot replace files."])
+                          userInfo: [NSLocalizedDescriptionKey: "This path already exists. Choose a new output name; exports cannot replace files or folders."])
         }
     }
 }

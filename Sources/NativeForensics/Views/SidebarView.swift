@@ -33,6 +33,22 @@ struct SidebarView: View {
                 }
             }
 
+            Section("Optical") {
+                Label("Optical History", systemImage: "opticaldisc")
+                    .tag(WorkspaceNavigationSelection.optical)
+                    .help("Current and historical UDF namespace records from linked VAT states.")
+                    .selectionDisabled(workspace.isBusy || workspace.selectedEvidence == nil)
+                    .disabled(workspace.selectedEvidence == nil)
+            }
+
+            Section("Recovery") {
+                Label("Recovered Files", systemImage: "arrow.uturn.backward.circle")
+                    .tag(WorkspaceNavigationSelection.recovery)
+                    .help("Signature-recovered candidates with separate byte verification and document decoding.")
+                    .selectionDisabled(workspace.isBusy || workspace.selectedEvidence == nil)
+                    .disabled(workspace.selectedEvidence == nil)
+            }
+
             Section("Case") {
                 Label("Case Details", systemImage: "folder.badge.gearshape")
                     .tag(WorkspaceNavigationSelection.caseDetails)

@@ -101,4 +101,6 @@ enum WorkspaceNavigationSelection: Hashable {
     case dataSource(UUID)
     case fileView(FilesystemCategory)
     case caseDetails
+    case recovery
+    case optical
 }
