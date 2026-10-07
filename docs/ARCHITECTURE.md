@@ -10,6 +10,7 @@ flowchart TD
     UI --> Panels[AppKit file and directory panels]
     Store --> Core[ForensicsCore]
     Core --> Manifest[Case manifest outside evidence]
+    Core --> Work[Immutable analysis extraction and note revision sidecars]
     Core --> Hash[Read only selected file and segment SHA256]
     Hash --> Evidence[Ordered source files]
     Store --> Client[Swift engine client one owned process per job]
@@ -21,10 +22,12 @@ flowchart TD
     Results --> Assistant
     Assistant --> Content[Optional fresh verified UTF8 excerpt]
     Content --> Client
+    Store --> Preview[Bounded local Text and Hex preview]
+    Preview --> Content
     Assistant --> Review[Exact question and context review]
     Review -->|Explicit Send| Codex[Owned Codex CLI process]
     Codex --> Provider[OpenAI provider]
-    Results -. Phase 2 and 3 .-> Index[Content index previews artifacts timeline]
+    Results -. Phase 2 and 3 .-> Index[Document content index PDF images artifacts timeline]
 ```
 
 เส้นทึบคือ components ที่มีใน code; เส้นประคือส่วนที่ยังต้องสร้าง Helper ใช้ audited TSK 4.15.0 lineage ตาม [ADR 001](adr/0001-native-foundation.md) แยก process ตาม [ADR 002](adr/0002-engine-process-boundary.md) และสัญญาจริงใน [Engine protocol](ENGINE-PROTOCOL.md) การมี implementation ไม่ได้แทน acceptance coverage ใน [Validation](VALIDATION.md)

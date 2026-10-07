@@ -6,13 +6,13 @@ Native Mac foundation และ filesystem workflow ชุดแรกมี imp
 
 ## ลำดับส่งมอบหลัง 0.3.0 — แผนวันที่ 7 October 2026
 
-เป้าหมายคือให้ผู้ตรวจทำงานตั้งแต่เลือกไฟล์ → อ่านเนื้อหา → บันทึกข้อค้นพบ → ตรวจคำอธิบาย AI → ออกรายงาน โดยกลับมาเปิดเคสแล้วตรวจที่มาของแต่ละข้อสรุปได้ ใช้ TSK/helper เดิมต่อและเพิ่ม native workflow รอบ engine ที่มีอยู่ หมายเลขเวอร์ชันด้านล่างเป็นเป้าหมายสำหรับจัดขอบเขตงาน ยังไม่ใช่ฟีเจอร์ที่ส่งมอบหรือกำหนดวัน release
+เป้าหมายคือให้ผู้ตรวจทำงานตั้งแต่เลือกไฟล์ → อ่านเนื้อหา → บันทึกข้อค้นพบ → ตรวจคำอธิบาย AI → ออกรายงาน โดยกลับมาเปิดเคสแล้วตรวจที่มาของแต่ละข้อสรุปได้ ใช้ TSK/helper เดิมต่อและเพิ่ม native workflow รอบ engine ที่มีอยู่ **ช่วง 1 มี implementation และ local validation ใน 0.4.0 / build 12 แล้ว** หมายเลขช่วง 2–6 เป็นเป้าหมายสำหรับจัดขอบเขตงาน ยังไม่ใช่ฟีเจอร์ที่ส่งมอบหรือกำหนดวัน release
 
-ฐานปัจจุบันมี case/listing/extraction, background path search และ Codex สำหรับไฟล์เดียว แต่คำตอบ AI และ extraction receipt ใน UI ยังเป็น session state; ไม่มี durable findings, local content preview, document-content search หรือ artifact timeline ดู [Codex scope](CODEX-ANALYSIS.md), [Readiness](READINESS.md) และ [Validation](VALIDATION.md) ผลทดสอบ synthetic corpus ไม่แทนการรองรับทุก filesystem หรือ benchmark บน M5
+ฐานปัจจุบันมี case/listing/extraction, background path search, Codex สำหรับไฟล์เดียว, explicit Save Analysis, per-file history, revisioned notes/bookmarks/tags, extraction history และ fresh verified text/hex preview ดู [Case work/limits](CASE-WORK.md), [Codex scope](CODEX-ANALYSIS.md) และ [Validation](VALIDATION.md) ยังไม่มี document-content search, PDF/image decoder หรือ artifact timeline ผลทดสอบ synthetic corpus ไม่แทนการรองรับทุก filesystem หรือ benchmark บน M5
 
 | ลำดับ / เป้าหมาย | สิ่งที่ผู้ใช้ทำได้เมื่อผ่าน gate | ขึ้นกับ |
 |---|---|---|
-| **1 / 0.4 งานในเคสและ preview แรก** | Save Analysis, เปิดประวัติต่อไฟล์, notes/bookmarks/tags, อ่าน text/hex ใน inspector | Case publication ที่มีอยู่ และ fresh verified extraction |
+| **1 / 0.4 มี local implementation แล้ว** | Save Analysis, เปิดประวัติต่อไฟล์, notes/bookmarks/tags, อ่าน text/hex ใน inspector ภายใต้ [limits](CASE-WORK.md) | Case publication ที่มีอยู่ และ fresh verified extraction; broader GUI/compatibility gates ยังเปิด |
 | **2 / 0.5 เอกสารและค้นเนื้อหา** | Preview PDF/images ที่ประกาศรองรับ, สกัดข้อความพร้อมเลขหน้า, ค้นข้อความในไฟล์และกลับไปยังตำแหน่งที่พบ | Verified-content service, decoder isolation และ derived-store experiment |
 | **3 / 0.6 Codex เปรียบเทียบหลักฐาน** | เลือกข้อความจากสองไฟล์ เปรียบเทียบ/ถามต่อ พร้อม references ที่แอปตรวจและเปิดดูได้ | Durable records และ content references ของช่วง 1–2 |
 | **4 / 0.7 Timeline และรายงาน** | รวม filesystem/browser/download events, filter เวลา, export รายงานที่แยกข้อเท็จจริงกับ AI/บันทึกผู้ตรวจ | Independent artifact fixtures และ timestamp policy |
@@ -21,11 +21,11 @@ Native Mac foundation และ filesystem workflow ชุดแรกมี imp
 
 Phase 1 correctness กับ release preparation เป็นงานขนานตั้งแต่ช่วงแรก ไม่ต้องรอช่วง 6 จึงเริ่มจัด dependency materials, compatibility matrix หรือวัด app memory การผ่านช่วงฟีเจอร์ไม่ปิด gates ของ Phase 1 โดยอัตโนมัติ
 
-### ช่วง 1: งานไม่หายและอ่านไฟล์ก่อนถาม AI
+### ช่วง 1: งานไม่หายและอ่านไฟล์ก่อนถาม AI — implemented locally
 
 แบ่งเป็นสามชิ้นที่ใช้ได้แยกกัน: **Save Analysis → findings/notes → text/hex preview** เริ่ม Save Analysis ก่อนเพราะแก้ข้อจำกัดของฟีเจอร์ 0.3.0 ได้โดยไม่เพิ่มชนิดเนื้อหาที่ส่งออก
 
-- เพิ่ม versioned sidecars เช่น `analyses/<record-id>.json` และ `findings/<finding-id>.json` ภายใน `.nativecase` เส้นทางเหล่านี้เป็นแบบที่เสนอ; ยังไม่มี implementation รักษา manifest v1 และ historical listing JSON เดิม ไม่ migrate/rewrite เคสโดยอัตโนมัติ
+- เพิ่ม schema-v1 sidecars `analyses/<record-id>.json`, `findings/<revision-id>.json` และ `extractions/<record-id>.json` ภายใน `.nativecase` รักษา manifest v1 และ historical listing JSON เดิม ไม่ migrate/rewrite เคสโดยอัตโนมัติ
 - Analysis record เป็น immutable receipt ผูก case/evidence IDs, exact file locator, filesystem snapshot digest/job reference กับ selected-entry/provenance summary, ordered container hashes พร้อม hash scopes, engine/options, extracted-content digest ถ้ามี, prompt-template/CLI versions, request digest, warnings และ structured answer ไม่คัดลอก listing เต็มลงทุกคำตอบ เวอร์ชัน model/provider บันทึกเฉพาะที่ตรวจได้จาก execution receipt; ค่าที่ไม่ทราบต้องระบุ unknown
 - ตั้ง serialized/read cap เริ่มต้น 1 MiB ต่อ record และ history pages สูงสุด 50 records; oversized save ต้องรายงาน failure โดยไม่ตัด record เงียบ ๆ ไม่โหลด history ทั้งเคสลง MainActor การเปิดรายการต้องอ่าน/validate แบบ bounded และทดสอบ aggregate memory เมื่อมีประวัติจำนวนมาก
 - ผู้ใช้เลือก Save หลังได้คำตอบที่ผ่าน response validation แล้ว หน้าบันทึกแจ้งว่าคำถาม/คำตอบ/metadata อาจมีข้อมูลส่วนตัว; exact outbound context และ text excerpt ต้องเป็น retention choice ที่มองเห็น ไม่มี raw provider log/credentials/host source paths ที่บันทึกตามมาโดยอัตโนมัติ `full` เก็บ exact UTF-8 request bytes ที่แอปส่งให้ CLI หลัง redaction รวมคำถาม/template text ที่ใช้จริง; ไม่สร้าง prompt ย้อนหลังจาก template version และไม่อ้างว่าเป็น HTTP payload ภายใน CLI `digestOnly` เก็บ digest แทน request bytes จึงสร้าง request เดิมกลับมาไม่ได้
@@ -63,7 +63,7 @@ APFS/FileVault, OCR ทุกไฟล์ และ engine rewrite ต้อง�
 
 ### Backlog รอบแรกและการวัดผล
 
-แยกงานช่วง 1 เป็น commits ตามขอบเขตนี้โดยยังไม่เริ่ม implementation ใน planning change:
+ช่วง 1 แยก implementation ตามขอบเขตด้านล่างแล้ว ดู [0.4 validation receipt](validation/2026-10-07-case-work.json) สำหรับผล local, retention/hash scopes และ GUI limitations; broad-format/compatibility/release gates ยังไม่ปิด:
 
 1. Contracts/fixtures: AnalysisRecord, FindingRecord, retention modes, canonical request digest และ reference/status invariants
 2. Core persistence: immutable sidecar publication/reopen, case ownership/locking, version handling และ fault-injection regressions
@@ -107,7 +107,7 @@ Phase 0 เดิมทำเฉพาะ selected-file inspection ส่วน 
 - Portable NTFS corpus สร้างด้วย Python stdlib: resident/nonresident, allocated/deleted, fragmented runs, sparse hole, hardlinks, Unicode, file/directory ADS พร้อม exact bytes/locators และ 100 ns timestamps
 - exFAT per-field offsets, unknown-offset IANA/DST interpretation, Gregorian date validation และ missing-time handling; valid-offset timestamps ตรวจภายใต้หลาย host timezones
 
-ชุด readiness 0.2.5 ผ่าน native 105 checks รวม 26 image configurations และ Swift 59 core + 20 workspace/presentation tests; ดู [Readiness](READINESS.md) สำหรับผลล่าสุด ส่วน benchmark harness/artifact checks รวม 23 tests GUI เพิ่ม limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
+ชุด readiness 0.2.5 ผ่าน native 105 checks รวม 26 image configurations และ Swift 59 core + 20 workspace/presentation tests; ดู [historical Readiness](READINESS.md) ส่วน 0.4.0 ผ่าน Swift 130 core + 72 app ทั้ง debug/release พร้อม real helper และ Python harness/artifact 23 tests C++ helper ไม่เปลี่ยน GUI เพิ่ม durable case work/local preview ต่อจาก limit validation, partial cache reopen/export, native cancellation และ failure ที่รักษาผลเดิมไว้ ดู coverage และข้อจำกัดใน [Validation](VALIDATION.md)
 
 App 0.3.0 เพิ่ม [Analyze with Codex](CODEX-ANALYSIS.md): บริบทของไฟล์ที่เลือกและ optional UTF-8 excerpt ที่ตรวจ hash, explicit review ก่อนส่ง, คำตอบแบบ advisory แยก observations/hypotheses/limits และ cancellation ที่รอ cleanup ตัวอ่าน JSONL/permission profile ตรวจด้วย Codex CLI 0.160.1 การทดสอบ CI ใช้ fake provider; live GUI ใช้ synthetic FAT16 เท่านั้น นี่เป็นฟีเจอร์ช่วยตีความที่เปิดใช้แยก ไม่ใช่ document-content index หรือการปิด Phase 1 coverage gates
 

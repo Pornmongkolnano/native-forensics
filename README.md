@@ -24,6 +24,10 @@
 - ค้นหา file paths แบบยกเลิก query เก่าได้ โดยคง Unicode matching เดิมและทำงานนอก main thread; ตารางแบ่งหน้า 100 แถวพร้อมค้นหาจากผลทั้งหมด
 - Analysis Options และ provenance พับได้; validation/partial warnings ยังมองเห็น และ inspector แสดงไฟล์ที่เลือกก่อนรายละเอียด image/hash scopes
 - **Analyze with Codex**: ถามเกี่ยวกับไฟล์ที่เลือก ทบทวน exact prompt ก่อนส่ง และดูคำตอบในแอปผ่าน Codex CLI เริ่มจาก metadata; เลือกรวม UTF-8 excerpt ได้พร้อมตรวจ source/extracted hashes ดู [วิธีใช้และขอบเขต](docs/CODEX-ANALYSIS.md)
+- **Save Analysis**: เลือกบันทึกคำถาม/คำตอบ/ที่มาลงเคส พร้อม digest-only หรือ full exact-request retention แล้วเปิด per-file AI history ย้อนหลังได้
+- **Examiner notes**: บันทึก note revisions, bookmark, tags และ review reason แยกจาก AI โดยตรวจ concurrent revisions และเตือน unsaved drafts ก่อนปิด
+- **Local Text/Hex Preview**: extract/ตรวจ source และ output hashes ใหม่สำหรับไฟล์ไม่เกิน 1 MiB แสดง prefix ไม่เกิน 32 KiB /50 rows ต่อหน้า โดยไม่ส่ง provider
+- **Export history**: เก็บ path-free historical extraction receipts ที่ผ่าน verification ดู [Case work และ preview](docs/CASE-WORK.md) สำหรับ retention, limits และความหมายของ historical verification
 
 Engine ส่งข้อมูลผ่าน [versioned NDJSON](docs/ENGINE-PROTOCOL.md) กำหนด frame ไม่เกิน 1 MiB, listing ไม่เกิน 50,000 records และ response/cache ไม่เกิน 64 MiB Limits แสดงเป็น partial/failure states; ขนาดเหล่านี้เป็น data limits ไม่ใช่ข้อรับรอง peak RAM ของ process
 
@@ -38,9 +42,9 @@ Hash scopes แยกกันชัดเจน:
 
 Helper ตรวจ EWF segment order/completeness และปฏิเสธ segments ที่ถูกเปิดนอก ordered set ที่ผู้ใช้ระบุ Selected-file hash เพียงค่าเดียวไม่แทน logical-image hash หรือพิสูจน์ว่า split image ครบ
 
-TSK adapter ชุดนี้ **ไม่มี UDF**; งาน UDF ต้องมี adapter แยก APFS/FileVault และ encrypted filesystem ถูกปิดไว้สำหรับ Phase 3 Carving, document-content indexing, previews และ artifact analysis ยังอยู่ใน [แผนพัฒนา](docs/ROADMAP.md) File/path filtering ใน UI ไม่ใช่ document-content search และ deleted metadata ไม่รับรองว่า content ยังสมบูรณ์
+TSK adapter ชุดนี้ **ไม่มี UDF**; งาน UDF ต้องมี adapter แยก APFS/FileVault และ encrypted filesystem ถูกปิดไว้สำหรับ Phase 3 Carving, document-content indexing, PDF/image previews และ artifact analysis ยังอยู่ใน [แผนพัฒนา](docs/ROADMAP.md) File/path filtering ใน UI ไม่ใช่ document-content search และ deleted metadata ไม่รับรองว่า content ยังสมบูรณ์
 
-เวอร์ชัน 0.3.0 เพิ่ม [Codex file analysis](docs/CODEX-ANALYSIS.md) บนฐาน readiness 0.2.5 ซึ่งเพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) คำตอบ AI เป็นคำอธิบายที่ผู้ตรวจต้องยืนยัน ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
+เวอร์ชัน 0.4.0 เพิ่ม [case work/local preview](docs/CASE-WORK.md) ต่อจาก [Codex file analysis 0.3.0](docs/CODEX-ANALYSIS.md) บนฐาน readiness 0.2.5 ซึ่งเพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) คำตอบ AI เป็นคำอธิบายที่ผู้ตรวจต้องยืนยัน ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
 
 ## Build และ run
 

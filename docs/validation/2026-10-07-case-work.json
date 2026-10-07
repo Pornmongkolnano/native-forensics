@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "appVersion": "0.4.0",
+  "appBuild": "12",
+  "host": {"architecture": "arm64", "chip": "Apple M2", "macOS": "27.0.1", "swift": "6.4"},
+  "localValidation": {
+    "swiftDebug": {"coreDeclarations": 130, "appDeclarations": 72, "passed": true},
+    "swiftRelease": {"coreDeclarations": 130, "appDeclarations": 72, "passed": true},
+    "pythonHarnessAndBundle": {"tests": 23, "passed": true},
+    "realHelperIntegration": "enabled in both Swift configurations; no opt-in helper tests skipped",
+    "releaseBundle": "staged, ad-hoc signed, provenance/runtime-closure validated and launched",
+    "nativeHelperVersion": "0.1.2-tsk4.15.0",
+    "nativeHelperSHA256": "fb155921ce06ddf24910b8fb184065b89834378091936ea30a3ead372af9f9d1",
+    "nativeHelperCoverage": "C++ helper unchanged; previous readiness has 105 checks across 26 configurations, current real-helper Swift integration passed; standalone native suite not rerun locally in this pass"
+  },
+  "implemented": [
+    "immutable versioned analysis and extraction receipts within existing case bundles",
+    "revisioned examiner notes, bookmarks, tags and explicit review reasons/status",
+    "successful-answer save freezes the reviewed request and validated answer transaction",
+    "explicit digest-only or full UTF-8 app-to-CLI request retention; no autosave",
+    "historical per-file analysis/finding/export history without opening offline sources",
+    "shared verified-content extraction with held-descriptor output identity handoff",
+    "bounded local text/hex preview with extracted-byte offsets",
+    "owned task cancellation and close/quit drains, including native unsaved-note warning",
+    "macOS 27 open-panel setter ordering for nativecase package and legacy directory selection"
+  ],
+  "limits": {
+    "recordSerializedBytes": 1048576,
+    "historySummariesPerPage": 50,
+    "diagnosticDetailsPerScan": 50,
+    "previewWholeFileBytes": 1048576,
+    "previewPrefixBytes": 32768,
+    "previewRowsPerPage": 50,
+    "noteUTF8Bytes": 65536,
+    "reviewReasonUTF8Bytes": 8192,
+    "distinctTags": 32,
+    "tagUTF8Bytes": 128,
+    "inactiveDraftCount": 32,
+    "inactiveDraftUTF8Bytes": 1048576,
+    "activeDraft": "one additional editor; oversized edits preserved and block navigation/reanalysis until corrected or explicitly discarded",
+    "historyAndSnapshotFingerprint": "background O(n) scan with bounded record working set; no full-case query index"
+  },
+  "liveGUI": {
+    "appBuild": "12",
+    "source": "fresh synthetic FAT16 case",
+    "filePathInsideImage": "/HELLO.TXT",
+    "includedUTF8Bytes": 44,
+    "completeFileBytes": 44,
+    "provider": "OpenAI through existing Codex CLI sign-in",
+    "savedRecordModelVersion": null,
+    "savedRecordCLIVersion": null,
+    "versionSemantics": "Unknown unless supplied by a validated execution receipt; executable presence or answer text is not proof",
+    "retention": "full",
+    "requestSHA256": "ce81fcc3cb75b140e2e6310aba3a27b58b936a1a57bc4926c6e642c4fbfd13f0",
+    "containerSHA256": "0c3ed9dca55c87ed91cecc2ec89f64d34f86f138bec4911ab4ab69edcde96cd3",
+    "extractedFileSHA256": "9de0f7a8de5236142783ad041faaec4f2e2eb5e56b3745afa292bee49dd7b441",
+    "observed": [
+      "native Open Case picker opened the new case package",
+      "local Text and Hex previews displayed the 44-byte synthetic file",
+      "Thai note, bookmark and two tags saved as revision 1",
+      "Command-W unsaved warning default Cancel kept the window and draft",
+      "exact request reviewed before explicit Send, live answer rendered",
+      "retention sheet initially defaulted to digest-only; Full deliberately selected and saved locally",
+      "44-byte extraction and export history created after independent output/source verification",
+      "Quit and reopen restored the note/revision/bookmark/tags, AI history entry and export history entry",
+      "SIGTERM gracefully drained the owned app with a saved-record sheet open"
+    ],
+    "independentReadback": {
+      "retainedPromptMatchesRequestSHA256": true,
+      "exportBytesAndSHA256MatchFixture": true,
+      "sidecarsContainHostPaths": false,
+      "sourceUnchanged": true,
+      "manifestUnchanged": true,
+      "listingCacheUnchanged": true
+    },
+    "detailSheetLimitation": "UI automation service crashed during reopened saved-answer sheet accessibility traversal; app remained running. Detail contents were verified by record readback and tests, not fully observed through that GUI sheet.",
+    "realUserEvidenceSent": false,
+    "rawProviderResponseOrExactPromptCommitted": false
+  },
+  "regressionRepairs": [
+    "published scratch inode identity obtained from the held extraction descriptor before ownership adoption",
+    "same-case/evidence history binding validates selected-container byte count as well as hash",
+    "own note publication across A-B-A selection reconciles latest revision; independent concurrent revision still conflicts",
+    "oversized drafts guard file/case/reanalysis/inspection transitions",
+    "synthetic test pipes close on exec, cancellation barriers observe actual progress without blocking the cooperative executor"
+  ],
+  "ci": {
+    "commitSpecificResult": "recorded separately in GitHub Actions after push; local results are not a CI-success claim",
+    "checks": "pinned engine build, standalone native corpus, Python harness, real-helper Swift debug/release, app bundle provenance",
+    "providerCalls": false
+  },
+  "remaining": [
+    "Phase 1 filesystem coverage gates, broader GUI fault/publication races and crash/power-loss durability",
+    "PDF/image/Office decoding, document-content search, multi-file follow-up, artifact timeline and carving",
+    "case integrity/migration tooling and cryptographic authenticity of sidecar records",
+    "physical M5, supported older macOS and full-app RAM/latency/thermal benchmarks",
+    "Developer ID/notarization, complete source/relink distribution and clean-machine installation"
+  ]
+}

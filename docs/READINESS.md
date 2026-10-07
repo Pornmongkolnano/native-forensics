@@ -1,5 +1,7 @@
 # Local-use readiness — 7 October 2026
 
+**Historical 0.2.5 receipt:** Current local app is 0.4.0 / build 12. [Case work](CASE-WORK.md) adds durable analysis/extraction receipts, revisioned notes and bounded text/hex preview; [Validation](VALIDATION.md) records the newer tests and GUI checks. Results and remaining gates below describe the 0.2.5 milestone, not current feature absence.
+
 NativeForensics **0.2.5 / build 7**, engine **0.1.2-tsk4.15.0**. This pass improves bounded local filesystem workflows; Phase 1 remains in progress. It does not establish general Autopsy parity or a public distribution release.
 
 ## Correctness and data preservation
@@ -38,7 +40,7 @@ The first full optimized run exposed a test scheduling issue while a blocking lo
 
 Local raw receipts stay in ignored `local/readiness/`. The [sanitized summary](validation/2026-10-07-readiness.json) contains no user evidence, cases, personal paths or raw logs. Tests compare synthetic evidence only. Unit lifecycle tests cover close/quit coordination and a real blocked manifest commit; GUI Quit observation above does not establish every native-job or publication race, force-kill recovery, or crash durability on all storage types.
 
-## Remaining release gates
+## Release gates recorded at 0.2.5
 
 1. **Distribution trust:** no Developer ID signing identity is available on this host. The artifact is ad-hoc signed. Hardened-runtime signing/notarization, complete corresponding-source/relink distribution and clean-machine installation remain unverified. Gatekeeper settings were not weakened.
 2. **Forensic breadth:** complex NTFS ATTRIBUTE_LIST/multilevel indexes/compression/EFS, damaged/reallocated deleted data and timezone DST overlaps/gaps need more independent coverage. UDF, APFS/FileVault, carving, content search, previews and artifact analysis are unavailable. Filename categories are hints.

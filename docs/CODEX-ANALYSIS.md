@@ -1,4 +1,4 @@
-# วิเคราะห์ไฟล์ด้วย Codex — NativeForensics 0.3.0
+# วิเคราะห์ไฟล์ด้วย Codex — NativeForensics 0.4.0
 
 เลือกไฟล์ในผล filesystem แล้วใช้ **Analyze with Codex** จาก toolbar, inspector หรือเมนู Evidence (`⌥⌘A`) ถามและอ่านคำตอบในแอปได้ ฟีเจอร์นี้ส่งบริบทที่ตรวจแล้วผ่าน Codex CLI ไปยัง OpenAI และใช้โควตาของบัญชี ChatGPT ที่ล็อกอินอยู่ ผลตอบกลับเป็น **AI interpretation** ซึ่งต้องตรวจเทียบกับหลักฐาน
 
@@ -8,7 +8,9 @@
 2. เปิดเคส วิเคราะห์ filesystem และเลือกไฟล์ กด Analyze with Codex แอปเตรียม metadata ของไฟล์นั้นในเครื่องก่อน ยังไม่มีการส่งคำถาม
 3. ใส่คำถาม หรือใช้ Summarize / Timeline / Findings ตรวจบริบททั้งหมด ถ้าต้องการเนื้อหาให้เลือก **Include a UTF-8 text excerpt** แล้วกด **Rebuild Context** การเปลี่ยนตัวเลือกนี้ทำให้บริบทเก่าส่งต่อไม่ได้จนกว่าจะเตรียมใหม่
 4. ตรวจคำถามและบริบท เลือกช่องยินยอม แล้วกด **Send to Codex** การเปลี่ยนคำถาม/บริบทล้างการยืนยันเดิม คำตอบอยู่ในแท็บ Answer แบ่ง Summary, Observations, Hypotheses, Limitations และ Next Steps
-5. ใช้ Copy Context / Copy Answer เมื่อต้องการเก็บข้อความเอง คำตอบมี request SHA-256 ที่แอปคำนวณเพื่อผูกกับ prompt ที่ส่ง การ Close/Quit/cancel รอ cleanup ของ process และ scratch งานที่ส่งไปแล้วอาจใช้โควตาแม้ยกเลิก
+5. เมื่อได้คำตอบ กด **Save Analysis…** แล้วเลือก Digest only หรือ Full ก่อน **Save Locally** เพื่อบันทึกลงเคส การบันทึกไม่ส่งคำขอเพิ่มและไม่มี autosave เปิดย้อนหลังจาก Findings → AI History ได้ ดู retention, privacy และ historical provenance ใน [Case work](CASE-WORK.md) ใช้ Copy Context / Copy Answer ได้ตามเดิม
+
+คำตอบมี request SHA-256 ที่แอปคำนวณเพื่อผูกกับ exact prompt ที่ส่ง การ Close/Quit/cancel รอ cleanup ของ process, scratch และ publication ที่เริ่มแล้ว งานที่ส่งไปแล้วอาจใช้โควตาแม้ยกเลิก
 
 ## ข้อมูลที่เปิดเผย
 
@@ -49,7 +51,9 @@ CLI 0.160.1 อาจส่ง startup notice ว่า Code Mode host ถูก
 
 Tests ใช้ synthetic evidence และ fake CLI รวม exact selection/source hash, UTF-8 boundaries, privacy scopes, request binding, stale results, cancellation/process-group cleanup, output limits, failure/tool actions และ sidebar/workspace lifecycle มี opt-in real-helper test ที่ตรวจ exact text และ source-change refusal การทดสอบปกติ/CI ไม่เรียก provider และไม่ใช้ credential files
 
-การตรวจบน Apple Silicon M2 / macOS 27.0.1 วันที่ 7 ตุลาคม 2026: Swift **96 core + 31 app tests** ผ่านทั้ง debug/release รวม real-helper corpus, Python harness/bundle **23 tests** ผ่าน และ release bundle build/validation/launch ผ่าน Live GUI ส่งคำถามภาษาไทยกับ synthetic FAT16 `/HELLO.TXT` **44/44 bytes** แล้วแสดงคำตอบครบทั้งห้าส่วน ตรวจ source SHA-256 หลังทดสอบตรงกับ record ทดสอบ Cmd-Q และ SIGTERM ขณะ review sheet เปิดอยู่แล้ว process เดิมออกและแอปใหม่เปิดได้ ไม่มี real coursework evidence ในคำขอทดสอบ
+รุ่น 0.4.0 / build 12 บน Apple Silicon M2 / macOS 27.0.1 ผ่าน Swift **130 core + 72 app tests** ทั้ง debug/release โดยเปิด real-helper integration และ Python harness/bundle **23 tests** ผ่าน Release bundle build/validation/launch ผ่าน Live GUI ส่งเฉพาะ synthetic FAT16 `/HELLO.TXT` **44/44 bytes**, อ่านคำตอบ, Save แบบ Full, Quit/reopen เคส และพบ AI history เดิม Exact retained prompt SHA-256 ตรงกับ request receipt ที่อ่านตรวจอิสระ Source, manifest และ listing cache ไม่เปลี่ยน ไม่มี real coursework evidence ในคำขอทดสอบ ดูผลและข้อจำกัดใน [receipt 0.4](validation/2026-10-07-case-work.json) และ [Validation](VALIDATION.md)
+
+ผลรุ่น 0.3.0 เดิมมี Swift **96 core + 31 app tests**, Python **23 tests** และ live answer ทั้งห้าส่วน พร้อม Cmd-Q/SIGTERM ขณะ review sheet เปิดอยู่ Sections ต่อไปอธิบายการแก้ pipe/spawn ในรุ่นนั้น ไม่ใช่การวัด performance ของ 0.4
 
 ดู [sanitized receipt](validation/2026-10-07-codex-analysis.json) สำหรับ hashes และขอบเขตที่ตรวจ การแก้ test barrier ของ manifest commit แยกจาก feature นี้ แก้ failure ของ CI รุ่น 0.2.5 โดยรอการเริ่ม commit จริงและไม่ใช้เวลานอนเป็นสัญญาณพร้อม ผล local ไม่แทนผล GitHub Actions ของ commit ใหม่
 
@@ -57,4 +61,4 @@ CI รอบแรกของ feature พบ release failure ใน real-helper
 
 Pipe guard เปลี่ยนเป็น drain ก่อนตรวจ และยอมอ่าน buffered tail ต่อเฉพาะเมื่อทุก writer ปิดแล้ว (`POLLHUP`) deadline สองวินาทีสำหรับ writer ที่ยังเปิดอยู่คงเดิม Tests ใช้ real nonblocking pipes กับ synthetic clock เพื่อตรวจ scheduler delay, buffered EOF, idle/flooding writers และ mixed stdout/stderr การรับคำตอบ live GUI ตรวจใน build 8; build 9 เพิ่ม pipe/spawn fixes และรัน real-helper integration ใหม่โดยไม่ส่ง provider request ซ้ำ
 
-คำตอบ AI อาจผิดหรือไม่ครบ Schema/request hash ยืนยันรูปแบบและการผูกคำขอ ไม่รับรองข้อสรุป การตรวจจริงและความรับผิดชอบในการตีความยังอยู่ที่ผู้ตรวจหลักฐาน ผลตอบและ excerpt อยู่ใน session state; durable analysis ledger, follow-up conversation, PDF/image decoding และการวิเคราะห์หลายไฟล์ยังไม่อยู่ในรุ่นนี้
+คำตอบ AI อาจผิดหรือไม่ครบ Schema/request hash ยืนยันรูปแบบและการผูกคำขอ ไม่รับรองข้อสรุป การตรวจจริงและความรับผิดชอบในการตีความยังอยู่ที่ผู้ตรวจหลักฐาน คำตอบที่ยังไม่กด Save อยู่ใน session; saved records เปิดย้อนหลังได้ตาม retention ที่เลือก Digest only ยังเก็บคำถาม/คำตอบซึ่งอาจ quote เนื้อหาหลักฐาน Follow-up conversation, PDF/image decoding และการวิเคราะห์หลายไฟล์ยังไม่อยู่ในรุ่นนี้
