@@ -44,7 +44,7 @@ Helper ตรวจ EWF segment order/completeness และปฏิเสธ s
 
 TSK adapter ชุดนี้ **ไม่มี UDF**; งาน UDF ต้องมี adapter แยก APFS/FileVault และ encrypted filesystem ถูกปิดไว้สำหรับ Phase 3 Carving, document-content indexing, PDF/image previews และ artifact analysis ยังอยู่ใน [แผนพัฒนา](docs/ROADMAP.md) File/path filtering ใน UI ไม่ใช่ document-content search และ deleted metadata ไม่รับรองว่า content ยังสมบูรณ์
 
-เวอร์ชัน 0.4.0 เพิ่ม [case work/local preview](docs/CASE-WORK.md) ต่อจาก [Codex file analysis 0.3.0](docs/CODEX-ANALYSIS.md) บนฐาน readiness 0.2.5 ซึ่งเพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) คำตอบ AI เป็นคำอธิบายที่ผู้ตรวจต้องยืนยัน ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [Autopsy comparison](docs/AUTOPSY-COMPARISON.md) ครอบคลุมเฉพาะ workload ที่ระบุ
+เวอร์ชัน 0.4.0 เพิ่ม [case work/local preview](docs/CASE-WORK.md) ต่อจาก [Codex file analysis 0.3.0](docs/CODEX-ANALYSIS.md) บนฐาน readiness 0.2.5 ซึ่งเพิ่มความปลอดภัยของ case publication, close/quit cancellation, protocol/cache validation และตรวจ bundle ก่อนแทนแอปเดิม ดู [Readiness](docs/READINESS.md) และผล/ขอบเขตที่ตรวจจริงใน [Validation](docs/VALIDATION.md) คำตอบ AI เป็นคำอธิบายที่ผู้ตรวจต้องยืนยัน ยังไม่รับรองทุก TSK filesystem หรือ full GUI recovery flow; [repaired Autopsy comparison](docs/AUTOPSY-COMPARISON-2026-10-07.md) ครอบคลุมเฉพาะ workload ที่ระบุ
 
 ## Build และ run
 

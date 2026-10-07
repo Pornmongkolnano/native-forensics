@@ -4,6 +4,8 @@
 
 ## ชุดงานที่ต้องใช้
 
+รอบล่าสุด NativeForensics 0.4.0 กับ Autopsy 4.23.1 ที่ซ่อม JNI อยู่ใน [รายงาน 7 October](AUTOPSY-COMPARISON-2026-10-07.md) และ [sanitized receipts](benchmarks/2026-10-07-m2-repaired-autopsy-pipeline.json): FAT16/FAT32/NTFS ผ่าน bytes/UTC timestamps/streams ทั้ง 15 measured pairs โดยไม่มี replacement วัด fresh-process headless workflow รวม startup/persistence และไม่ใช่ GUI/engine-only speed claim
+
 ผลเทียบ NativeForensics 0.2.3 กับ Autopsy 4.23.1 Mac-adapted ใน fresh-session import อยู่ใน [รายงานเปรียบเทียบ](AUTOPSY-COMPARISON.md) และ [ข้อมูลทุก attempt](benchmarks/2026-10-06-m2-autopsy-pipeline.json) แยก successful-import timings, JVM crash, timestamp mismatch และ NTFS capability gap; ไม่ใช้เป็นข้ออ้าง GUI/steady-state engine performance หรือ pristine stock parity
 
 | Workload | สิ่งที่เทียบ | Expected output |

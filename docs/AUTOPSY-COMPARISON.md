@@ -1,5 +1,7 @@
 # NativeForensics เทียบกับ Autopsy — 6 October 2026
 
+รายงานนี้เป็น historical diagnostic evidence อ่าน [รอบใหม่ 7 October ที่ซ่อม Autopsy และผ่าน independent timestamp/stream gates แล้ว](AUTOPSY-COMPARISON-2026-10-07.md) สำหรับตัวเลขที่ใช้หลังซ่อม รอบเก่าเก็บไว้ครบและไม่เปลี่ยนผลตาม installation ปัจจุบัน
+
 NativeForensics 0.2.3 ใช้เวลาน้อยกว่า Autopsy 4.23.1 ที่ติดตั้งและปรับสำหรับ macOS ARM64 ในงาน **เริ่ม process ใหม่ → สร้างเคส → นำเข้า filesystem → บันทึกผล** ของ synthetic images สองชุด ผลนี้รวมต้นทุนเริ่ม NetBeans/JVM/Solr ฝั่ง Autopsy และวัด NativeForensics ผ่าน release application core จึงยังใช้สรุปความเร็วทั้งแอป, GUI หรือ engine เพียงอย่างเดียวไม่ได้ ทั้งสองระบบใช้สาย engine The Sleuth Kit 4.15.0 เดียวกัน
 
 ## เวลาของ imports ที่ทำ known payloads ครบ

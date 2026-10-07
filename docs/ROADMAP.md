@@ -155,7 +155,7 @@ Acceptance gate:
 
 ## เงื่อนไขเพิ่มประสิทธิภาพ
 
-มี matched native-helper concurrency experiment และ [conditional Autopsy import comparison](AUTOPSY-COMPARISON.md) แล้ว; ยังไม่มี full GUI/module-parity หรือ production worker-policy claim ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
+มี matched native-helper concurrency experiment และ [repaired Autopsy import comparison](AUTOPSY-COMPARISON-2026-10-07.md) แล้ว; ยังไม่มี full GUI/module-parity หรือ production worker-policy claim ใช้ profiler และ [matched benchmark](BENCHMARKS.md) เพื่อเลือกว่า component ใดควรปรับ เป้าหมายของแต่ละ optimization ต้องระบุเวลา, throughput, peak memory หรือ UI latency ที่จะลด พร้อม unchanged correctness outputs
 
 งานตัวอย่างที่ควรทดลองคือ fewer rereads, bounded streaming buffers, batched DB/index writes, export/hash pipeline และ preview caching Worker defaults ต้องมาจากผลบนหลาย workload/power policies ไม่ใช้ชื่อรุ่น CPU กำหนดจำนวน threads เพียงอย่างเดียว
 
