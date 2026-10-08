@@ -1,5 +1,9 @@
 # Reviewed two-file Codex comparison
 
+The UTF-8 preparation/disclosure workflow below records the original milestone.
+The later [PDF comparison extension](PDF-COMPARISON.md) and the E case-only
+saved-history acceptance at the end retain their separate scopes.
+
 This milestone extends the existing restricted Codex CLI adapter without adding model tools or changing single-file analysis. Select two different regular files from the same evidence and recorded filesystem analysis, then open **Compare with Codex**. Each complete file must be valid UTF-8 and at most 1 MiB. Preparation freshly extracts and independently verifies complete bytes using the existing engine/private scratch service; it does not send a provider request.
 
 Choose ordered, disjoint zero-based half-open **UTF-8 byte ranges** (for example `0:120,150:180`) and optional redaction ranges. Boundaries may not split a Unicode scalar. Redactions are subtracted before disclosure; hidden text is not reintroduced in a saved context. **Apply Ranges / Redactions** builds explicit surviving segments such as `A1`, `A2`, `B1`. Each segment records its original byte range and disclosed SHA-256, so citations do not silently shift after redaction. Empty/omitted coverage remains explicit. Excerpts are limited to 32 KiB per file / 64 KiB combined, at most 32 selected and 32 redacted intervals per file, and 64 surviving segments per file. A separate 192 KiB serialized request cap covers JSON escaping, question, metadata and follow-up context.
@@ -15,3 +19,26 @@ Select **Reviewed Follow-up** after saving/opening a compatible parent. The new 
 Case publication holds the existing case lock, pins no-follow directory/manifest/lock descriptors, writes mode-0600 private staging, flushes it, validates current identities and atomically publishes without replacement. Duplicate UUIDs, symlink replacements, malformed records and missing/wrong parents are refused. Cancellation/close drains the owning task and helper cleanup before the sheet is reused; a late cancellation after atomic publication keeps the committed receipt. The native default save moves blocking lock/write/fsync work to the shared blocking queue with an explicit cancellation token.
 
 Current scope: two UTF-8 filesystem entries from one evidence and recorded snapshot. PDF/decoder references, multi-evidence joins, case-wide retrieval, AI factual verification and live provider benchmark are separate gates. Automated tests use synthetic files and fake provider responses only; a synthetic integration probe may exercise real extraction but does not contact a provider. Local fake-provider validation is not proof of account login or a returned live model answer.
+
+## E case-only saved comparison history
+
+In **0.7.1/build17**, use **Saved Comparisons…** from the app's commands or
+comparison workspace after opening a case with recorded evidence. The local
+history mode does not require a filesystem listing, selected file or freshly
+prepared disclosure. Select an explicit **Open saved comparison** button to
+load its answer, original question, file pair, retention and historical status.
+The mode disables new preparation, Send, Save, follow-up and fresh-citation
+opening; close it and prepare the matching files to review a new request or
+freshly verify cited content. A case with zero recorded evidence is refused.
+This is comparison-record history; single-file **Findings → AI History** still
+requires its normal selected-file binding.
+
+[Executed E GUI acceptance](HISTORY-RELEASE-2026-10-08.md#separate-e-saved-comparisons-gui-acceptance)
+opened one full parent and one digest-only child in a valid no-listing clone and
+preserved recorded case/source bytes and identities through normal Cmd-Q and
+observed process absence. A subsequent E reopen is not claimed. No provider
+request was executed. Truly offline source reachability, fresh citations after restart and
+changed-source refusal remain separate unproved GUI requirements. The bounded
+two-answer positive does not establish120-record paging or full-app memory;
+older D no-action/observer receipts and D headless timings keep their original
+scopes. E signed decoder/index gates also remain separate from this GUI run.
