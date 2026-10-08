@@ -22,12 +22,15 @@ import zipfile
 
 from validate_app_bundle import validate_bundle, validate_metadata
 from source_provenance import SOURCE_EXTENSIONS, check_binary_privacy
+from build_native_engine import SYSTEM_LINK_ARGS
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_NAME = "NativeForensics.app"
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)
 RELINK_NAMES = {"NFTSKEngine.o", "libtsk.a", "libewf.a", "Relink.command", "link-command.json"}
 SAFE_NAME = re.compile(r"[A-Za-z0-9._/-]+\Z")
+NATIVE_HEADERS = {"NativeEngine/EFSNativeContent.hpp", "NativeEngine/EFSKeyPipeline.hpp"}
+NATIVE_CAPTURE_SCOPE = "captured-complete-cpp-and-header-bytes; original inputs checked before and after compilation"
 
 
 def sha(path: Path) -> str:
@@ -86,6 +89,37 @@ def checked_copy(source: Path, destination: Path, expected: str | None = None) -
         raise ValueError("Distribution input changed while copying.")
 
 
+def engine_input_fingerprint(root: Path, receipt: dict, dependency_fingerprint: str,
+                             licenses: dict[str, str]) -> tuple[str, dict[str, str]]:
+    names = {"NativeEngine/NFTSKEngine.cpp", "script/build_native_engine.py", "NativeEngine/dependencies.json"}
+    version = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:[-+]|$)", str(receipt.get("engineVersion", "")))
+    requires_headers = version is not None and tuple(map(int, version.groups())) >= (0, 1, 5)
+    if "nativeHeaderSha256" in receipt:
+        headers = receipt["nativeHeaderSha256"]
+        if not isinstance(headers, dict) or set(headers) != NATIVE_HEADERS:
+            raise ValueError("Native header inventory must contain exactly the two public EFS headers.")
+        names |= NATIVE_HEADERS
+    else:
+        if requires_headers or "compiledInputSha256" in receipt or "buildInputCapture" in receipt:
+            raise ValueError("Current native engine requires captured CPP/header inputs.")
+        headers = None
+    sources = {}
+    for name in sorted(names):
+        no_links(root / name)
+        sources[name] = sha(root / name)
+    payload = {"dependencyFingerprint": dependency_fingerprint, "source": sources["NativeEngine/NFTSKEngine.cpp"],
+               "script": sources["script/build_native_engine.py"], "spec": sources["NativeEngine/dependencies.json"],
+               "notices": sha(root / "THIRD_PARTY_NOTICES.md"), "licenses": licenses}
+    if headers is not None:
+        actual_headers = {name: sources[name] for name in sorted(NATIVE_HEADERS)}
+        compiled = {name: sources[name] for name in sorted(NATIVE_HEADERS | {"NativeEngine/NFTSKEngine.cpp"})}
+        if (headers != actual_headers or receipt.get("compiledInputSha256") != compiled
+                or receipt.get("buildInputCapture") != NATIVE_CAPTURE_SCOPE):
+            raise ValueError("Native CPP/header source differs from the captured compiler inputs.")
+        payload["headers"] = actual_headers
+    return hashlib.sha256(canonical(payload)).hexdigest(), sources
+
+
 def verify_materials(root: Path, app: Path) -> dict:
     """Bind source archives, object files, patches and notices to the app helper."""
     metadata = validate_metadata(app, source_root=root)
@@ -104,7 +138,8 @@ def verify_materials(root: Path, app: Path) -> dict:
         raise ValueError("Engine source specification/cache does not match the bundled engine.")
     bundled = json.loads((app / "Contents/Resources/engine-manifest.json").read_text())
     for key in ("buildFingerprint", "appliedPatches", "patchDigest", "relinkSha256",
-                "licenseSha256", "noticesSha256", "dependencies"):
+                "licenseSha256", "noticesSha256", "dependencies", "nativeHeaderSha256",
+                "compiledInputSha256", "buildInputCapture"):
         if bundled.get(key) != receipt.get(key):
             raise ValueError("Bundled engine provenance differs from the source/relink cache.")
     expected_patches = []
@@ -151,13 +186,7 @@ def verify_materials(root: Path, app: Path) -> dict:
     dependencies = root / ".engine/dependencies-build.json"
     no_links(dependencies)
     build = json.loads(dependencies.read_text())
-    engine_sources = {name: sha(root / name) for name in
-                      ("NativeEngine/NFTSKEngine.cpp", "script/build_native_engine.py", "NativeEngine/dependencies.json")}
-    expected_fingerprint = hashlib.sha256(canonical({
-        "dependencyFingerprint": build["fingerprint"],
-        "source": engine_sources["NativeEngine/NFTSKEngine.cpp"],
-        "script": engine_sources["script/build_native_engine.py"], "spec": engine_sources["NativeEngine/dependencies.json"],
-        "notices": sha(notices), "licenses": receipt["licenseSha256"]})).hexdigest()
+    expected_fingerprint, engine_sources = engine_input_fingerprint(root, receipt, build["fingerprint"], receipt["licenseSha256"])
     if receipt.get("buildFingerprint") != expected_fingerprint:
         raise ValueError("Corresponding engine source/build recipe does not match the receipt.")
     return {"metadata": metadata, "spec": spec, "engineReceipt": receipt,
@@ -244,12 +273,14 @@ def stage_distribution(root: Path, app: Path, stage: Path, support: Path, trust:
     # above, then ship a portable equivalent and retain its digest, never the paths.
     portable = ["xcrun", "--sdk", "macosx", "clang++", "-arch", receipt["architecture"],
                 f'-mmacosx-version-min={spec["minimumMacOS"]}', "NFTSKEngine.o", "libtsk.a", "libewf.a",
-                "-lz", "-lbz2", "-liconv", "-framework", "CoreFoundation", "-o", "NFTSKEngine-relinked"]
+                *SYSTEM_LINK_ARGS, "-o", "NFTSKEngine-relinked"]
     (stage / "Relink/link-command.json").write_text(json.dumps(portable, indent=2) + "\n")
     for name in ("NativeEngine/NFTSKEngine.cpp", "NativeEngine/dependencies.json", "script/build_native_engine.py",
                  "script/native_install_publish.c", "script/package_app.py", "script/validate_app_bundle.py",
                  "script/source_provenance.py", "script/build_and_run.sh", "Package.swift"):
         checked_copy(root / name, stage / "Source" / name, source_inputs.get(name))
+    for name in sorted(NATIVE_HEADERS & materials["engineSourceSha256"].keys()):
+        checked_copy(root / name, stage / "Source" / name, materials["engineSourceSha256"][name])
     for directory in (root / "Sources",):
         for source in sorted(directory.rglob("*")):
             if not source.is_file() or source.suffix not in SOURCE_EXTENSIONS:
@@ -304,11 +335,8 @@ def validate_distribution(stage: Path) -> dict:
     validate_metadata(stage / APP_NAME, source_root=stage / "Source")
     engine_receipt = json.loads((stage / APP_NAME / "Contents/Resources/engine-manifest.json").read_text())
     copied_license_hashes = {name: sha(stage / "Source" / name) for name in engine_receipt["licenseSha256"]}
-    computed_engine = hashlib.sha256(canonical({"dependencyFingerprint": manifest["engineDependencyFingerprint"],
-        "source": sha(stage / "Source/NativeEngine/NFTSKEngine.cpp"),
-        "script": sha(stage / "Source/script/build_native_engine.py"),
-        "spec": sha(stage / "Source/NativeEngine/dependencies.json"),
-        "notices": sha(stage / "Source/THIRD_PARTY_NOTICES.md"), "licenses": copied_license_hashes})).hexdigest()
+    computed_engine, _ = engine_input_fingerprint(stage / "Source", engine_receipt,
+                                                manifest["engineDependencyFingerprint"], copied_license_hashes)
     if computed_engine != engine_receipt["buildFingerprint"]:
         raise ValueError("Copied engine corresponding source differs from its build fingerprint.")
     if sha(stage / "Source/script/native_install_publish.c") != manifest["installSupportSourceSha256"]:

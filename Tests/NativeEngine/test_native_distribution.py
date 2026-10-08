@@ -5,6 +5,7 @@ import json
 import os
 import plistlib
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
@@ -16,6 +17,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "script"))
 import package_native_distribution as distribution
 import source_provenance
+import build_native_engine as native_builder
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -317,6 +319,221 @@ class DistributionTests(unittest.TestCase):
             (self.app / "Contents/Resources" / filename).write_text(json.dumps(changed))
         with self.assertRaisesRegex(ValueError, "optimized release configuration"):
             distribution.verify_materials(self.root, self.app)
+
+
+class NativeEngineSourceCaptureTests(unittest.TestCase):
+    """Exercise corresponding-source checks without building or running an app."""
+    HEADERS = {"NativeEngine/EFSKeyPipeline.hpp", "NativeEngine/EFSNativeContent.hpp"}
+    CPP = "NativeEngine/NFTSKEngine.cpp"
+
+    def setUp(self):
+        self.fixture = DistributionTests("test_complete_source_static_relink_inventory_and_no_local_data")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.root, self.app = self.fixture.root, self.fixture.app
+        self.dependency_fingerprint = "synthetic-dependencies"
+
+    def write_receipts(self):
+        self.fixture.create(".engine/manifest.json", json.dumps(self.fixture.receipt).encode())
+        bundled = {**self.fixture.receipt, "licenses": "Contents/Resources/EngineLicenses/",
+                   "distributionArtifactsBundled": False}
+        self.fixture.create_app("Contents/Resources/engine-manifest.json", json.dumps(bundled).encode())
+
+    def change_version(self, version):
+        self.fixture.spec["engineVersion"] = version
+        self.fixture.receipt["engineVersion"] = version
+        self.fixture.create("NativeEngine/dependencies.json", json.dumps(self.fixture.spec).encode())
+
+    def install_captured_inputs(self):
+        self.change_version("0.1.5")
+        for name in sorted(self.HEADERS):
+            self.fixture.create(name, ("// Synthetic compiler input: " + name).encode())
+        captured = native_builder.capture_helper_inputs(self.root, self.dependency_fingerprint)
+        portable = native_builder.portable_relink_command("arm64", "14.0").encode()
+        self.fixture.create(".engine/relink/Relink.command", portable, 0o755)
+        self.fixture.receipt["relinkSha256"]["Relink.command"] = self.fixture.digest(portable)
+        self.fixture.receipt.update({
+            "nativeHeaderSha256": captured["fingerprintPayload"]["headers"],
+            "compiledInputSha256": captured["compiledInputSha256"],
+            "buildInputCapture": native_builder.NATIVE_CAPTURE_SCOPE,
+            "buildFingerprint": self.fixture.digest(native_builder.canonical(captured["fingerprintPayload"]))})
+        self.write_receipts()
+        return captured
+
+    def fingerprint(self, receipt=None):
+        return distribution.engine_input_fingerprint(self.root, receipt or self.fixture.receipt,
+            self.dependency_fingerprint, self.fixture.receipt["licenseSha256"])
+
+    def test_legacy_013_fingerprint_remains_byte_compatible_without_headers(self):
+        self.change_version("0.1.3")
+        original_payload = {"dependencyFingerprint": self.dependency_fingerprint,
+            "source": distribution.sha(self.root / self.CPP),
+            "script": distribution.sha(self.root / "script/build_native_engine.py"),
+            "spec": distribution.sha(self.root / "NativeEngine/dependencies.json"),
+            "notices": distribution.sha(self.root / "THIRD_PARTY_NOTICES.md"),
+            "licenses": self.fixture.receipt["licenseSha256"]}
+        original_bytes = json.dumps(original_payload, sort_keys=True, separators=(",", ":")).encode()
+        expected = hashlib.sha256(original_bytes).hexdigest()
+        self.fixture.receipt["buildFingerprint"] = expected
+        self.write_receipts()
+        actual, sources = self.fingerprint()
+        self.assertEqual(actual, expected)
+        self.assertFalse(self.HEADERS & sources.keys())
+        self.assertFalse(any((self.root / name).exists() for name in self.HEADERS))
+        materials = distribution.verify_materials(self.root, self.app)
+        self.assertEqual(materials["engineReceipt"]["buildFingerprint"], expected)
+        stage, manifest = self.fixture.stage()
+        self.assertEqual(distribution.validate_distribution(stage), manifest)
+        self.assertFalse(any("Source/" + name in manifest["files"] for name in self.HEADERS))
+
+    def test_015_payload_matches_actual_builder_capture_and_copies_both_headers(self):
+        captured = self.install_captured_inputs()
+        actual, sources = self.fingerprint()
+        self.assertEqual(actual, self.fixture.digest(native_builder.canonical(captured["fingerprintPayload"])))
+        self.assertEqual(set(sources), self.HEADERS | {self.CPP, "script/build_native_engine.py", "NativeEngine/dependencies.json"})
+        materials = distribution.verify_materials(self.root, self.app)
+        for name in self.HEADERS:
+            self.assertEqual(materials["engineSourceSha256"][name], captured["compiledInputSha256"][name])
+        stage, manifest = self.fixture.stage()
+        self.assertEqual(distribution.validate_distribution(stage), manifest)
+        for name in self.HEADERS:
+            copied = stage / "Source" / name
+            self.assertEqual(copied.read_bytes(), (self.root / name).read_bytes())
+            self.assertEqual(manifest["files"]["Source/" + name]["sha256"], captured["compiledInputSha256"][name])
+
+    def test_changed_cpp_or_either_header_is_rejected_by_capture_check(self):
+        self.install_captured_inputs()
+        for name in sorted(self.HEADERS | {self.CPP}):
+            with self.subTest(name=name):
+                path = self.root / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n// changed after compilation")
+                try:
+                    with self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+                        distribution.verify_materials(self.root, self.app)
+                finally:
+                    path.write_bytes(original)
+
+    def test_packaged_and_retained_relink_match_actual_helper_frameworks(self):
+        self.install_captured_inputs()
+        stage, _ = self.fixture.stage()
+        packaged = json.loads((stage / "Relink/link-command.json").read_text())
+        retained = shlex.split(next(line for line in (stage / "Relink/Relink.command").read_text().splitlines()
+                                   if line.startswith("/usr/bin/xcrun ")))
+        actual = native_builder.helper_link_args("clang++", "arm64", "/synthetic-sdk", "14.0",
+            Path("NFTSKEngine.o"), [Path("libtsk.a"), Path("libewf.a")], Path("NFTSKEngine"))
+        expected = ["-lz", "-lbz2", "-liconv", "-framework", "CoreFoundation", "-framework", "Security"]
+        for name, command in (("packaged JSON", packaged), ("retained command", retained), ("actual helper", actual)):
+            with self.subTest(command=name):
+                libraries_end = next(index for index, token in enumerate(command) if token.endswith("libewf.a")) + 1
+                self.assertEqual(command[libraries_end:command.index("-o")], expected)
+
+    def test_missing_or_symlink_cpp_or_header_is_rejected(self):
+        self.install_captured_inputs()
+        for name in sorted(self.HEADERS | {self.CPP}):
+            path = self.root / name
+            original = path.read_bytes()
+            for kind in ("missing", "linked"):
+                with self.subTest(name=name, kind=kind):
+                    path.unlink()
+                    if kind == "linked":
+                        path.symlink_to(self.root / "THIRD_PARTY_NOTICES.md")
+                    try:
+                        with self.assertRaises(ValueError):
+                            self.fingerprint()
+                    finally:
+                        if path.is_symlink():
+                            path.unlink()
+                        path.write_bytes(original)
+
+    def test_missing_extra_or_nonmapping_header_inventory_is_rejected(self):
+        self.install_captured_inputs()
+        original = self.fixture.receipt["nativeHeaderSha256"]
+        one = next(iter(self.HEADERS))
+        variants = ({name: value for name, value in original.items() if name != one},
+                    {**original, "NativeEngine/Uncaptured.hpp": self.fixture.digest(b"extra")},
+                    None, [], "invalid", {})
+        for headers in variants:
+            with self.subTest(headers=headers), self.assertRaisesRegex(ValueError, "exactly the two public EFS headers"):
+                self.fingerprint({**self.fixture.receipt, "nativeHeaderSha256": headers})
+
+    def test_missing_extra_or_altered_compiled_input_hash_is_rejected(self):
+        self.install_captured_inputs()
+        original = self.fixture.receipt["compiledInputSha256"]
+        for name in sorted(original):
+            for variant in ({key: value for key, value in original.items() if key != name},
+                            {**original, name: self.fixture.digest(b"altered capture")}):
+                with self.subTest(name=name, inventory=variant), self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+                    self.fingerprint({**self.fixture.receipt, "compiledInputSha256": variant})
+        for variant in ({**original, "NativeEngine/Uncaptured.hpp": self.fixture.digest(b"extra")}, None, []):
+            with self.subTest(inventory=variant), self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+                self.fingerprint({**self.fixture.receipt, "compiledInputSha256": variant})
+        missing = {key: value for key, value in self.fixture.receipt.items() if key != "compiledInputSha256"}
+        with self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+            self.fingerprint(missing)
+
+    def test_missing_or_altered_capture_scope_is_rejected(self):
+        self.install_captured_inputs()
+        for scope in (None, "", "CPP only", native_builder.NATIVE_CAPTURE_SCOPE + " altered"):
+            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+                self.fingerprint({**self.fixture.receipt, "buildInputCapture": scope})
+        missing = {key: value for key, value in self.fixture.receipt.items() if key != "buildInputCapture"}
+        with self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+            self.fingerprint(missing)
+
+    def test_current_and_future_versions_cannot_fall_back_to_cpp_only(self):
+        for version in ("0.1.5", "0.1.5-development", "0.1.5+build", "0.2.0", "1.0.0"):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "requires captured CPP/header inputs"):
+                self.fingerprint({**self.fixture.receipt, "engineVersion": version})
+        for key, value in (("compiledInputSha256", {}), ("buildInputCapture", native_builder.NATIVE_CAPTURE_SCOPE)):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "requires captured CPP/header inputs"):
+                self.fingerprint({**self.fixture.receipt, "engineVersion": "0.1.3", key: value})
+
+    def test_bundled_capture_disagreement_is_rejected_before_source_staging(self):
+        self.install_captured_inputs()
+        path = self.app / "Contents/Resources/engine-manifest.json"
+        original = json.loads(path.read_text())
+        for key in ("nativeHeaderSha256", "compiledInputSha256", "buildInputCapture"):
+            for kind in ("missing", "altered"):
+                changed = {**original}
+                if kind == "missing":
+                    changed.pop(key)
+                else:
+                    changed[key] = "altered"
+                path.write_text(json.dumps(changed))
+                try:
+                    with self.subTest(key=key, kind=kind), self.assertRaisesRegex(ValueError, "Bundled engine provenance differs"):
+                        distribution.verify_materials(self.root, self.app)
+                finally:
+                    path.write_text(json.dumps(original))
+
+    def test_copied_source_drift_is_rejected_even_with_reinventoried_package(self):
+        self.install_captured_inputs()
+        stage, manifest = self.fixture.stage()
+        name = next(iter(sorted(self.HEADERS)))
+        (stage / "Source" / name).write_bytes(b"altered corresponding source")
+        # Updating outer inventory cannot turn source that differs from the
+        # captured compiler inputs into an acceptable corresponding-source ZIP.
+        manifest["files"] = {key: facts for key, facts in distribution.inventory(stage).items()
+                             if key not in {"SHA256SUMS", "distribution-manifest.json"}}
+        (stage / "distribution-manifest.json").write_text(json.dumps(manifest))
+        (stage / "SHA256SUMS").write_text("".join(f'{facts["sha256"]}  {key}\n'
+            for key, facts in distribution.inventory(stage).items() if key != "SHA256SUMS"))
+        with self.assertRaisesRegex(ValueError, "captured compiler inputs"):
+            distribution.validate_distribution(stage)
+
+    def test_header_edit_after_preflight_cannot_be_copied(self):
+        self.install_captured_inputs()
+        materials = distribution.verify_materials(self.root, self.app)
+        materials["installSupportSourceSha256"] = distribution.sha(self.root / "script/native_install_publish.c")
+        stage = self.root / "stage"
+        stage.mkdir()
+        name = next(iter(sorted(self.HEADERS)))
+        (self.root / name).write_bytes(b"changed after preflight")
+        with self.assertRaisesRegex(ValueError, "differs from its pinned receipt"):
+            distribution.stage_distribution(self.root, self.app, stage, self.fixture.support,
+                {"mode": "development", "notarization": "not-verified"}, materials)
+        self.assertFalse((stage / "Source" / name).exists())
 
 
 @unittest.skipUnless(sys.platform == "darwin", "The installer publisher uses macOS exclusive rename.")
