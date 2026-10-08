@@ -22,7 +22,11 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".engine"
 SPEC_PATH = ROOT / "NativeEngine/dependencies.json"
-SCRIPT_VERSION = 2
+SCRIPT_VERSION = 3
+NATIVE_SOURCE = "NativeEngine/NFTSKEngine.cpp"
+NATIVE_HEADERS = {"NativeEngine/EFSNativeContent.hpp", "NativeEngine/EFSKeyPipeline.hpp"}
+NATIVE_CAPTURE_SCOPE = "captured-complete-cpp-and-header-bytes; original inputs checked before and after compilation"
+SYSTEM_LINK_ARGS = ("-lz", "-lbz2", "-liconv", "-framework", "CoreFoundation", "-framework", "Security")
 LIBEWF_SUBDIRS = "include common libcerror libcthreads libcdata libcdatetime libclocale libcnotify libcsplit libuna libcfile libcpath libbfio libfcache libfdata libfdatetime libfguid libfvalue libhmac libcaes libewf libodraw libsmdev libsmraw ewftools"
 
 def sha(path: Path) -> str:
@@ -34,6 +38,98 @@ def sha(path: Path) -> str:
 
 def canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+def source_bytes(root: Path, name: str) -> bytes:
+    path = root / name
+    if (path.is_symlink() or not path.is_file()
+            or any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(root))):
+        raise RuntimeError("A native build input is missing or linked")
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != sha(path):
+        raise RuntimeError("A native build input changed during capture")
+    return data
+
+def capture_helper_inputs(root: Path, dependency_fingerprint: str) -> dict:
+    """Capture only the public CPP/two-header graph and existing build inputs."""
+    sources = {name: source_bytes(root, name) for name in sorted(NATIVE_HEADERS | {NATIVE_SOURCE})}
+    compiled = {name: hashlib.sha256(data).hexdigest() for name, data in sources.items()}
+    licenses = {}
+    for path in sorted((root / "NativeEngine/licenses").rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("A dependency license build input is linked")
+        if path.is_file():
+            name = path.relative_to(root).as_posix()
+            licenses[name] = hashlib.sha256(source_bytes(root, name)).hexdigest()
+    payload = {"dependencyFingerprint": dependency_fingerprint, "source": compiled[NATIVE_SOURCE],
+               "headers": {name: compiled[name] for name in sorted(NATIVE_HEADERS)},
+               "script": hashlib.sha256(source_bytes(root, "script/build_native_engine.py")).hexdigest(),
+               "spec": hashlib.sha256(source_bytes(root, "NativeEngine/dependencies.json")).hexdigest(),
+               "notices": hashlib.sha256(source_bytes(root, "THIRD_PARTY_NOTICES.md")).hexdigest(),
+               "licenses": licenses}
+    return {"sources": sources, "compiledInputSha256": compiled, "fingerprintPayload": payload}
+
+def verify_helper_inputs(root: Path, captured: dict) -> None:
+    current = capture_helper_inputs(root, captured["fingerprintPayload"]["dependencyFingerprint"])
+    if (current["compiledInputSha256"] != captured["compiledInputSha256"]
+            or current["fingerprintPayload"] != captured["fingerprintPayload"]):
+        raise RuntimeError("Native build inputs changed after capture; no helper was published")
+
+def write_captured_sources(stage: Path, captured: dict) -> Path:
+    for name, data in captured["sources"].items():
+        path = stage / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        path.chmod(0o400)
+    return stage / NATIVE_SOURCE
+
+def verify_captured_sources(stage: Path, captured: dict) -> None:
+    if {name: hashlib.sha256(source_bytes(stage, name)).hexdigest() for name in captured["sources"]} != captured["compiledInputSha256"]:
+        raise RuntimeError("Captured native compiler inputs changed; no helper was published")
+
+def helper_link_args(cxx: str, architecture: str, sdk: str, minimum: str,
+                     obj: Path, libraries: list[Path], binary: Path) -> list[str]:
+    return [cxx, "-arch", architecture, "-isysroot", sdk, f"-mmacosx-version-min={minimum}",
+            str(obj), *map(str, libraries), *SYSTEM_LINK_ARGS, "-o", str(binary)]
+
+def portable_relink_command(architecture: str, minimum: str) -> str:
+    return ("#!/bin/sh\nset -eu\ntask_dir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+            f"/usr/bin/xcrun --sdk macosx clang++ -arch {architecture} -mmacosx-version-min={minimum} "
+            '\"$task_dir/NFTSKEngine.o\" \"$task_dir/libtsk.a\" \"$task_dir/libewf.a\" ' +
+            " ".join(SYSTEM_LINK_ARGS) + ' -o \"$task_dir/NFTSKEngine-relinked\"\n' +
+            '/usr/bin/codesign --force --sign - \"$task_dir/NFTSKEngine-relinked\"\n')
+
+def publish_helper_stage(stage: Path, cache: Path, rename=None) -> None:
+    """Publish fully verified generated products; restore prior products on failure."""
+    rename = rename or (lambda source, target: source.rename(target))
+    products = [(stage / "NFTSKEngine", cache / "bin/NFTSKEngine"),
+                (stage / "relink", cache / "relink"), (stage / "licenses", cache / "licenses"),
+                (stage / "manifest.json", cache / "manifest.json")]
+    if cache.is_symlink() or any(source.is_symlink() or not source.exists() or target.is_symlink()
+            or any(parent.is_symlink() for parent in target.parents if parent.is_relative_to(cache)) for source, target in products):
+        raise RuntimeError("Native publication refuses missing or linked products")
+    backup = Path(tempfile.mkdtemp(prefix=".native-helper-previous-", dir=cache))
+    moved, published = [], []
+    try:
+        for index, (_, target) in enumerate(products):
+            if target.exists():
+                retained = backup / str(index)
+                rename(target, retained)
+                moved.append((retained, target))
+        for source, target in products:
+            rename(source, target)
+            published.append(target)
+    except BaseException:
+        for target in reversed(published):
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        for retained, target in reversed(moved):
+            retained.rename(target)
+        shutil.rmtree(backup)
+        raise
+    else:
+        shutil.rmtree(backup)
 
 def atomic_json(path: Path, value: object) -> None:
     temporary = path.with_name(path.name + ".tmp")
@@ -268,7 +364,10 @@ def main() -> int:
         raise RuntimeError("This bootstrap requires a native macOS arm64 or x86_64 Xcode toolchain")
     for name in ("downloads", "deps", "logs", "bin", "relink"):
         (CACHE / name).mkdir(parents=True, exist_ok=True)
-    spec = json.loads(SPEC_PATH.read_text())
+    spec_bytes = source_bytes(ROOT, "NativeEngine/dependencies.json")
+    spec_digest = hashlib.sha256(spec_bytes).hexdigest()
+    builder_digest = sha(Path(__file__))
+    spec = json.loads(spec_bytes)
     env = os.environ.copy()
     for key in list(env):
         if key.startswith(("DYLD_", "PKG_CONFIG_")) or key in ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH", "LIBRARY_PATH", "CPPFLAGS", "LDFLAGS", "CFLAGS", "CXXFLAGS", "SDKROOT", "LIBS", "CC", "CXX"):
@@ -291,44 +390,67 @@ def main() -> int:
         patches = next(item for item in spec["dependencies"] if item["name"] == "sleuthkit")["patches"]
         applied_patches = [{"path": patch["path"], "sha256": patch["sha256"]} for patch in patches]
         patch_digest = hashlib.sha256(canonical(applied_patches)).hexdigest()
-        license_inventory = {str(path.relative_to(ROOT)): sha(path) for path in sorted((ROOT / "NativeEngine/licenses").rglob("*")) if path.is_file()}
-        fingerprint = hashlib.sha256(canonical({"dependencyFingerprint": receipt["fingerprint"], "source": sha(source), "script": sha(Path(__file__)), "spec": sha(SPEC_PATH), "notices": sha(ROOT / "THIRD_PARTY_NOTICES.md"), "licenses": license_inventory})).hexdigest()
+        captured = capture_helper_inputs(ROOT, receipt["fingerprint"])
+        inputs = captured["fingerprintPayload"]
+        if inputs["spec"] != spec_digest or inputs["script"] != builder_digest:
+            raise RuntimeError("Native specification/builder changed after parsing; no helper was compiled")
+        license_inventory = inputs["licenses"]
+        fingerprint = hashlib.sha256(canonical(inputs)).hexdigest()
         binary = CACHE / "bin/NFTSKEngine"
         manifest_path = CACHE / "manifest.json"
         manifest = read_json(manifest_path)
-        if not args.force and manifest and manifest.get("buildFingerprint") == fingerprint and binary.exists() and manifest.get("engineSha256") == sha(binary) and valid_sidecars(manifest):
+        if (not args.force and manifest and manifest.get("buildFingerprint") == fingerprint and binary.exists()
+                and manifest.get("engineSha256") == sha(binary) and valid_sidecars(manifest)
+                and manifest.get("nativeHeaderSha256") == inputs["headers"]
+                and manifest.get("compiledInputSha256") == captured["compiledInputSha256"]
+                and manifest.get("buildInputCapture") == NATIVE_CAPTURE_SCOPE
+                and manifest.get("licenseSha256") == inputs["licenses"] and manifest.get("noticesSha256") == inputs["notices"]
+                and manifest.get("engineVersion") == spec["engineVersion"] and manifest.get("protocolVersion") == spec["protocolVersion"]):
             dependency_closure(binary, env)
+            verify_helper_inputs(ROOT, captured)
             print(f"Native engine: verified cached helper {binary}")
             return 0
-        obj = CACHE / "relink/NFTSKEngine.o"
-        compile_args = [cxx, "-std=c++17", "-O2", "-arch", platform.machine(), "-isysroot", sdk, f'-mmacosx-version-min={spec["minimumMacOS"]}', "-I", str(CACHE / "prefix/include"), "-I", str(CACHE / "deps/json/include"), f'-DNF_PATCH_DIGEST="{patch_digest}"', f'-DNF_ENGINE_VERSION="{spec["engineVersion"]}"', "-c", str(source), "-o", str(obj)]
-        run(compile_args, ROOT, env, CACHE / "logs/helper-compile.log")
-        libraries = [CACHE / "prefix/lib/libtsk.a", CACHE / "prefix/lib/libewf.a"]
-        link_args = [cxx, "-arch", platform.machine(), "-isysroot", sdk, f'-mmacosx-version-min={spec["minimumMacOS"]}', str(obj), *map(str, libraries), "-lz", "-lbz2", "-liconv", "-framework", "CoreFoundation", "-o", str(binary)]
-        run(link_args, ROOT, env, CACHE / "logs/helper-link.log")
-        subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(binary)], env=env, check=True, capture_output=True)
-        closure = dependency_closure(binary, env)
-        architecture = capture(["/usr/bin/lipo", "-archs", str(binary)], env)
-        if architecture != platform.machine():
-            raise RuntimeError("Helper architecture does not match the native build host")
-        for library in libraries:
-            shutil.copyfile(library, CACHE / "relink" / library.name)
-        (CACHE / "relink/link-command.json").write_text(json.dumps(link_args, indent=2) + "\n")
-        recipe = CACHE / "relink/Relink.command"
-        recipe.write_text("#!/bin/sh\nset -eu\ntask_dir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n" +
-            f'/usr/bin/xcrun --sdk macosx clang++ -arch {architecture} -mmacosx-version-min={spec["minimumMacOS"]} ' +
-            '\"$task_dir/NFTSKEngine.o\" \"$task_dir/libtsk.a\" \"$task_dir/libewf.a\" ' +
-            '-lz -lbz2 -liconv -framework CoreFoundation -o \"$task_dir/NFTSKEngine-relinked\"\n' +
-            '/usr/bin/codesign --force --sign - \"$task_dir/NFTSKEngine-relinked\"\n')
-        recipe.chmod(0o755)
-        notices = CACHE / "licenses"
-        if notices.exists():
-            shutil.rmtree(notices)
-        shutil.copytree(ROOT / "NativeEngine/licenses", notices)
-        shutil.copyfile(ROOT / "THIRD_PARTY_NOTICES.md", notices / "THIRD_PARTY_NOTICES.md")
-        manifest = {"schemaVersion": 1, "protocolVersion": spec["protocolVersion"], "engineVersion": spec["engineVersion"], "patchDigest": patch_digest, "exfatPatchDigest": patches[0]["sha256"], "appliedPatches": applied_patches, "buildFingerprint": fingerprint, "engineSha256": sha(binary), "architecture": architecture, "toolchain": identity, "dependencies": spec["dependencies"], "dynamicDependencyClosure": closure, "compiledImageCapabilities": ["RAW", "EWF"], "capabilityNote": "Filesystem coverage is validated by integration tests; build features alone do not certify all filesystems", "linking": "static libtsk + libewf, header-only nlohmann/json; system-only dynamic libraries", "configureTransform": "Remove four generated TSK configure Homebrew/usr/local -I/-L injections; transformation is in build_native_engine.py", "relinkArtifacts": "relink/ (helper object, static archives, link-command.json and portable Relink.command); source archives in downloads/", "licenses": "licenses/", "licenseSha256": license_inventory, "noticesSha256": sha(ROOT / "THIRD_PARTY_NOTICES.md"), "buildOnlyTools": "libewf ewftools in prefix/bin are test utilities and are not bundled in the app"}
-        manifest["relinkSha256"] = {name: sha(CACHE / "relink" / name) for name in ("NFTSKEngine.o", "libtsk.a", "libewf.a", "Relink.command", "link-command.json")}
-        atomic_json(manifest_path, manifest)
+        with tempfile.TemporaryDirectory(prefix=".native-helper-stage-", dir=CACHE) as directory:
+            stage = Path(directory)
+            source_stage = stage / "sources"
+            source = write_captured_sources(source_stage, captured)
+            relink = stage / "relink"
+            relink.mkdir()
+            obj, staged_binary = relink / "NFTSKEngine.o", stage / "NFTSKEngine"
+            verify_helper_inputs(ROOT, captured)
+            verify_captured_sources(source_stage, captured)
+            compile_args = [cxx, "-std=c++17", "-O2", "-arch", platform.machine(), "-isysroot", sdk, f'-mmacosx-version-min={spec["minimumMacOS"]}', "-I", str(CACHE / "prefix/include"), "-I", str(CACHE / "deps/json/include"), f'-DNF_PATCH_DIGEST="{patch_digest}"', f'-DNF_ENGINE_VERSION="{spec["engineVersion"]}"', "-c", str(source), "-o", str(obj)]
+            run(compile_args, ROOT, env, CACHE / "logs/helper-compile.log")
+            libraries = [CACHE / "prefix/lib/libtsk.a", CACHE / "prefix/lib/libewf.a"]
+            link_args = helper_link_args(cxx, platform.machine(), sdk, spec["minimumMacOS"], obj, libraries, staged_binary)
+            run(link_args, ROOT, env, CACHE / "logs/helper-link.log")
+            subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(staged_binary)], env=env, check=True, capture_output=True)
+            closure = dependency_closure(staged_binary, env)
+            architecture = capture(["/usr/bin/lipo", "-archs", str(staged_binary)], env)
+            if architecture != platform.machine():
+                raise RuntimeError("Helper architecture does not match the native build host")
+            for library in libraries:
+                shutil.copyfile(library, relink / library.name)
+            (relink / "link-command.json").write_text(json.dumps(link_args, indent=2) + "\n")
+            recipe = relink / "Relink.command"
+            recipe.write_text(portable_relink_command(architecture, spec["minimumMacOS"]))
+            recipe.chmod(0o755)
+            notices = stage / "licenses"
+            for name, digest in license_inventory.items():
+                destination = notices / Path(*PurePosixPath(name).parts[2:])
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, destination)
+                if sha(destination) != digest:
+                    raise RuntimeError("A copied dependency license differs from its captured build input")
+            shutil.copyfile(ROOT / "THIRD_PARTY_NOTICES.md", notices / "THIRD_PARTY_NOTICES.md")
+            if sha(notices / "THIRD_PARTY_NOTICES.md") != inputs["notices"]:
+                raise RuntimeError("Copied notices differ from their captured build input")
+            manifest = {"schemaVersion": 1, "protocolVersion": spec["protocolVersion"], "engineVersion": spec["engineVersion"], "patchDigest": patch_digest, "exfatPatchDigest": patches[0]["sha256"], "appliedPatches": applied_patches, "buildFingerprint": fingerprint, "engineSha256": sha(staged_binary), "architecture": architecture, "toolchain": identity, "dependencies": spec["dependencies"], "dynamicDependencyClosure": closure, "compiledImageCapabilities": ["RAW", "EWF"], "capabilityNote": "Filesystem coverage is validated by integration tests; build features alone do not certify all filesystems", "linking": "static libtsk + libewf, header-only nlohmann/json; system-only dynamic libraries and Security.framework", "configureTransform": "Remove four generated TSK configure Homebrew/usr/local -I/-L injections; transformation is in build_native_engine.py", "relinkArtifacts": "relink/ (helper object, static archives, link-command.json and portable Relink.command); source archives in downloads/", "licenses": "licenses/", "licenseSha256": license_inventory, "noticesSha256": inputs["notices"], "buildOnlyTools": "libewf ewftools in prefix/bin are test utilities and are not bundled in the app", "nativeHeaderSha256": inputs["headers"], "compiledInputSha256": captured["compiledInputSha256"], "buildInputCapture": NATIVE_CAPTURE_SCOPE}
+            manifest["relinkSha256"] = {name: sha(relink / name) for name in ("NFTSKEngine.o", "libtsk.a", "libewf.a", "Relink.command", "link-command.json")}
+            atomic_json(stage / "manifest.json", manifest)
+            verify_helper_inputs(ROOT, captured)
+            verify_captured_sources(source_stage, captured)
+            publish_helper_stage(stage, CACHE)
         print(f"Native engine: built {binary}")
     return 0
 

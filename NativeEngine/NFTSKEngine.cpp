@@ -4,6 +4,7 @@
 #include <libewf.h>
 #include <nlohmann/json.hpp>
 #include <CommonCrypto/CommonDigest.h>
+#include "EFSNativeContent.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -34,6 +35,7 @@
 #endif
 
 namespace {
+namespace EFS = nativeforensics::efs;
 using Json = nlohmann::json;
 constexpr size_t kFrameLimit = 1024 * 1024;
 constexpr size_t kResultLimit = 64 * 1024 * 1024;
@@ -79,12 +81,18 @@ class Input {
         if (newline == std::string::npos) return false;
         if (newline > kFrameLimit) throw Failure("FRAME_TOO_LARGE", "Input frame exceeds 1 MiB");
         line = pending.substr(0, newline);
-        pending.erase(0, newline + 1);
+        std::string remainder(pending.data() + newline + 1, pending.size() - newline - 1);
+        // The initial read may already contain binary EFS key bytes after its
+        // NDJSON header. Erase/memmove alone would leave duplicate secret bytes
+        // in the old string allocation's tail.
+        EFS::wipe(pending.data(), pending.size());
+        pending.swap(remainder);
         if (!line.empty() && line.back() == '\r') line.pop_back();
         return true;
     }
     void readChunk() {
         std::array<char, 4096> buffer{};
+        EFS::ScopedWipe wipePrefetchedBytes(buffer.data(), buffer.size());
         auto count = ::read(STDIN_FILENO, buffer.data(), buffer.size());
         if (count > 0) {
             pending.append(buffer.data(), size_t(count));
@@ -95,6 +103,29 @@ class Input {
             throw Failure("INPUT_READ_FAILED", systemError());
     }
 public:
+    ~Input() { EFS::wipe(pending.data(), pending.size()); }
+    EFS::SecretBytes secretBytes(size_t total) {
+        EFS::SecretBytes result(std::vector<uint8_t>(total, 0));
+        size_t received = 0;
+        while (received < total) {
+            if (gSignalCancelled || cancelled) throw Cancelled{};
+            if (!pending.empty()) {
+                const size_t amount = std::min(total - received, pending.size());
+                std::memcpy(result.data() + received, pending.data(), amount);
+                std::string remainder(pending.data() + amount, pending.size() - amount);
+                EFS::wipe(pending.data(), pending.size());
+                pending.swap(remainder);
+                received += amount;
+                continue;
+            }
+            const ssize_t amount = ::read(STDIN_FILENO, result.data() + received, total - received);
+            if (amount < 0 && errno == EINTR) continue;
+            if (amount <= 0) throw Failure("TRUNCATED_CREDENTIAL", "EFS credential transport must contain exactly the declared binary bytes");
+            received += size_t(amount);
+        }
+        if (gSignalCancelled || cancelled) throw Cancelled{};
+        return result;
+    }
     std::string firstLine() {
         std::string line;
         while (!takeLine(line)) {
@@ -224,6 +255,9 @@ struct Request {
     std::vector<Snapshot> sources;
     Json file;
     std::string outputPath;
+    size_t efsPrivateKeyBytes = 0, efsCertificateBytes = 0;
+    EFS::SecretBytes efsPrivateDER;
+    std::vector<uint8_t> efsCertificateDER;
 };
 uint32_t big32(const uint8_t *bytes) {
     return (uint32_t(bytes[0]) << 24) | (uint32_t(bytes[1]) << 16) | (uint32_t(bytes[2]) << 8) | bytes[3];
@@ -260,7 +294,7 @@ Request validate(const Json &json) {
     request.jobID = requiredString(json, "jobID");
     if (request.jobID.size() > 1024) throw Failure("INVALID_REQUEST", "jobID exceeds 1024 bytes");
     request.operation = requiredString(json, "operation");
-    if (request.operation != "inspect" && request.operation != "enumerate" && request.operation != "extract")
+    if (request.operation != "inspect" && request.operation != "enumerate" && request.operation != "extract" && request.operation != "extract-efs")
         throw Failure("INVALID_REQUEST", "Unknown operation");
     request.imageType = requiredString(json, "imageType");
     if (request.imageType != "auto" && request.imageType != "raw" && request.imageType != "ewf")
@@ -311,7 +345,7 @@ Request validate(const Json &json) {
             throw Failure("DUPLICATE_SEGMENT", "imagePaths contains the same source more than once");
         request.sources.push_back(snapshot);
     }
-    if (request.operation == "extract") {
+    if (request.operation == "extract" || request.operation == "extract-efs") {
         if (!json.contains("file") || !json["file"].is_object())
             throw Failure("INVALID_REQUEST", "extract requires a file reference");
         request.file = json["file"];
@@ -330,6 +364,17 @@ Request validate(const Json &json) {
         }
         request.outputPath = requiredString(json, "outputPath");
         if (request.outputPath.front() != '/') throw Failure("INVALID_PATH", "outputPath must be absolute");
+    }
+    if (request.operation == "extract-efs") {
+        if (!json.contains("credentialTransport") || !json["credentialTransport"].is_object())
+            throw Failure("INVALID_CREDENTIAL_TRANSPORT", "EFS extraction requires a bounded binary credential descriptor");
+        const Json &transport = json["credentialTransport"];
+        if (transport.size() != 3 || requiredString(transport, "profile") != "rsa-pkcs1-der-certificate")
+            throw Failure("UNSUPPORTED_CREDENTIAL_PROFILE", "Select an RSA PKCS#1 private key DER and matching certificate DER; PFX import is not enabled");
+        request.efsPrivateKeyBytes = size_t(integer(transport, "privateKeyBytes", 1, EFS::kPrivateKeyDERLimit));
+        request.efsCertificateBytes = size_t(integer(transport, "certificateBytes", 1, EFS::kCertificateDERLimit));
+    } else if (json.contains("credentialTransport")) {
+        throw Failure("INVALID_CREDENTIAL_TRANSPORT", "Binary credentials are accepted only for an explicit EFS extraction job");
     }
     return request;
 }
@@ -737,7 +782,18 @@ public:
             (file->meta && (file->meta->flags & TSK_FS_META_FLAG_UNALLOC));
         Json row{{"id", id}, {"path", path}, {"name", name}, {"fsOffsetBytes", offset},
             {"metaAddress", address}, {"size", size}, {"isDirectory", directory}, {"isDeleted", deleted}};
-        if (attribute) { row["attributeType"] = int32_t(attribute->type); row["attributeID"] = int32_t(attribute->id); }
+        if (attribute) {
+            row["attributeType"] = int32_t(attribute->type); row["attributeID"] = int32_t(attribute->id);
+            if (TSK_FS_TYPE_ISNTFS(file->fs_info->ftype) && attribute->type == TSK_FS_ATTR_TYPE_NTFS_DATA) {
+                row["attributeName"] = attribute->name ? attribute->name : "";
+                const bool candidate = file->meta && !deleted && file->meta->type == TSK_FS_META_TYPE_REG &&
+                    (!attribute->name || !attribute->name[0]) && (attribute->flags & TSK_FS_ATTR_NONRES) &&
+                    (attribute->flags & TSK_FS_ATTR_ENC) && !(attribute->flags & (TSK_FS_ATTR_COMP | TSK_FS_ATTR_SPARSE)) &&
+                    attribute->nrd.initsize == attribute->size;
+                if (candidate && EFS::eligibleRegularRecord(file, [&]() { input.check(); }))
+                    row["encryptionStatus"] = "ntfs-efs-encrypted";
+            }
+        }
         if (file->meta) {
             const auto *meta = file->meta;
             // FAT/exFAT dates start in 1980, so their zero is an absent or
@@ -1177,7 +1233,7 @@ public:
     }
 };
 
-void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &output) {
+void extract(Request &request, TSK_IMG_INFO *image, Input &input, Output &output) {
     int64_t offset = request.file["fsOffsetBytes"].get<int64_t>();
     if (offset >= image->size) throw Failure("INVALID_FILE_REFERENCE", "Filesystem offset is outside the logical image");
     Filesystem fs(tsk_fs_open_img(image, offset, TSK_FS_TYPE_DETECT), &tsk_fs_close);
@@ -1206,9 +1262,15 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         throw Failure("DIRECTORY_EXTRACTION", "Select a file or named data stream to extract");
     int64_t expected = request.file["size"].get<int64_t>();
     if (attribute->size != expected) throw Failure("FILE_SIZE_MISMATCH", "Current file size differs from the enumerated reference");
+    std::unique_ptr<EFS::NativeContent> efs;
+    if (request.operation == "extract-efs") {
+        efs = std::make_unique<EFS::NativeContent>(file.get(), attribute, std::move(request.efsPrivateDER),
+            request.efsCertificateDER, [&]() { input.check(); });
+        request.efsCertificateDER.clear();
+    }
     DeletedFATContent deletedFAT(file.get(), uint64_t(expected), input);
     const int64_t recordedInitialized = exfatInitializedBytes(file.get(), expected);
-    const int64_t readableBytes = deletedFAT.active ? expected : verifiedReadableBytes(attribute, fs.get(), input, recordedInitialized);
+    const int64_t readableBytes = (efs || deletedFAT.active) ? expected : verifiedReadableBytes(attribute, fs.get(), input, recordedInitialized);
     CompressedContent compressed(attribute, fs.get(), input);
     NewOutput destination(request.outputPath, request.sources);
     CC_SHA256_CTX context;
@@ -1226,6 +1288,8 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         if (position >= readableBytes) {
             std::fill_n(buffer.data(), amount, 0);
             count = ssize_t(amount);
+        } else if (efs) {
+            count = efs->read(position, buffer.data(), amount, [&]() { input.check(); });
         } else if (deletedFAT.active) {
             count = deletedFAT.read(position, buffer.data(), amount);
         } else if (compressed.active) {
@@ -1256,7 +1320,26 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
     destination.finish();
     std::string digest = hashFinal(context);
     Json receipt{{"outputPath", request.outputPath}, {"byteCount", position}, {"sha256", digest}};
-    if (file->meta->flags & TSK_FS_META_FLAG_UNALLOC) {
+    if (efs) {
+        const auto hexadecimal = [](const uint8_t *bytes, size_t length) {
+            constexpr char alphabet[] = "0123456789abcdef";
+            std::string text;
+            for (size_t index = 0; index < length; ++index) {
+                text.push_back(alphabet[bytes[index] >> 4]); text.push_back(alphabet[bytes[index] & 15]);
+            }
+            return text;
+        };
+        const auto ciphertext = efs->ciphertextSHA256();
+        const auto &provenance = efs->provenance();
+        receipt["contentStatus"] = "decrypted-content";
+        receipt["warnings"] = {"EFS AES-CBC does not authenticate file content. This receipt identifies the bytes decrypted under the supplied matching key; it does not prove the original historical plaintext."};
+        receipt["decryption"] = {{"profile", "ntfs-efs-rsa-pkcs1-aes256-der"},
+            {"recipientRole", provenance.role == EFS::Role::decryption ? "ddf" : "drf"},
+            {"metadataSHA256", hexadecimal(provenance.metadataSHA256.data(), provenance.metadataSHA256.size())},
+            {"certificateSHA1", hexadecimal(provenance.certificateThumbprint.data(), provenance.certificateThumbprint.size())},
+            {"ciphertextSHA256", hexadecimal(ciphertext.data(), ciphertext.size())},
+            {"ciphertextBytes", efs->physicalCiphertextBytes()}, {"unitBytes", 512}, {"authenticatedPlaintext", false}};
+    } else if (file->meta->flags & TSK_FS_META_FLAG_UNALLOC) {
         receipt["contentStatus"] = "recovery-candidate";
         receipt["warnings"] = {"The receipt verifies current exported source bytes; it does not certify the deleted file's original historical content."};
         if (observesAllocatedDeletedNTFS(attribute, fs.get(), input))
@@ -1290,9 +1373,14 @@ int main() {
         if (jobID.size() > 1024) jobID.clear();
         output = std::make_unique<Output>(jobID);
         output->emit("hello", {{"engineVersion", NF_ENGINE_VERSION}, {"patchDigest", NF_PATCH_DIGEST},
-            {"capabilities", {"raw", "ewf", "mbr", "gpt", "filesystem-enumeration", "deleted-file-entries", "ntfs-data-streams", "ntfs-lznt1-validated-units", "fat-civil-timestamp-provenance", "deleted-recovery-uncertainty", "logical-image-sha256", "file-extraction-sha256"}}});
+            {"capabilities", {"raw", "ewf", "mbr", "gpt", "filesystem-enumeration", "deleted-file-entries", "ntfs-data-streams", "ntfs-lznt1-validated-units", "ntfs-efs-rsa-aes256-der", "fat-civil-timestamp-provenance", "deleted-recovery-uncertainty", "logical-image-sha256", "file-extraction-sha256"}}});
         Request request = validate(json);
         input.setJobID(request.jobID);
+        if (request.operation == "extract-efs") {
+            request.efsPrivateDER = input.secretBytes(request.efsPrivateKeyBytes);
+            auto certificate = input.secretBytes(request.efsCertificateBytes);
+            request.efsCertificateDER.assign(certificate.data(), certificate.data() + certificate.size());
+        }
         input.check();
         if (::setenv("TZ", request.timezone.c_str(), 1) != 0) throw Failure("TIMEZONE_FAILED", systemError());
         ::tzset();
@@ -1306,7 +1394,7 @@ int main() {
         if (request.hashLogicalImage) imageResponse["logicalSha256"] = logicalHash(image.get(), input, *output);
         output->emit("image", std::move(imageResponse));
         input.check();
-        if (request.operation == "extract") extract(request, image.get(), input, *output);
+        if (request.operation == "extract" || request.operation == "extract-efs") extract(request, image.get(), input, *output);
         else {
             job = std::make_unique<Job>(request, input, *output);
             job->enumerate(image.get());
@@ -1322,6 +1410,13 @@ int main() {
             output->emit("cancelled", {{"fileCount", job ? job->fileCount : 0}});
         } catch (...) {}
         return 2;
+    } catch (const EFS::Error &failure) {
+        try {
+            if (!output) output = std::make_unique<Output>("");
+            output->emit("error", {{"code", failure.code}, {"message", "EFS decryption rejected this key, metadata or file profile"}});
+            output->emit("failed", {{"fileCount", 0}});
+        } catch (...) {}
+        return 1;
     } catch (const Failure &failure) {
         try {
             if (!output) output = std::make_unique<Output>("");
