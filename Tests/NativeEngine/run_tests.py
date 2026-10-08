@@ -21,6 +21,12 @@ from pathlib import Path
 
 from fixtures import PAYLOADS, digest, generate
 from ntfs_fixtures import generate_ntfs_capability_fixtures
+from ntfs_structure_fixtures import generate_ntfs_structure_fixtures
+from ntfs_compression_fixtures import generate_ntfs_compression_fixtures
+from ntfs_recovery_fixtures import generate_ntfs_recovery_fixtures
+from fat_completion_fixtures import generate_fat_completion_fixtures
+from exfat_initialized_fixtures import generate_exfat_initialized_fixtures
+from fat_boot_fixtures import generate_fat_boot_fixtures
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -44,6 +50,12 @@ class Runner:
         self.fixture_dir = output / "fixtures"
         self.fixtures = generate(self.fixture_dir)
         self.ntfs_capability_fixtures = generate_ntfs_capability_fixtures(self.fixture_dir)
+        self.ntfs_structure_fixtures = generate_ntfs_structure_fixtures(self.fixture_dir)
+        self.ntfs_compression_fixtures = generate_ntfs_compression_fixtures(self.fixture_dir)
+        self.ntfs_recovery_fixtures = generate_ntfs_recovery_fixtures(self.fixture_dir)
+        self.fat_completion_fixtures = generate_fat_completion_fixtures(self.fixture_dir)
+        self.exfat_initialized_fixtures = generate_exfat_initialized_fixtures(self.fixture_dir)
+        self.fat_boot_fixtures = generate_fat_boot_fixtures(self.fixture_dir)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.run_dir = output / ("run-" + timestamp + "-" + uuid.uuid4().hex[:8])
         self.run_dir.mkdir()
@@ -160,6 +172,8 @@ class Runner:
         volumes = [frame["volume"] for frame in result["frames"] if frame["type"] == "volume"]
         expect(any(volume["offsetBytes"] == fixture["fsOffsetBytes"] for volume in volumes), "filesystem byte offset differs")
         entries = self.regular(result["files"])
+        for directory in fixture.get("expectedDirectories", []):
+            expect(any(row["isDirectory"] and row["path"].strip("/") == directory for row in result["files"]), "independent directory path missing: "+directory)
         expect(len({row["id"] for row in result["files"]}) == len(result["files"]), "listing contains duplicate stable entry IDs")
         if fixture["filesystem"] == "exFAT":
             # TSK exposes our explicit root volume label as a metadata pseudo-file.
@@ -209,7 +223,7 @@ class Runner:
             for file in fixture["files"]:
                 row = rows[file["path"]]
                 self.check_timestamps(fixture, file, row, timezone)
-                observed[file["path"]] = {key: value for key, value in row.items() if key.endswith("Epoch") or key.endswith("Nanoseconds")}
+                observed[file["path"]] = {key: value for key, value in row.items() if key.endswith("Epoch") or key.endswith("Nanoseconds") or key == "timestampProvenance"}
             if baseline is None:
                 baseline = observed
             expect(observed == baseline, "recorded timestamps depend on the ambient host timezone")
@@ -224,6 +238,9 @@ class Runner:
         row = entries[target["path"]]
         locator = {key: row[key] for key in ("fsOffsetBytes", "metaAddress", "attributeType", "attributeID", "size") if key in row}
         expect(locator.get("size") == target["size"], "selected attribute logical size differs")
+        if "expectedRecoveryStatus" in target:
+            expect(row.get("recoveryStatus") == target["expectedRecoveryStatus"], "deleted source allocation uncertainty was lost")
+            expect(row.get("recoveryWarnings"), "deleted entry lacks its recovery warning")
         destination = self.exports / (uuid.uuid4().hex + "-ntfs-probe.bin")
         extracted = self.call(self.request(fixture, "extract", file=locator,
                                            outputPath=str(destination), hashLogicalImage=False))
@@ -242,10 +259,55 @@ class Runner:
             expect(destination.read_bytes() == bytes.fromhex(target["payloadHex"]), "NTFS logical bytes differ from literal oracle")
             expect(digest(destination) == target["sha256"] == receipts[0].get("sha256"), "NTFS byte hash differs")
             expect(receipts[0].get("byteCount") == target["size"], "NTFS logical byte count differs")
+            if target.get("expectedContentStatus"):
+                expect(receipts[0].get("contentStatus") == target["expectedContentStatus"], "extraction lost its recovery-candidate status")
+                expect(receipts[0].get("warnings"), "recovery-candidate receipt lacks uncertainty")
+            if target.get("mustNotClaimOriginalHistory"):
+                expect(receipts[0].get("sha256") != target["originalSHA256"], "overwritten source unexpectedly matched historical bytes")
         expect(digest(self.fixture_dir / fixture["path"]) == before == fixture["logicalSha256"],
                "NTFS probe source bytes changed")
         return {"case": fixture["capabilityCase"], "expectedError": error,
                 "sourceUnchanged": True, "outputPublished": not bool(error)}
+
+    def fat_completion(self, fixture, timezone="UTC"):
+        result = self.call(self.request(fixture, timezone=timezone, hashLogicalImage=True))
+        expect(result["terminal"]["type"] == "completed", "FAT completion inventory failed")
+        expect(next(frame for frame in result["frames"] if frame["type"] == "image")["logicalSha256"] == fixture["logicalSha256"], "FAT logical source hash differs")
+        entries = self.regular(result["files"])
+        if fixture["filesystem"] == "exFAT":
+            label = entries.pop("NFTK (Volume Label Entry)", None)
+            expect(label is not None and label["size"] == 0 and not label["isDeleted"], "exFAT label differs")
+        expect(set(entries) == {file["path"] for file in fixture["files"]}, "FAT completion inventory/count differs")
+        failed, matched = 0, 0
+        for target in fixture["files"]:
+            row = entries[target["path"]]
+            expect(row["size"] == target["size"] and row["isDeleted"] == target["isDeleted"], "FAT entry metadata differs")
+            self.check_timestamps(fixture, target, row, timezone)
+            policy = target.get("timestampProvenanceByTimezone", {}).get(timezone)
+            if policy is not None:
+                expect(row.get("timestampProvenance") == policy, "recorded FAT civil time/policy/provenance differs: "+target["path"])
+            locator = {key: row[key] for key in ("fsOffsetBytes", "metaAddress", "attributeType", "attributeID", "size") if key in row}
+            destination = self.exports/(uuid.uuid4().hex+"-fat-completion.bin")
+            extracted = self.call(self.request(fixture, "extract", timezone=timezone, file=locator, outputPath=str(destination), hashLogicalImage=False))
+            receipts = [frame for frame in extracted["frames"] if frame["type"] == "extracted"]
+            error = target.get("expectedError")
+            if error:
+                expect(extracted["terminal"]["type"] == "failed", "unknown FAT mappings produced a success receipt")
+                expect([frame["code"] for frame in extracted["frames"] if frame["type"] == "error"] == [error], "wrong explicit FAT mapping failure")
+                expect(not destination.exists() and not receipts, "unknown FAT chain published invented complete bytes")
+                expect(not any(frame["type"] == "progress" and frame.get("stage") == "extract" for frame in extracted["frames"]), "unknown FAT chain failed only after output creation")
+                failed += 1
+            else:
+                expect(extracted["terminal"]["type"] == "completed" and len(receipts) == 1, "known FAT bytes failed extraction")
+                expect(destination.read_bytes() == bytes.fromhex(target["payloadHex"]), "known FAT source bytes differ")
+                expect(digest(destination) == target["sha256"] == receipts[0]["sha256"], "known FAT digest differs")
+                expect(receipts[0]["byteCount"] == target["size"], "known FAT byte count differs")
+                if target.get("expectedContentStatus"):
+                    expect(receipts[0].get("contentStatus") == target["expectedContentStatus"], "FAT recovery uncertainty status differs")
+                if target.get("mustNotClaimOriginalHistory"):
+                    expect(row.get("recoveryWarnings") and receipts[0].get("warnings"), "deleted FAT bytes lack historical uncertainty")
+                matched += 1
+        return {"timezone":timezone,"fileCount":len(entries),"exactBytes":matched,"preflightFailures":failed}
 
     def fail_request(self, request):
         result = self.call(request)
@@ -476,6 +538,28 @@ class Runner:
         self.safety()
         for fixture in self.ntfs_capability_fixtures:
             self.check("NTFS content " + fixture["capabilityCase"], lambda fixture=fixture: self.ntfs_capability(fixture))
+        for fixture in self.ntfs_structure_fixtures:
+            if not any(target.get("expectedExtractionError") for target in fixture.get("targets", [])):
+                for timezone in ("UTC", "Asia/Bangkok"):
+                    self.check("NTFS structure "+fixture["structureCase"]+" "+timezone, lambda fixture=fixture, timezone=timezone: self.enumeration(fixture, timezone))
+                self.check("NTFS structure "+fixture["structureCase"]+" host timezone invariance", lambda fixture=fixture: self.host_timezone_invariance(fixture))
+            else:
+                for target in fixture["targets"]:
+                    probe = dict(fixture, target=target, expectedExtractionError=target["expectedExtractionError"])
+                    self.check("NTFS structure "+fixture["structureCase"]+" "+target["path"], lambda probe=probe: self.ntfs_capability(probe))
+        for fixture in self.ntfs_compression_fixtures + self.ntfs_recovery_fixtures + self.exfat_initialized_fixtures:
+            self.check("NTFS completion "+fixture["capabilityCase"], lambda fixture=fixture: self.ntfs_capability(fixture))
+        for fixture in self.fat_completion_fixtures:
+            matrix = fixture.get("timestampMatrix", {})
+            for timezone in matrix.get("requestTimezones", ["UTC"]):
+                self.check("FAT completion "+fixture["path"]+" "+timezone, lambda fixture=fixture, timezone=timezone: self.fat_completion(fixture, timezone))
+            if matrix.get("hostTimezones"):
+                self.check("FAT completion "+fixture["path"]+" host timezone invariance", lambda fixture=fixture: self.host_timezone_invariance(fixture))
+        for fixture in self.fat_boot_fixtures:
+            if fixture.get("recoveryMatrix"):
+                self.check("FAT boot "+fixture["bootCase"], lambda fixture=fixture: self.fat_completion(fixture))
+            else:
+                self.check("FAT boot "+fixture["filesystem"]+" "+fixture["bootCase"], lambda fixture=fixture: self.enumeration(fixture))
         self.protocol()
         self.check("create EWF fixture", lambda: self.ewf(acquire))
         self.check("all original fixture sources unchanged", self.source_unchanged)
@@ -493,8 +577,13 @@ def main():
     parser.add_argument("--fixtures-only", action="store_true")
     options = parser.parse_args()
     if options.fixtures_only:
-        result = generate(options.output / "fixtures")
-        print("Generated " + str(len(result["images"])) + " synthetic image configurations")
+        directory = options.output/"fixtures"
+        result = generate(directory)
+        supplements = (generate_ntfs_capability_fixtures(directory) + generate_ntfs_structure_fixtures(directory)
+                       + generate_ntfs_compression_fixtures(directory) + generate_ntfs_recovery_fixtures(directory)
+                       + generate_fat_completion_fixtures(directory) + generate_exfat_initialized_fixtures(directory)
+                       + generate_fat_boot_fixtures(directory))
+        print("Generated " + str(len(result["images"])+len(supplements)) + " synthetic image configurations")
         return 0
     if not options.helper.is_file():
         parser.error("Build the helper first; this runner never compiles it")

@@ -425,7 +425,10 @@ def ntfs_capability_image(path: Path, kind: str) -> dict:
         # Valid compressed-attribute header with a final physically stored,
         # uncompressed short unit. No LZNT1 decoder oracle is claimed here.
         data = _nonresident(0x80, len(payload), [(100, 1), (104, 2)], 2, compressed=True)
-        expected_error = "UNSUPPORTED_COMPRESSED_CONTENT"
+        # A short mapped prefix without the remainder of its 16-cluster unit
+        # cannot establish compressed logical content, even when the declared
+        # logical size ends inside that prefix.
+        expected_error = "INCOMPLETE_ATTRIBUTE_RUNLIST"
     elif kind == "missing-leading-run":
         data = _nonresident(0x80, len(payload), [(104, 2)], 2, start_vcn=1)
         expected_error = "INCOMPLETE_ATTRIBUTE_RUNLIST"

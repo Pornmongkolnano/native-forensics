@@ -1,7 +1,7 @@
 # NTFS extraction capabilities
 
 NativeForensics uses the pinned Sleuth Kit 4.15.0 reader. Its engine version
-`0.1.3-tsk4.15.0` adds content validation before creating an extraction output.
+`0.1.4-tsk4.15.0` validates content before creating an extraction output and adds bounded strict LZNT1 decoding. The [expanded independent corpus](FILESYSTEM-COMPLETION.md) records 196/196 native checks and the exact tested profiles.
 Filesystem enumeration is an inventory of parsed metadata; successful
 enumeration alone does not certify that every listed stream can be recovered.
 
@@ -19,7 +19,8 @@ filesystem, an external formatter, or coursework evidence to generate oracles.
 | Named resident/nonresident DATA streams and directory DATA streams | Select and extract the individual stream |
 | Hard links, nested directories, long Thai/Unicode names | Preserve inventory paths and stream identities |
 | Explicit sparse runs | Preserve logical zero bytes without treating them as missing runs |
-| Two-record ATTRIBUTE_LIST with contiguous logical VCN coverage | Merge extents and extract exact bytes |
+| General resident/nonresident ATTRIBUTE_LIST across records, named streams and multilevel indexes | Merge complete independently checked extents and preserve exact inventory/bytes |
+| Standard 16-cluster compressed nonresident DATA with clusters up to 4 KiB | Strict whole-unit validation and exact logical bytes for the documented raw/sparse/mixed profiles |
 | Initialized size ending inside a cluster | Preserve the initialized prefix; emit logical zeros for the tail |
 | Completely uninitialized DATA | Emit logical zeros, without reading physical residual bytes |
 | Uninitialized tail whose mappings are unavailable | Emit the independently known logical zeros after a fully mapped initialized prefix |
@@ -34,7 +35,7 @@ These bounded fixtures do not establish compatibility with every Windows volume.
 | Condition | Error code | Reason |
 | --- | --- | --- |
 | Selected NTFS attribute or an initialized run is marked encrypted | `UNSUPPORTED_ENCRYPTED_CONTENT` | This engine has no EFS decryption capability; stored ciphertext is not verified logical plaintext |
-| Selected NTFS attribute is marked compressed | `UNSUPPORTED_COMPRESSED_CONTENT` | Whole compression-unit semantics lack an independent correctness corpus |
+| Compressed stream has unsupported geometry or invalid chunks | `INVALID_COMPRESSED_CONTENT` / `INCOMPLETE_ATTRIBUTE_RUNLIST` | Exact bounded compression profile and all initialized whole-unit mappings must validate |
 | Initialized logical content contains a TSK FILLER run | `INCOMPLETE_ATTRIBUTE_RUNLIST` | TSK fills lost/unseen extents with zeros; those zeros are not recovered evidence |
 | Missing leading, middle or trailing initialized VCN coverage | `INCOMPLETE_ATTRIBUTE_RUNLIST` | All initialized logical content must have a known mapping |
 | Overlapping/zero-length/cyclic runs or invalid initialized-size geometry | `INCOMPLETE_ATTRIBUTE_RUNLIST` | Ambiguous content geometry cannot support a complete-byte receipt |
@@ -51,12 +52,7 @@ No source image is repaired or rewritten.
 
 ## Limits
 
-Compressed NTFS extraction explicitly fails until an independent compression
-corpus validates whole-unit and ATTRIBUTE_LIST behavior; TSK may consume mappings
-beyond the requested initialized prefix while decompressing a unit. The negative
-fixture tests the selected attribute's compression flag separately from valid
-sparse content and does not claim an LZNT1 decoder oracle. Likewise, the
-engine does not claim EFS/BitLocker decryption, forensic correctness for every
+Compressed extraction is restricted to the [documented independent whole-unit corpus](FILESYSTEM-COMPLETION.md). Unsupported geometry, missing initialized-unit mappings and malformed payloads fail before output. Initialized-prefix validation retains defined zero tails. The engine does not claim EFS/BitLocker decryption, forensic correctness for every
 corrupt volume, transaction-log replay, deduplication/WOF decoding or full
 Autopsy feature parity. Reader failures remain explicit extraction failures.
 
@@ -88,5 +84,4 @@ bootstrap:
 - `tsk/fs/fs_attr.c`: `tsk_fs_attr_read` returns zeros for FILLER runs and
   uninitialized/sparse content; its generic path does not decrypt NTFS EFS.
 
-The new guards use the already-loaded public TSK attribute/run structures.
-They do not patch the upstream reader or implement a replacement NTFS parser.
+The guards use public TSK attribute/run structures. The adapter adds an original bounded strict LZNT1 content decoder; the NTFS metadata reader remains the pinned upstream lineage. Differential agreement is supplemented by independent expected bytes, including five explicitly recorded upstream byte/length divergences.

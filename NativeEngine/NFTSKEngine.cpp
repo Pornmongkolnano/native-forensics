@@ -11,6 +11,8 @@
 #include <csignal>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
+#include <cstdio>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
@@ -215,6 +217,7 @@ std::string requiredString(const Json &object, const char *key) {
 
 struct Request {
     std::string jobID, operation, imageType, timezone;
+    std::vector<int32_t> timezoneUTCOffsets;
     uint32_t sectorSize = 0;
     size_t maxFiles = 0;
     bool hashLogicalImage = false;
@@ -222,6 +225,34 @@ struct Request {
     Json file;
     std::string outputPath;
 };
+uint32_t big32(const uint8_t *bytes) {
+    return (uint32_t(bytes[0]) << 24) | (uint32_t(bytes[1]) << 16) | (uint32_t(bytes[2]) << 8) | bytes[3];
+}
+std::vector<int32_t> installedZoneOffsets(int descriptor, int64_t length) {
+    if (descriptor < 0 || length < 44 || length > 1048576) throw Failure("INVALID_TIMEZONE", "Invalid installed TZif size");
+    std::vector<uint8_t> bytes(size_t(length), 0);
+    if (::pread(descriptor, bytes.data(), bytes.size(), 0) != ssize_t(bytes.size())) throw Failure("INVALID_TIMEZONE", "Installed timezone could not be read");
+    std::set<int32_t> offsets;
+    const auto block = [&](size_t start, uint64_t width) {
+        if (bytes.size()-std::min(bytes.size(), start) < 44 || std::memcmp(bytes.data()+start, "TZif", 4))
+            throw Failure("INVALID_TIMEZONE", "Malformed installed TZif header");
+        const auto *header = bytes.data()+start;
+        const uint64_t utc = big32(header+20), standard = big32(header+24), leap = big32(header+28),
+                       transitions = big32(header+32), types = big32(header+36), characters = big32(header+40);
+        const uint64_t size = 44 + transitions*(width+1) + types*6 + characters + leap*(width+4) + standard + utc;
+        if (!types || types > 256 || size > bytes.size()-start) throw Failure("INVALID_TIMEZONE", "Malformed installed TZif offsets");
+        const size_t firstType = start+44+size_t(transitions*(width+1));
+        for (uint64_t index=0; index<types; ++index) {
+            const int32_t offset = int32_t(big32(bytes.data()+firstType+size_t(index*6)));
+            if (offset < -90000 || offset > 90000) throw Failure("INVALID_TIMEZONE", "Installed timezone offset exceeds supported range");
+            offsets.insert(offset);
+        }
+        return start+size_t(size);
+    };
+    const size_t next = block(0, 4);
+    if (bytes[4] != 0) block(next, 8);
+    return {offsets.begin(), offsets.end()};
+}
 Request validate(const Json &json) {
     if (!json.is_object()) throw Failure("INVALID_REQUEST", "Request must be an object");
     integer(json, "protocolVersion", 1, 1);
@@ -255,9 +286,13 @@ Request validate(const Json &json) {
     int zoneFD = ::open(zone.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     std::array<char, 4> zoneMagic{};
     ssize_t zoneBytes = zoneFD >= 0 ? ::read(zoneFD, zoneMagic.data(), zoneMagic.size()) : -1;
-    if (zoneFD >= 0) ::close(zoneFD);
-    if (zoneBytes != 4 || std::memcmp(zoneMagic.data(), "TZif", 4) != 0)
+    if (zoneBytes != 4 || std::memcmp(zoneMagic.data(), "TZif", 4) != 0) {
+        if (zoneFD >= 0) ::close(zoneFD);
         throw Failure("INVALID_TIMEZONE", "timezone must identify a compiled IANA timezone");
+    }
+    try { request.timezoneUTCOffsets = installedZoneOffsets(zoneFD, zoneStatus.st_size); }
+    catch (...) { ::close(zoneFD); throw; }
+    ::close(zoneFD);
     if (!json.contains("imagePaths") || !json["imagePaths"].is_array() || json["imagePaths"].empty() ||
         json["imagePaths"].size() > 4096)
         throw Failure("INVALID_REQUEST", "imagePaths must contain 1 to 4096 ordered paths");
@@ -489,6 +524,157 @@ std::string unsupportedFilesystem(TSK_IMG_INFO *image, int64_t offset) {
     return "";
 }
 
+uint16_t little16(const uint8_t *bytes) { return uint16_t(bytes[0]) | (uint16_t(bytes[1]) << 8); }
+uint32_t little32(const uint8_t *bytes) { return little16(bytes) | (uint32_t(little16(bytes+2)) << 16); }
+uint64_t little64(const uint8_t *bytes) { return little32(bytes) | (uint64_t(little32(bytes+4)) << 32); }
+
+struct FATGeometry {
+    TSK_FS_INFO *fs;
+    uint64_t sectorBytes = 0, clusterSectors = 0, firstData = 0, firstCluster = 0, firstFAT = 0, lastCluster = 0;
+    bool alternateFAT = false;
+    explicit FATGeometry(TSK_FS_INFO *filesystem) : fs(filesystem) {
+        std::array<uint8_t,512> boot{};
+        const auto load = [&](uint64_t sector) {
+            if (tsk_fs_read(fs, sector*fs->block_size, reinterpret_cast<char *>(boot.data()), boot.size()) != ssize_t(boot.size())) { tsk_error_reset(); return false; }
+            if (boot[510] != 0x55 || boot[511] != 0xaa) return false;
+            if (fs->ftype == TSK_FS_TYPE_EXFAT) {
+                if (std::memcmp(boot.data()+3,"EXFAT   ",8) || boot[108] > 12 || boot[109] > 25 || little64(boot.data()+72) != fs->block_count) return false;
+                sectorBytes = uint64_t(1) << boot[108]; clusterSectors = uint64_t(1) << boot[109];
+                firstFAT = little32(boot.data()+80); firstData = firstCluster = little32(boot.data()+88);
+                lastCluster = uint64_t(little32(boot.data()+92)) + 1;
+            } else {
+                sectorBytes = little16(boot.data()+11); clusterSectors = boot[13]; firstFAT = little16(boot.data()+14);
+                const uint64_t fatSectors = fs->ftype == TSK_FS_TYPE_FAT32 ? little32(boot.data()+36) : little16(boot.data()+22);
+                const uint64_t total = little16(boot.data()+19) ? little16(boot.data()+19) : little32(boot.data()+32);
+                if (!sectorBytes || !clusterSectors || !firstFAT || !fatSectors || !boot[16] || boot[16] > 8 || total != fs->block_count) return false;
+                firstData = firstFAT + uint64_t(boot[16])*fatSectors;
+                firstCluster = firstData+(uint64_t(little16(boot.data()+17))*32+sectorBytes-1)/sectorBytes;
+                if (total <= firstCluster) return false;
+                lastCluster = (total-firstCluster)/clusterSectors+1;
+                if (fs->ftype == TSK_FS_TYPE_FAT32 && (little16(boot.data()+40)&0x80)) {
+                    const uint16_t selected = little16(boot.data()+40)&15;
+                    if (selected >= boot[16]) return false;
+                    firstFAT += selected*fatSectors; alternateFAT = selected != 0;
+                }
+            }
+            return sectorBytes == fs->block_size && clusterSectors && !(clusterSectors&(clusterSectors-1)) && firstCluster < fs->block_count;
+        };
+        if (!load(0) && !((fs->ftype == TSK_FS_TYPE_FAT32 && load(6)) || (fs->ftype == TSK_FS_TYPE_EXFAT && load(12))))
+            throw Failure("FILESYSTEM_METADATA_READ_FAILED", "No boot copy matches the opened FAT filesystem geometry");
+    }
+    bool entry(uint64_t address, std::array<uint8_t,32> &bytes) {
+        if (address < 3 || address-3 > uint64_t(std::numeric_limits<int64_t>::max())/32) return false;
+        const uint64_t offset = firstData*sectorBytes + (address-3)*32;
+        if (offset > uint64_t(std::numeric_limits<int64_t>::max())) return false;
+        if (tsk_fs_read(fs, int64_t(offset), reinterpret_cast<char *>(bytes.data()), bytes.size()) != ssize_t(bytes.size())) { tsk_error_reset(); return false; }
+        return true;
+    }
+    uint64_t next(uint64_t cluster) {
+        const bool fat12 = fs->ftype == TSK_FS_TYPE_FAT12, fat32 = fs->ftype == TSK_FS_TYPE_FAT32;
+        const uint64_t offset = firstFAT*sectorBytes + (fat12 ? cluster+cluster/2 : cluster*(fat32 ? 4 : 2));
+        std::array<uint8_t,4> bytes{}; const size_t amount = fat32 ? 4 : 2;
+        if (tsk_fs_read(fs, offset, reinterpret_cast<char *>(bytes.data()), amount) != ssize_t(amount)) throw Failure("UNVERIFIABLE_DELETED_CHAIN", tskError());
+        const uint64_t value = fat32 ? little32(bytes.data()) & 0x0fffffff : little16(bytes.data());
+        return fat12 ? ((cluster & 1) ? value >> 4 : value & 0xfff) : value;
+    }
+};
+
+// Interpret the bytes that were actually recorded, retaining timezone-less
+// civil times even when a zone has no unique corresponding instant.
+void fatTimestamp(Json &row, Json &provenance, const char *kind, uint16_t date,
+                  uint16_t clock, int increment, int offsetByte, bool dateOnly,
+                  const std::string &zone, const std::vector<int32_t> &zoneOffsets) {
+    Json record{{"rawDate", date}, {"rawTime", clock}, {"candidateEpochs", Json::array()},
+                {"precisionNanoseconds", dateOnly ? 86400000000000LL : increment >= 0 ? 10000000LL : 2000000000LL}};
+    if (increment >= 0) record["rawIncrement"] = increment;
+    if (offsetByte >= 0) record["rawUTCOffset"] = offsetByte;
+    const std::string epochKey = std::string(kind) + "Epoch", nanoKey = std::string(kind) + "Nanoseconds";
+    row.erase(epochKey); row.erase(nanoKey);
+    const int year = 1980 + (date >> 9), month = (date >> 5) & 15, day = date & 31;
+    const int hour = dateOnly ? 0 : clock >> 11, minute = dateOnly ? 0 : (clock >> 5) & 63;
+    const int second = dateOnly ? 0 : (clock & 31) * 2;
+    static const int days[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    const bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    if (date == 0) record["status"] = "missing";
+    else if (month < 1 || month > 12 || day < 1 || day > days[month-1] + (month == 2 && leap) ||
+             hour > 23 || minute > 59 || second > 59 || increment > 199) record["status"] = "invalid-calendar";
+    else {
+        tm civil{};
+        civil.tm_year = year - 1900; civil.tm_mon = month - 1; civil.tm_mday = day;
+        civil.tm_hour = hour; civil.tm_min = minute; civil.tm_sec = second + std::max(0, increment) / 100;
+        char text[32];
+        std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, civil.tm_sec);
+        record["civil"] = text;
+        std::set<int64_t> candidates;
+        if (offsetByte >= 0 && (offsetByte & 128)) {
+            const int quarters = (offsetByte & 64) ? (offsetByte & 127) - 128 : offsetByte & 127;
+            candidates.insert(int64_t(timegm(&civil)) - quarters * 900);
+            record["status"] = "recorded-offset"; record["utcOffsetMinutes"] = quarters * 15;
+        } else {
+            record["timezone"] = zone;
+            tm trial = civil;
+            const int64_t civilUTC = int64_t(timegm(&trial));
+            for (int32_t offset : zoneOffsets) {
+                const time_t epoch = time_t(civilUTC - offset);
+                tm roundtrip{};
+                if (!localtime_r(&epoch, &roundtrip)) continue;
+                if (roundtrip.tm_year == civil.tm_year && roundtrip.tm_mon == civil.tm_mon &&
+                    roundtrip.tm_mday == civil.tm_mday && roundtrip.tm_hour == civil.tm_hour &&
+                    roundtrip.tm_min == civil.tm_min && roundtrip.tm_sec == civil.tm_sec) candidates.insert(int64_t(epoch));
+            }
+            record["status"] = candidates.empty() ? "nonexistent-local-time" :
+                               candidates.size() > 1 ? "ambiguous-local-time" : "assumed-zone";
+            if (candidates.size() == 1) {
+                time_t epoch = time_t(*candidates.begin()); tm chosen{};
+                if (localtime_r(&epoch, &chosen)) record["utcOffsetMinutes"] = int64_t(chosen.tm_gmtoff / 60);
+            }
+        }
+        for (int64_t candidate : candidates) record["candidateEpochs"].push_back(candidate);
+        if (candidates.size() == 1) {
+            row[epochKey] = *candidates.begin(); row[nanoKey] = int64_t(std::max(0, increment) % 100) * 10000000;
+        }
+    }
+    provenance[kind] = std::move(record);
+}
+
+void preserveFATTimes(Json &row, TSK_FS_FILE *file, const Request &request) {
+    if (!file->meta || !TSK_FS_TYPE_ISFAT(file->fs_info->ftype) || file->meta->addr < 3) return;
+    FATGeometry geometry(file->fs_info);
+    std::array<uint8_t,32> entry{};
+    if (!geometry.entry(file->meta->addr, entry)) return;
+    Json provenance = Json::object();
+    const auto *b = entry.data();
+    if (file->fs_info->ftype == TSK_FS_TYPE_EXFAT) {
+        if ((b[0] & 127) != 5) return;
+        fatTimestamp(row, provenance, "created", little16(b+10), little16(b+8), b[20], b[22], false, request.timezone, request.timezoneUTCOffsets);
+        fatTimestamp(row, provenance, "modified", little16(b+14), little16(b+12), b[21], b[23], false, request.timezone, request.timezoneUTCOffsets);
+        fatTimestamp(row, provenance, "accessed", little16(b+18), little16(b+16), -1, b[24], false, request.timezone, request.timezoneUTCOffsets);
+    } else {
+        if ((b[11] & 15) == 15) return;
+        fatTimestamp(row, provenance, "created", little16(b+16), little16(b+14), b[13], -1, false, request.timezone, request.timezoneUTCOffsets);
+        fatTimestamp(row, provenance, "modified", little16(b+24), little16(b+22), -1, -1, false, request.timezone, request.timezoneUTCOffsets);
+        fatTimestamp(row, provenance, "accessed", little16(b+18), 0, -1, -1, true, request.timezone, request.timezoneUTCOffsets);
+    }
+    row["timestampProvenance"] = std::move(provenance);
+}
+
+bool observesAllocatedDeletedNTFS(const TSK_FS_ATTR *attribute, TSK_FS_INFO *fs, Input &input) {
+    if (!attribute || !TSK_FS_TYPE_ISNTFS(fs->ftype) || !(attribute->flags & TSK_FS_ATTR_NONRES)) return false;
+    std::set<const TSK_FS_ATTR_RUN *> seen;
+    uint64_t checked = 0;
+    for (const auto *run = attribute->nrd.run; run && checked < 65536; run = run->next) {
+        input.check();
+        if (!seen.insert(run).second) break;
+        if (run->flags & (TSK_FS_ATTR_RUN_FLAG_SPARSE | TSK_FS_ATTR_RUN_FLAG_FILLER)) continue;
+        for (uint64_t block = 0; block < run->len && checked < 65536; ++block, ++checked) {
+            input.check();
+            if (run->addr > fs->last_block_act || block > fs->last_block_act-run->addr) break;
+            if (fs->block_getflags(fs, run->addr+block) & TSK_FS_BLOCK_FLAG_ALLOC) return true;
+        }
+    }
+    return false;
+}
+
 class Job {
     const Request &request;
     Input &input;
@@ -571,6 +757,14 @@ public:
             // field here, not recorded evidence that a change occurred in 1970.
             if (!fat) {
                 row["changedEpoch"] = int64_t(meta->ctime); row["changedNanoseconds"] = int32_t(meta->ctime_nano);
+            }
+            preserveFATTimes(row, file, request);
+            if (deleted) {
+                row["recoveryStatus"] = TSK_FS_TYPE_ISFAT(file->fs_info->ftype) ? "deleted-fat-recovery-candidate" :
+                    observesAllocatedDeletedNTFS(attribute, file->fs_info, input) ? "deleted-reallocated-current-bytes" : "deleted-current-bytes";
+                row["recoveryWarnings"] = {"Deleted metadata does not prove that the current source bytes are the original historical file content."};
+                if (row["recoveryStatus"] == "deleted-reallocated-current-bytes")
+                    row["recoveryWarnings"].push_back("One or more mapped clusters are currently allocated; their bytes may belong to a later file.");
             }
         } else warning("MISSING_METADATA", "A directory entry lacks metadata; its content cannot be extracted reliably");
         size_t rowBytes;
@@ -751,20 +945,18 @@ public:
 // Sparse runs and the interval after initialized size are different: NTFS
 // defines their logical content as zeros, so preserve them without reading
 // uninitialized bytes physically stored on disk.
-int64_t verifiedReadableBytes(const TSK_FS_ATTR *attribute, TSK_FS_INFO *fs, Input &input) {
-    if (!TSK_FS_TYPE_ISNTFS(fs->ftype)) return attribute->size;
+int64_t verifiedReadableBytes(const TSK_FS_ATTR *attribute, TSK_FS_INFO *fs, Input &input, int64_t recordedInitialized=-1) {
+    if (!TSK_FS_TYPE_ISNTFS(fs->ftype) && !TSK_FS_TYPE_ISFAT(fs->ftype)) return attribute->size;
     if (attribute->flags & TSK_FS_ATTR_ENC)
         throw Failure("UNSUPPORTED_ENCRYPTED_CONTENT", "NTFS encrypted attribute content cannot be decrypted by this engine");
-    // Compressed readers consume whole compression units, including mappings
-    // beyond the requested initialized prefix. Their complete-byte semantics
-    // require an independent compression corpus before being advertised here.
-    if (attribute->flags & TSK_FS_ATTR_COMP)
-        throw Failure("UNSUPPORTED_COMPRESSED_CONTENT", "NTFS compressed attribute extraction is not validated by this engine");
+    // Compressed data has a separate whole-unit mapping/payload validator and
+    // original bounded decoder; it never delegates malformed chunk repair to TSK.
+    if (attribute->flags & TSK_FS_ATTR_COMP) return attribute->nrd.initsize; // Validated by CompressedContent below.
     if (!(attribute->flags & TSK_FS_ATTR_NONRES)) return attribute->size;
     if (fs->block_size == 0 || attribute->nrd.initsize < 0 || attribute->nrd.initsize > attribute->size ||
         attribute->nrd.skiplen != 0)
         throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS attribute has invalid initialized-content geometry");
-    const uint64_t initialized = uint64_t(attribute->nrd.initsize);
+    const uint64_t initialized = uint64_t(recordedInitialized >= 0 ? recordedInitialized : attribute->nrd.initsize);
     const uint64_t requiredBlocks = initialized / fs->block_size + (initialized % fs->block_size != 0);
     uint64_t covered = 0;
     std::set<const TSK_FS_ATTR_RUN *> seen;
@@ -775,13 +967,215 @@ int64_t verifiedReadableBytes(const TSK_FS_ATTR *attribute, TSK_FS_INFO *fs, Inp
             throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS initialized content has missing, overlapping, or filler data runs");
         if (run->flags & TSK_FS_ATTR_RUN_FLAG_ENCRYPTED)
             throw Failure("UNSUPPORTED_ENCRYPTED_CONTENT", "NTFS encrypted data runs cannot be decrypted by this engine");
+        if (!(run->flags & TSK_FS_ATTR_RUN_FLAG_SPARSE) &&
+            (run->addr > fs->last_block_act || run->len - 1 > fs->last_block_act - run->addr))
+            throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "Initialized content maps outside the available filesystem");
         // Clamp rather than multiply untrusted lengths or overflow a VCN sum.
         covered += std::min<uint64_t>(run->len, requiredBlocks - covered);
     }
     if (covered != requiredBlocks)
         throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "NTFS data runs do not cover all initialized logical content");
-    return attribute->nrd.initsize;
+    return int64_t(initialized);
 }
+
+int64_t exfatInitializedBytes(TSK_FS_FILE *file, int64_t expected) {
+    if (file->fs_info->ftype != TSK_FS_TYPE_EXFAT) return -1;
+    FATGeometry geometry(file->fs_info);
+    std::array<uint8_t,32> stream{};
+    if (!geometry.entry(file->meta->addr+1, stream) || (stream[0]&127) != 64 ||
+        little64(stream.data()+24) != uint64_t(expected))
+        throw Failure("FILESYSTEM_METADATA_READ_FAILED", "The selected exFAT stream's recorded lengths cannot be verified");
+    const uint64_t initialized = little64(stream.data()+8);
+    if (initialized > uint64_t(expected))
+        throw Failure("INVALID_INITIALIZED_LENGTH", "exFAT ValidDataLength exceeds DataLength");
+    return int64_t(initialized);
+}
+
+class DeletedFATContent {
+    struct Run { uint64_t offset, address, length; };
+    TSK_FS_INFO *fs;
+    std::vector<Run> runs;
+public:
+    bool active = false;
+    DeletedFATContent(TSK_FS_FILE *file, uint64_t size, Input &input) : fs(file->fs_info) {
+        if (!TSK_FS_TYPE_ISFAT(fs->ftype)) return;
+        const bool deleted = file->meta->flags & TSK_FS_META_FLAG_UNALLOC;
+        const std::string mappingError = deleted ? "UNVERIFIABLE_DELETED_CHAIN" : "INCOMPLETE_ATTRIBUTE_RUNLIST";
+        FATGeometry geometry(fs);
+        if (!deleted && !geometry.alternateFAT) return;
+        active = true;
+        if (size == 0) return;
+        if (fs->ftype == TSK_FS_TYPE_EXFAT)
+            throw Failure("UNVERIFIABLE_DELETED_CHAIN", "Deleted exFAT recovery requires independently retained stream mappings; inferred free-cluster order is not verified content");
+        std::array<uint8_t,32> entry{};
+        if (!geometry.entry(file->meta->addr, entry)) throw Failure("UNVERIFIABLE_DELETED_CHAIN", "Deleted FAT directory entry is unavailable");
+        uint64_t cluster = little16(entry.data() + 26);
+        if (fs->ftype == TSK_FS_TYPE_FAT32) cluster |= uint64_t(little16(entry.data() + 20)) << 16;
+        const uint64_t clusterBytes = geometry.clusterSectors * fs->block_size;
+        if (!clusterBytes) throw Failure("UNVERIFIABLE_DELETED_CHAIN", "Invalid deleted FAT cluster geometry");
+        const uint64_t count = size / clusterBytes + (size % clusterBytes != 0);
+        // Recovery mappings are bounded separately from the source image size.
+        if (count > 1048576) throw Failure("RECOVERY_MAPPING_LIMIT", "Deleted FAT mapping exceeds the bounded recovery limit");
+        std::set<uint64_t> seen;
+        for (uint64_t index = 0; index < count; ++index) {
+            input.check();
+            if (cluster < 2 || cluster > geometry.lastCluster || !seen.insert(cluster).second)
+                throw Failure(mappingError, "FAT chain is damaged, cyclic, or unavailable");
+            const uint64_t sector = geometry.firstCluster + (cluster-2)*geometry.clusterSectors;
+            if (sector > fs->last_block_act || geometry.clusterSectors - 1 > fs->last_block_act - sector)
+                throw Failure(mappingError, "FAT chain maps outside the source");
+            if (!runs.empty() && runs.back().address + runs.back().length == sector) runs.back().length += geometry.clusterSectors;
+            else runs.push_back({index * geometry.clusterSectors, sector, geometry.clusterSectors});
+            if (index + 1 < count) {
+                const uint64_t next = geometry.next(cluster);
+                if (next < 2 || next > geometry.lastCluster)
+                    throw Failure(mappingError, "FAT chain was cleared or cannot map every logical cluster");
+                cluster = next;
+            }
+        }
+    }
+    ssize_t read(int64_t position, char *buffer, size_t amount) {
+        const uint64_t block = uint64_t(position) / fs->block_size, within = uint64_t(position) % fs->block_size;
+        for (const auto &run : runs) {
+            if (block >= run.offset && block - run.offset < run.length) {
+                amount = std::min<uint64_t>(amount, (run.length - (block - run.offset)) * fs->block_size - within);
+                return tsk_fs_read(fs, (run.address + block - run.offset) * fs->block_size + within, buffer, amount);
+            }
+        }
+        return -1;
+    }
+};
+
+std::vector<char> decodeLZNT1(const std::vector<char> &stored, uint64_t required, uint64_t capacity) {
+    std::vector<char> decoded;
+    decoded.reserve(size_t(capacity));
+    size_t cursor = 0;
+    const auto fail = []() { throw Failure("INVALID_COMPRESSED_CONTENT", "NTFS compression-unit payload is malformed or cannot supply all initialized bytes"); };
+    while (cursor < stored.size()) {
+        if (stored.size() - cursor < 2) fail();
+        const uint16_t header = little16(reinterpret_cast<const uint8_t *>(stored.data() + cursor));
+        cursor += 2;
+        if (header == 0) break;
+        if ((header & 0x7000) != 0x3000) fail();
+        const size_t length = (header & 0x0fff) + 1;
+        if (length > stored.size() - cursor) fail();
+        const size_t end = cursor + length, chunkStart = decoded.size();
+        if (!(header & 0x8000)) {
+            if (length > 4096 || decoded.size() + length > capacity) fail();
+            decoded.insert(decoded.end(), stored.begin()+cursor, stored.begin()+end); cursor = end;
+        } else {
+            while (cursor < end) {
+                const uint8_t flags = uint8_t(stored[cursor++]);
+                if (cursor == end) fail(); // Every flag group has at least one data item.
+                for (int bit = 0; bit < 8 && cursor < end; ++bit) {
+                    const size_t output = decoded.size() - chunkStart;
+                    if (flags & (1 << bit)) {
+                        if (end - cursor < 2 || output == 0) fail();
+                        const uint16_t token = little16(reinterpret_cast<const uint8_t *>(stored.data()+cursor)); cursor += 2;
+                        uint16_t mask = 0x0fff; unsigned shift = 12;
+                        for (size_t position = output - 1; position >= 16; position >>= 1) { mask >>= 1; --shift; }
+                        const size_t distance = (token >> shift) + 1, count = (token & mask) + 3;
+                        if (distance > output || count > 4096 - output || count > capacity - decoded.size()) fail();
+                        for (size_t index = 0; index < count; ++index) decoded.push_back(decoded[decoded.size()-distance]);
+                    } else {
+                        if (output >= 4096 || decoded.size() >= capacity) fail();
+                        decoded.push_back(stored[cursor++]);
+                    }
+                }
+            }
+        }
+        if (decoded.size() - chunkStart == 0) fail();
+        // A short chunk can terminate the unit, but cannot be followed by a
+        // second chunk that would move its logical 4KiB boundary.
+        if (decoded.size() - chunkStart < 4096) {
+            if (cursor != stored.size() && (stored.size()-cursor < 2 ||
+                little16(reinterpret_cast<const uint8_t *>(stored.data()+cursor)) != 0)) fail();
+            break;
+        }
+        if (decoded.size() == capacity) {
+            if (cursor != stored.size() && (stored.size()-cursor < 2 ||
+                little16(reinterpret_cast<const uint8_t *>(stored.data()+cursor)) != 0)) fail();
+            break;
+        }
+    }
+    if (decoded.size() < required) fail();
+    return decoded;
+}
+
+class CompressedContent {
+    const TSK_FS_ATTR *attribute;
+    TSK_FS_INFO *fs;
+    Input &input;
+    uint64_t unitBytes = 0, requiredUnits = 0;
+    uint64_t cachedUnit = std::numeric_limits<uint64_t>::max();
+    std::vector<char> cached;
+    std::vector<char> unit(uint64_t number) {
+        std::vector<char> stored;
+        bool sparse = false;
+        uint64_t physical = 0;
+        const uint64_t first = number * 16;
+        for (const auto *run = attribute->nrd.run; run; run = run->next) {
+            input.check();
+            if (run->offset >= first + 16) break;
+            if (run->offset + run->len <= first) continue;
+            const uint64_t start = std::max<uint64_t>(first, run->offset), end = std::min<uint64_t>(first+16, run->offset+run->len);
+            if (run->flags & TSK_FS_ATTR_RUN_FLAG_SPARSE) {
+                sparse = true;
+                if (end == first+16) break;
+                continue;
+            }
+            if (sparse) throw Failure("INVALID_COMPRESSED_CONTENT", "NTFS compression unit has physical clusters after its sparse suffix");
+            const size_t bytes = size_t((end-start) * fs->block_size), previous = stored.size();
+            stored.resize(previous+bytes);
+            input.check();
+            const ssize_t count = tsk_fs_read(fs, (run->addr + start-run->offset) * fs->block_size, stored.data()+previous, bytes);
+            if (count != ssize_t(bytes)) throw Failure("FILE_READ_FAILED", tskError());
+            physical += end-start;
+            if (end == first+16) break;
+        }
+        const uint64_t required = std::min<uint64_t>(unitBytes, uint64_t(attribute->nrd.initsize) - number * unitBytes);
+        if (physical == 0) return std::vector<char>(size_t(unitBytes), 0);
+        if (physical == 16) return stored;
+        return decodeLZNT1(stored, required, unitBytes);
+    }
+public:
+    bool active;
+    CompressedContent(const TSK_FS_ATTR *attr, TSK_FS_INFO *filesystem, Input &jobInput)
+        : attribute(attr), fs(filesystem), input(jobInput), active(bool(attr->flags & TSK_FS_ATTR_COMP)) {
+        if (!active) return;
+        if (!TSK_FS_TYPE_ISNTFS(fs->ftype) || !(attribute->flags & TSK_FS_ATTR_NONRES) ||
+            fs->block_size == 0 || fs->block_size > 4096 || attribute->nrd.compsize != 16 ||
+            attribute->nrd.initsize < 0 || attribute->nrd.initsize > attribute->size || attribute->nrd.skiplen != 0)
+            throw Failure("INVALID_COMPRESSED_CONTENT", "Unsupported NTFS compression geometry");
+        unitBytes = uint64_t(fs->block_size) * 16;
+        requiredUnits = uint64_t(attribute->nrd.initsize) / unitBytes + (uint64_t(attribute->nrd.initsize) % unitBytes != 0);
+        const uint64_t requiredBlocks = requiredUnits * 16;
+        uint64_t covered = 0;
+        std::set<const TSK_FS_ATTR_RUN *> seen;
+        for (const auto *run = attribute->nrd.run; run && covered < requiredBlocks; run = run->next) {
+            input.check();
+            if (!seen.insert(run).second || !run->len || run->offset != covered ||
+                run->len > std::numeric_limits<uint64_t>::max() - covered || (run->flags & TSK_FS_ATTR_RUN_FLAG_FILLER))
+                throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "Compressed NTFS content lacks complete compression-unit mappings");
+            if (run->flags & TSK_FS_ATTR_RUN_FLAG_ENCRYPTED) throw Failure("UNSUPPORTED_ENCRYPTED_CONTENT", "Encrypted NTFS compression runs are unsupported");
+            if (!(run->flags & TSK_FS_ATTR_RUN_FLAG_SPARSE) &&
+                (run->addr == 0 || run->addr > fs->last_block_act || run->len - 1 > fs->last_block_act - run->addr))
+                throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "Compressed NTFS unit maps outside the available filesystem");
+            covered += run->len;
+        }
+        if (covered < requiredBlocks) throw Failure("INCOMPLETE_ATTRIBUTE_RUNLIST", "Compressed NTFS content lacks a whole final initialized compression unit");
+        // Validate every initialized unit before exclusive output creation.
+        for (uint64_t number = 0; number < requiredUnits; ++number) { input.check(); unit(number); }
+    }
+    ssize_t read(int64_t position, char *buffer, size_t amount) {
+        const uint64_t number = uint64_t(position) / unitBytes, within = uint64_t(position) % unitBytes;
+        if (cachedUnit != number) { cached = unit(number); cachedUnit = number; }
+        if (within >= cached.size()) return -1;
+        amount = std::min<uint64_t>(amount, cached.size() - within);
+        std::copy_n(cached.data()+within, amount, buffer);
+        return ssize_t(amount);
+    }
+};
 
 void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &output) {
     int64_t offset = request.file["fsOffsetBytes"].get<int64_t>();
@@ -812,7 +1206,10 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         throw Failure("DIRECTORY_EXTRACTION", "Select a file or named data stream to extract");
     int64_t expected = request.file["size"].get<int64_t>();
     if (attribute->size != expected) throw Failure("FILE_SIZE_MISMATCH", "Current file size differs from the enumerated reference");
-    const int64_t readableBytes = verifiedReadableBytes(attribute, fs.get(), input);
+    DeletedFATContent deletedFAT(file.get(), uint64_t(expected), input);
+    const int64_t recordedInitialized = exfatInitializedBytes(file.get(), expected);
+    const int64_t readableBytes = deletedFAT.active ? expected : verifiedReadableBytes(attribute, fs.get(), input, recordedInitialized);
+    CompressedContent compressed(attribute, fs.get(), input);
     NewOutput destination(request.outputPath, request.sources);
     CC_SHA256_CTX context;
     CC_SHA256_Init(&context);
@@ -829,6 +1226,11 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
         if (position >= readableBytes) {
             std::fill_n(buffer.data(), amount, 0);
             count = ssize_t(amount);
+        } else if (deletedFAT.active) {
+            count = deletedFAT.read(position, buffer.data(), amount);
+        } else if (compressed.active) {
+            amount = size_t(std::min<int64_t>(amount, readableBytes - position));
+            count = compressed.read(position, buffer.data(), amount);
         } else {
             amount = size_t(std::min<int64_t>(amount, readableBytes - position));
             count = tsk_fs_attr_read(attribute, position, buffer.data(), amount, TSK_FS_FILE_READ_FLAG_NONE);
@@ -853,7 +1255,14 @@ void extract(const Request &request, TSK_IMG_INFO *image, Input &input, Output &
     verifySources(request.sources);
     destination.finish();
     std::string digest = hashFinal(context);
-    output.emit("extracted", {{"outputPath", request.outputPath}, {"byteCount", position}, {"sha256", digest}});
+    Json receipt{{"outputPath", request.outputPath}, {"byteCount", position}, {"sha256", digest}};
+    if (file->meta->flags & TSK_FS_META_FLAG_UNALLOC) {
+        receipt["contentStatus"] = "recovery-candidate";
+        receipt["warnings"] = {"The receipt verifies current exported source bytes; it does not certify the deleted file's original historical content."};
+        if (observesAllocatedDeletedNTFS(attribute, fs.get(), input))
+            receipt["warnings"].push_back("Mapped NTFS clusters are currently allocated and may contain later-file bytes.");
+    } else receipt["contentStatus"] = "logical-content";
+    output.emit("extracted", std::move(receipt));
     input.check();
     output.emit("completed", {{"fileCount", 0}});
     destination.preserve();
@@ -881,7 +1290,7 @@ int main() {
         if (jobID.size() > 1024) jobID.clear();
         output = std::make_unique<Output>(jobID);
         output->emit("hello", {{"engineVersion", NF_ENGINE_VERSION}, {"patchDigest", NF_PATCH_DIGEST},
-            {"capabilities", {"raw", "ewf", "mbr", "gpt", "filesystem-enumeration", "deleted-file-entries", "ntfs-data-streams", "logical-image-sha256", "file-extraction-sha256"}}});
+            {"capabilities", {"raw", "ewf", "mbr", "gpt", "filesystem-enumeration", "deleted-file-entries", "ntfs-data-streams", "ntfs-lznt1-validated-units", "fat-civil-timestamp-provenance", "deleted-recovery-uncertainty", "logical-image-sha256", "file-extraction-sha256"}}});
         Request request = validate(json);
         input.setJobID(request.jobID);
         input.check();
