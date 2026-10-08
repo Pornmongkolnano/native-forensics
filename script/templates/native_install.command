@@ -11,6 +11,16 @@ task_replace=0
 task_verify_only=0
 task_stage=''
 
+task_report_stage_candidate() {
+  local task_exit_status=$?
+  if [[ -n $task_stage ]]; then
+    # A stage or ancestor can be renamed after creation. Keep every stage;
+    # a lexical path never authorizes removing the directory now at that name.
+    print -u2 -- "Stage path candidate for manual review (no automatic cleanup): $task_stage" || true
+  fi
+  return "$task_exit_status"
+}
+
 task_fail() { print -u2 -- "Install failed: $*"; exit 1; }
 task_no_links() {
   local task_path=$1 task_cursor=/ task_component
@@ -101,7 +111,7 @@ if [[ -e $task_target || -L $task_target ]]; then
   [[ $task_old_identity = io.github.pornmongkolnano.nativeforensics ]] || task_fail 'Existing app has another identity and was preserved.'
 fi
 task_stage=$(/usr/bin/mktemp -d "$task_parent/.nativeforensics-install-stage.XXXXXXXX")
-trap '[[ -z $task_stage ]] || /bin/rm -rf -- "$task_stage"' EXIT
+trap 'task_report_stage_candidate' EXIT
 trap 'exit 130' INT
 trap 'exit 143' HUP TERM
 # Preserve copied extended attributes including quarantine. No xattr removal.
