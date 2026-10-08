@@ -469,8 +469,10 @@ def descendant_pids(rows: dict[int, tuple[int, int]], root_pid: int) -> set[int]
 class DarwinTreeReader:
     """Public libproc PID/PPID/start identity and exact resident byte fields.
 
-    SDK sys/proc_info.h: PROC_PIDTBSDINFO=3 is 136 bytes, pbi_ppid at
-    offset 16 and start timeval at 120/128; PROC_PIDTASKINFO=4 is 96 bytes,
+    SDK sys/proc_info.h: PROC_PIDTBSDINFO=3 is 136 bytes, pbi_status at
+    offset 4, pbi_ppid at 16 and start timeval at 120/128;
+    sys/proc.h: SZOMB=5 is terminal and awaiting parent collection.
+    PROC_PIDTASKINFO=4 is 96 bytes,
     resident size at offset 8. Short structures are never reported as zero RSS.
     Enumeration and per-process reads are sequential, not atomic snapshots.
     """
@@ -492,6 +494,11 @@ class DarwinTreeReader:
         require(count == len(buffer), "Unknown libproc BSD-info structure")
         actual, parent = struct.unpack_from("<II", buffer, 12)
         require(actual == pid, "libproc BSD-info PID mismatch")
+        if struct.unpack_from("<I", buffer, 4)[0] == 5:  # SZOMB
+            # A terminal process can still retain its PID/start identity while
+            # taskinfo reports zero resident bytes. Discovery and both identity
+            # rechecks exclude that terminal observation, never a live zero RSS.
+            return None
         return parent, struct.unpack_from("<QQ", buffer, 120)
 
     def snapshot(self):

@@ -229,6 +229,81 @@ class WorkloadFixtureTests(unittest.TestCase):
         self.assertIn("recipeSHA256", failure["provenance"])
 
 
+class DarwinTreeReaderTests(unittest.TestCase):
+    @staticmethod
+    def reader(statuses, rss=None, *, bsd_size=136, returned_pid=None, task_size=96):
+        """Inject SDK-layout records without loading libproc or observing PIDs."""
+        statuses = {pid: list(values) for pid, values in statuses.items()}
+        rss = {123: 4096} if rss is None else rss
+        calls = []
+
+        class LibprocFixture:
+            def proc_listallpids(self, buffer, _size):
+                if buffer is not None:
+                    for offset, pid in enumerate(sorted(statuses)):
+                        buffer[offset] = pid
+                return len(statuses)
+
+            def proc_pidinfo(self, pid, flavor, _argument, buffer, _size):
+                calls.append((pid, flavor))
+                if flavor == 3:
+                    sequence = statuses[pid]
+                    status = sequence.pop(0) if len(sequence) > 1 else sequence[0]
+                    struct.pack_into("<I", buffer, 4, status)
+                    struct.pack_into("<II", buffer, 12, pid if returned_pid is None else returned_pid,
+                                     1 if pid == 123 else 123)
+                    struct.pack_into("<QQ", buffer, 120, 1000 + pid, 1)
+                    return bsd_size
+                if flavor == 4:
+                    struct.pack_into("<Q", buffer, 8, rss.get(pid, 2048))
+                    return task_size
+                raise AssertionError("Unexpected libproc flavor")
+
+        reader = benchmark.DarwinTreeReader.__new__(benchmark.DarwinTreeReader)
+        reader.root_pid, reader.root_identity, reader.libproc = 123, None, LibprocFixture()
+        return reader, calls
+
+    def test_terminal_root_is_not_a_zero_rss_sample_at_any_read_boundary(self):
+        # SRUN=2, SZOMB=5. Simulate exit before discovery, after taskinfo and
+        # after its identity check; the final root check fences the whole tree.
+        for statuses, task_reads in (([5], 0), ([2, 5], 1), ([2, 2, 5], 1)):
+            with self.subTest(statuses=statuses):
+                reader, calls = self.reader({123: statuses}, {123: 0})
+                self.assertEqual(reader.snapshot(), {})
+                self.assertEqual(calls.count((123, 4)), task_reads)
+
+    def test_terminal_helper_is_excluded_without_losing_live_root_rss(self):
+        for statuses, task_reads in (([5], 0), ([2, 5], 1)):
+            with self.subTest(statuses=statuses):
+                reader, calls = self.reader({123: [2], 124: statuses}, {123: 4096, 124: 0})
+                self.assertEqual(reader.snapshot(), {123: (1, 4096)})
+                self.assertEqual(calls.count((124, 4)), task_reads)
+
+    def test_live_zero_rss_is_retained_and_rejected_by_existing_oracle(self):
+        reader, _ = self.reader({123: [2]}, {123: 0})
+        with mock.patch.object(benchmark.sys, "platform", "darwin"), \
+             mock.patch.object(benchmark, "DarwinTreeReader", return_value=reader):
+            sampler = benchmark.TreeRSSSampler(123, .01)
+        with mock.patch.object(sampler.stopped, "wait", side_effect=lambda _interval: sampler.stopped.set()):
+            sampler._sample()
+        self.assertEqual(sampler.samples[0]["appRSSBytes"], 0)
+        measurement = WorkloadMeasurementTests.valid_measurement()
+        measurement["rssSampler"] = dict(sampler.receipt(), available=True)
+        with self.assertRaisesRegex(ValueError, "byte values are invalid"):
+            benchmark.validate_rss_measurement(measurement, history_only=True)
+
+    def test_terminal_status_does_not_hide_malformed_bsd_or_task_records(self):
+        for options, message in (({"bsd_size": 8}, "BSD-info structure"),
+                                 ({"returned_pid": 999}, "PID mismatch")):
+            with self.subTest(options=options):
+                reader, _ = self.reader({123: [5]}, **options)
+                with self.assertRaisesRegex(ValueError, message):
+                    reader.snapshot()
+        reader, _ = self.reader({123: [2]}, task_size=48)
+        with self.assertRaisesRegex(ValueError, "taskinfo"):
+            reader.snapshot()
+
+
 class WorkloadMeasurementTests(unittest.TestCase):
     def setUp(self):
         (REPO / "local").mkdir(exist_ok=True)
