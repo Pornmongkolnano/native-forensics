@@ -472,6 +472,7 @@ class DarwinTreeReader:
     SDK sys/proc_info.h: PROC_PIDTBSDINFO=3 is 136 bytes, pbi_status at
     offset 4, pbi_ppid at 16 and start timeval at 120/128;
     sys/proc.h: SZOMB=5 is terminal and awaiting parent collection.
+    sys/proc_info.h: PROC_FLAG_INEXIT=4 marks exit() in progress.
     PROC_PIDTASKINFO=4 is 96 bytes,
     resident size at offset 8. Short structures are never reported as zero RSS.
     Enumeration and per-process reads are sequential, not atomic snapshots.
@@ -489,19 +490,42 @@ class DarwinTreeReader:
         buffer = ctypes.create_string_buffer(136)
         ctypes.set_errno(0)
         count = self.libproc.proc_pidinfo(pid, 3, 0, buffer, len(buffer))
+        error = ctypes.get_errno()
+        observation = getattr(self, "last_observation", None)
+        diagnostic = None
+        if observation is not None and pid in self.diagnostic_owned_pids:
+            if len(observation["bsdReads"]) < 8:
+                diagnostic = {"pid": pid, "returnedBytes": count, "errno": error}
+                observation["bsdReads"].append(diagnostic)
+            else:
+                observation["bsdReadsOmitted"] += 1
+        if count == len(buffer):
+            flags, status, exit_status, actual, parent = struct.unpack_from("<IIIII", buffer, 0)
+            if diagnostic is not None:
+                diagnostic.update(flags=flags, status=status, exitStatus=exit_status,
+                                  actualPID=actual, parentPID=parent,
+                                  startTime=list(struct.unpack_from("<QQ", buffer, 120)),
+                                  rawBSDHeaderHex=buffer.raw[:24].hex(),
+                                  rawBSDStartTimeHex=buffer.raw[120:136].hex())
         if count == 0:
             return None  # Other users' inaccessible or concurrently exited PIDs.
         require(count == len(buffer), "Unknown libproc BSD-info structure")
         actual, parent = struct.unpack_from("<II", buffer, 12)
         require(actual == pid, "libproc BSD-info PID mismatch")
-        if struct.unpack_from("<I", buffer, 4)[0] == 5:  # SZOMB
-            # A terminal process can still retain its PID/start identity while
-            # taskinfo reports zero resident bytes. Discovery and both identity
-            # rechecks exclude that terminal observation, never a live zero RSS.
+        if status == 5 or flags & 4:  # SZOMB or SDK PROC_FLAG_INEXIT
+            # A process working its way through exit can retain its live BSD
+            # status/PID/start while its task memory is already torn down.
+            # Exclude only explicit exit state, never SIDL or generic zero RSS.
+            if diagnostic is not None:
+                diagnostic["excludedExitState"] = True
             return None
         return parent, struct.unpack_from("<QQ", buffer, 120)
 
     def snapshot(self):
+        self.last_observation = {"rootPID": self.root_pid, "bsdReads": [], "bsdReadsOmitted": 0,
+                                 "taskReads": [], "taskReadsOmitted": 0,
+                                 "readStartedMonotonicSeconds": time.monotonic()}
+        self.diagnostic_owned_pids = {self.root_pid}
         estimate = self.libproc.proc_listallpids(None, 0)
         require(0 <= estimate < 131000, "Unavailable/unbounded libproc PID inventory")
         capacity = max(256, estimate + 256)
@@ -522,12 +546,20 @@ class DarwinTreeReader:
         if root[1] != self.root_identity:
             return {}  # The already-reaped root PID must never admit a reused PID.
         pids = descendant_pids({pid: (row[0], 0) for pid, row in info.items()}, self.root_pid)
+        self.diagnostic_owned_pids = pids
         rows = {}
         for pid in pids:
             task = ctypes.create_string_buffer(96)
             ctypes.set_errno(0)
             size = self.libproc.proc_pidinfo(pid, 4, 0, task, len(task))
-            if size == 0 and ctypes.get_errno() == errno.ESRCH:
+            error = ctypes.get_errno()
+            if len(self.last_observation["taskReads"]) < 8:
+                self.last_observation["taskReads"].append({
+                    "pid": pid, "returnedBytes": size, "errno": error, "rawTaskInfoHex": task.raw.hex(),
+                    "residentBytes": struct.unpack_from("<Q", task, 8)[0] if size == len(task) else None})
+            else:
+                self.last_observation["taskReadsOmitted"] += 1
+            if size == 0 and error == errno.ESRCH:
                 continue
             require(size == len(task), "Unavailable/unknown owned-process libproc taskinfo")
             # Verify PPID/start identity again so an exited/reused PID cannot
@@ -540,29 +572,72 @@ class DarwinTreeReader:
 
 
 class TreeRSSSampler:
-    def __init__(self, root_pid: int, interval: float):
+    def __init__(self, root_pid: int, interval: float, terminal_observed=None):
         require(math.isfinite(interval) and 0.01 <= interval <= 1, "RSS interval must be 0.01 through 1 second")
         self.root_pid, self.interval = root_pid, interval
         self.samples, self.failures, self.read_seconds = [], [], []
+        self.terminal_fence_supplied = terminal_observed is not None
+        self.terminal_observed = terminal_observed if terminal_observed is not None else lambda: False
+        self.diagnostics, self.diagnostics_omitted = [], 0
+        self.diagnostic_counts, self.diagnostics_omitted_by_kind = {}, {}
         self.reader = DarwinTreeReader(root_pid) if sys.platform == "darwin" else None
         self.stopped = threading.Event()
         self.thread = threading.Thread(target=self._sample, name="workload-tree-rss", daemon=True)
 
     def _sample(self):
         while not self.stopped.is_set():
+            terminal_before = self.terminal_observed()
+            if terminal_before:
+                break  # Only the successful exact-PID wait4 owner sets this.
             start = time.monotonic()
             try:
                 rows = self.reader.snapshot() if self.reader else process_snapshot()
                 pids = descendant_pids(rows, self.root_pid)
+                observation = getattr(self.reader, "last_observation", None)
+                terminal_after = self.terminal_observed()
+                if terminal_after:
+                    self.record_diagnostic({"kind": "exact-wait4-terminal-during-snapshot",
+                                            "snapshotStartedMonotonicSeconds": start,
+                                            "snapshotFinishedMonotonicSeconds": time.monotonic(),
+                                            "rootRSSBytes": rows.get(self.root_pid, (None, None))[1],
+                                            "pids": sorted(pids), "collectorObservation": observation,
+                                            "terminalFenceSupplied": self.terminal_fence_supplied,
+                                            "terminalObservedBeforeSnapshot": terminal_before,
+                                            "terminalObservedAfterSnapshot": terminal_after})
+                    break  # A post-terminal snapshot is not active-process RSS.
                 if pids:
                     app_rss = rows[self.root_pid][1]
-                    self.samples.append({"atMonotonicSeconds": time.monotonic(), "rssBytes": sum(rows[pid][1] for pid in pids),
-                                         "appRSSBytes": app_rss, "helpersRSSBytes": sum(rows[pid][1] for pid in pids if pid != self.root_pid),
-                                         "processCount": len(pids), "pids": sorted(pids)})
+                    sample = {"atMonotonicSeconds": time.monotonic(), "rssBytes": sum(rows[pid][1] for pid in pids),
+                              "appRSSBytes": app_rss, "helpersRSSBytes": sum(rows[pid][1] for pid in pids if pid != self.root_pid),
+                              "processCount": len(pids), "pids": sorted(pids)}
+                    if app_rss == 0:
+                        # Retain this invalid active observation. The validator
+                        # must reject it; diagnostics never excuse a live zero.
+                        if len(self.diagnostics) < 8:
+                            sample["collectorDiagnostic"] = observation
+                            sample["terminalFenceDiagnostic"] = {
+                                "supplied": self.terminal_fence_supplied, "observedBeforeSnapshot": terminal_before,
+                                "observedAfterSnapshot": terminal_after}
+                        self.record_diagnostic({"kind": "active-zero-root-RSS", "sample": sample})
+                    self.samples.append(sample)
+                elif observation and any(row.get("excludedExitState") for row in observation["bsdReads"]):
+                    self.record_diagnostic({"kind": "explicit-BSD-exit-state", "collectorObservation": observation})
             except Exception as error:
                 self.failures.append(str(error))
-            self.read_seconds.append(time.monotonic() - start)
+                self.record_diagnostic({"kind": "collector-error", "error": str(error),
+                                        "collectorObservation": getattr(self.reader, "last_observation", None)})
+            finally:
+                self.read_seconds.append(time.monotonic() - start)
             self.stopped.wait(self.interval)
+
+    def record_diagnostic(self, value):
+        kind = value["kind"]
+        self.diagnostic_counts[kind] = self.diagnostic_counts.get(kind, 0) + 1
+        if len(self.diagnostics) < 8:
+            self.diagnostics.append(value)
+        else:
+            self.diagnostics_omitted += 1
+            self.diagnostics_omitted_by_kind[kind] = self.diagnostics_omitted_by_kind.get(kind, 0) + 1
 
     def start(self):
         self.thread.start()
@@ -588,6 +663,12 @@ class TreeRSSSampler:
                 "distinctHelperPIDsObserved": len(set(helpers)),
                 "maximumObservedProcessCount": max((row["processCount"] for row in self.samples), default=0),
                 "sampleCount": len(self.samples), "samples": self.samples, "failedSamples": self.failures,
+                "collectorDiagnostics": self.diagnostics, "collectorDiagnosticsOmitted": self.diagnostics_omitted,
+                "collectorDiagnosticLimit": 8,
+                "collectorDiagnosticCountsByKind": self.diagnostic_counts,
+                "collectorDiagnosticsOmittedByKind": self.diagnostics_omitted_by_kind,
+                "terminalFenceSupplied": self.terminal_fence_supplied,
+                "terminalFenceScope": "active samples exclude snapshots overlapping the supplied successful exact-child wait4 observation; no second reaper",
                 "rssSampleReadWallSeconds": sum(self.read_seconds),
                 "limitations": "Discovery and RSS reads are sequential, not atomic. Short-lived helpers, inaccessible/reparented descendants and between-sample peaks can be missed; sampled maximum is an observation, not the true peak. Sampling adds measured scheduling overhead (including ps spawning on fallback platforms). Python driver and sampler are outside the owned probe tree."}
 
@@ -595,7 +676,7 @@ class TreeRSSSampler:
 def launch_probe(command: list[str], output: Path, timeout: float, interval: float) -> dict:
     require(math.isfinite(timeout) and timeout > 0, "Invalid process timeout")
     require(math.isfinite(interval) and 0.01 <= interval <= 1, "Invalid RSS interval")
-    finished, result = threading.Event(), {}
+    finished, terminal_observed, result = threading.Event(), threading.Event(), {}
     lifecycle_errors, sampler = [], None
     waiter_started = False
     with (output / "probe.stdout").open("xb") as stdout, (output / "probe.stderr").open("xb") as stderr:
@@ -607,6 +688,7 @@ def launch_probe(command: list[str], output: Path, timeout: float, interval: flo
             require(pid == process.pid, "Exact wait4 returned another process")
             result.update(pid=pid, returncode=os.waitstatus_to_exitcode(status), usage=usage, exited=time.monotonic())
             process.returncode = result["returncode"]  # Popen must not reap the same child again.
+            terminal_observed.set()  # A reaper error never sets the RSS lifetime fence.
 
         def reap():
             try:
@@ -660,7 +742,7 @@ def launch_probe(command: list[str], output: Path, timeout: float, interval: flo
             return True
 
         try:
-            sampler = TreeRSSSampler(process.pid, interval)
+            sampler = TreeRSSSampler(process.pid, interval, terminal_observed=terminal_observed.is_set)
             sampler.start()
         except BaseException as error:
             lifecycle_errors.append({"phase": "sampler-start", "error": str(error)})
@@ -757,10 +839,20 @@ def validate_rss_measurement(measurement: dict, *, history_only: bool = False) -
             and usage["kernelReportedMaximumRSSBytes"] > 0, "Kernel RSS measurement is unavailable")
     receipt = measurement.get("rssSampler", {})
     samples = receipt.get("samples")
-    require(receipt.get("available") is True and receipt.get("rootPID") == root_pid
-            and isinstance(samples, list) and len(samples) > 0
-            and type(receipt.get("sampleCount")) is int and receipt["sampleCount"] == len(samples)
-            and receipt.get("failedSamples") == [], "RSS samples are missing or failed")
+    valid_sampling = (receipt.get("available") is True and receipt.get("rootPID") == root_pid
+                      and isinstance(samples, list) and len(samples) > 0
+                      and type(receipt.get("sampleCount")) is int and receipt["sampleCount"] == len(samples)
+                      and receipt.get("failedSamples") == [])
+    if not valid_sampling:
+        diagnostic = {"rootPID": root_pid, "sampleCount": receipt.get("sampleCount"),
+                      "failedSamples": receipt.get("failedSamples"),
+                      "collectorDiagnostics": receipt.get("collectorDiagnostics", []),
+                      "collectorDiagnosticsOmitted": receipt.get("collectorDiagnosticsOmitted", 0),
+                      "collectorDiagnosticCountsByKind": receipt.get("collectorDiagnosticCountsByKind", {}),
+                      "collectorDiagnosticsOmittedByKind": receipt.get("collectorDiagnosticsOmittedByKind", {}),
+                      "terminalFenceSupplied": receipt.get("terminalFenceSupplied")}
+        details = json.dumps(diagnostic, sort_keys=True, ensure_ascii=True, default=str)[:8192]
+        require(False, "RSS samples are missing or failed; collector diagnostic=" + details)
     previous_time, helpers, maximum_count = None, [], 0
     for row in samples:
         timestamp = row.get("atMonotonicSeconds")
@@ -771,9 +863,18 @@ def validate_rss_measurement(measurement: dict, *, history_only: bool = False) -
                 and pids == sorted(set(pids)) and root_pid in pids
                 and type(row.get("processCount")) is int and row["processCount"] == len(pids),
                 "RSS sample owned process inventory is invalid")
-        require(all(type(row.get(key)) is int and row[key] >= 0 for key in ("rssBytes", "appRSSBytes", "helpersRSSBytes"))
-                and row["appRSSBytes"] > 0
-                and row["rssBytes"] == row["appRSSBytes"] + row["helpersRSSBytes"], "RSS sample byte values are invalid")
+        valid_bytes = (all(type(row.get(key)) is int and row[key] >= 0 for key in ("rssBytes", "appRSSBytes", "helpersRSSBytes"))
+                       and row["appRSSBytes"] > 0
+                       and row["rssBytes"] == row["appRSSBytes"] + row["helpersRSSBytes"])
+        if not valid_bytes:
+            # Failed CI unit directories may be removed by their test owner;
+            # the exception keeps a bounded raw-state diagnosis in CI logs too.
+            diagnostic = {"rootPID": root_pid, "sample": row,
+                          "collectorDiagnosticsOmitted": receipt.get("collectorDiagnosticsOmitted", 0),
+                          "collectorDiagnosticCountsByKind": receipt.get("collectorDiagnosticCountsByKind", {}),
+                          "collectorDiagnosticsOmittedByKind": receipt.get("collectorDiagnosticsOmittedByKind", {})}
+            details = json.dumps(diagnostic, sort_keys=True, ensure_ascii=True, default=str)[:8192]
+            require(False, "RSS sample byte values are invalid; collector diagnostic=" + details)
         if history_only:
             require(pids == [root_pid] and row["helpersRSSBytes"] == 0,
                     "History-only probe unexpectedly spawned descendants")

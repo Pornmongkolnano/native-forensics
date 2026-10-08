@@ -231,9 +231,11 @@ class WorkloadFixtureTests(unittest.TestCase):
 
 class DarwinTreeReaderTests(unittest.TestCase):
     @staticmethod
-    def reader(statuses, rss=None, *, bsd_size=136, returned_pid=None, task_size=96):
+    def reader(statuses, rss=None, *, flags=0, bsd_size=136, returned_pid=None, task_size=96):
         """Inject SDK-layout records without loading libproc or observing PIDs."""
         statuses = {pid: list(values) for pid, values in statuses.items()}
+        flags = ({pid: list(values) for pid, values in flags.items()} if isinstance(flags, dict)
+                 else {pid: [flags] for pid in statuses})
         rss = {123: 4096} if rss is None else rss
         calls = []
 
@@ -249,6 +251,9 @@ class DarwinTreeReaderTests(unittest.TestCase):
                 if flavor == 3:
                     sequence = statuses[pid]
                     status = sequence.pop(0) if len(sequence) > 1 else sequence[0]
+                    flag_sequence = flags[pid]
+                    flag = flag_sequence.pop(0) if len(flag_sequence) > 1 else flag_sequence[0]
+                    struct.pack_into("<I", buffer, 0, flag)
                     struct.pack_into("<I", buffer, 4, status)
                     struct.pack_into("<II", buffer, 12, pid if returned_pid is None else returned_pid,
                                      1 if pid == 123 else 123)
@@ -278,6 +283,38 @@ class DarwinTreeReaderTests(unittest.TestCase):
                 reader, calls = self.reader({123: [2], 124: statuses}, {123: 4096, 124: 0})
                 self.assertEqual(reader.snapshot(), {123: (1, 4096)})
                 self.assertEqual(calls.count((124, 4)), task_reads)
+
+    def test_explicit_inexit_flags_exclude_exit_before_status_becomes_zombie(self):
+        for flags, task_reads in (([4], 0), ([0, 4], 1), ([0, 0, 4], 1)):
+            with self.subTest(flags=flags):
+                reader, calls = self.reader({123: [2]}, {123: 0}, flags={123: flags})
+                self.assertEqual(reader.snapshot(), {})
+                self.assertEqual(calls.count((123, 4)), task_reads)
+                observed = [row for row in reader.last_observation["bsdReads"] if row.get("excludedExitState")]
+                self.assertTrue(observed)
+                self.assertEqual(observed[0]["status"], 2)
+                self.assertEqual(observed[0]["flags"], 4)
+
+    def test_creation_sleep_stop_and_ordinary_flags_are_not_terminal_discriminators(self):
+        # SIDL/SRUN/SSLEEP/SSTOP are not SZOMB. These flags are TRACED, LP64,
+        # session leader and EXEC; none includes the distinct INEXIT bit.
+        for status in (1, 2, 3, 4):
+            for flags in (0, 2, 0x10, 0x20, 0x4000, 0x4032):
+                with self.subTest(status=status, flags=flags):
+                    reader, _ = self.reader({123: [status]}, {123: 0}, flags=flags)
+                    self.assertEqual(reader.snapshot(), {123: (1, 0)})
+                    diagnostic = reader.last_observation
+                    self.assertEqual([row["status"] for row in diagnostic["bsdReads"]], [status] * 3)
+                    self.assertEqual([row["flags"] for row in diagnostic["bsdReads"]], [flags] * 3)
+                    self.assertEqual(diagnostic["taskReads"][0]["residentBytes"], 0)
+                    self.assertEqual(len(diagnostic["taskReads"][0]["rawTaskInfoHex"]), 192)
+
+    def test_inexit_flag_does_not_hide_bad_structure_or_pid(self):
+        for options in ({"bsd_size": 8}, {"returned_pid": 999}):
+            with self.subTest(options=options):
+                reader, _ = self.reader({123: [2]}, flags=4, **options)
+                with self.assertRaises(ValueError):
+                    reader.snapshot()
 
     def test_live_zero_rss_is_retained_and_rejected_by_existing_oracle(self):
         reader, _ = self.reader({123: [2]}, {123: 0})
@@ -718,6 +755,245 @@ class HistoryWorkloadTests(unittest.TestCase):
         logs = before_scan / "history-warm-preverified-01-driver"
         self.assertEqual(benchmark.read_json(logs / "failed-attempt.json")["validationState"], "preflight-failed")
         self.assertTrue((logs / "attempt-configuration.json").is_file())
+
+
+class SamplerTerminalFenceTests(unittest.TestCase):
+    """Controlled sampler calls; no processes or sampler threads are started."""
+
+    @staticmethod
+    def reader(rss, during_snapshot=None, include_helper=False):
+        class ControlledReader:
+            def __init__(self):
+                self.calls = 0
+                self.last_observation = None
+
+            def snapshot(self):
+                self.calls += 1
+                resident = rss(self.calls) if callable(rss) else rss
+                task_bytes = bytearray(96)
+                struct.pack_into("<Q", task_bytes, 8, resident)
+                self.last_observation = {
+                    "rootPID": 123,
+                    "bsdReads": [{"pid": 123, "actualPID": 123, "parentPID": 1,
+                                  "startTime": [1000, 5], "flags": 0, "status": 2,
+                                  "returnedBytes": 136, "errno": 0,
+                                  "rawBSDHeaderHex": "0000000002000000000000007b0000000100000000000000"}],
+                    "bsdReadsOmitted": 0,
+                    "taskReads": [{"pid": 123, "returnedBytes": 96, "errno": 0,
+                                   "residentBytes": resident, "rawTaskInfoHex": task_bytes.hex()}],
+                    "taskReadsOmitted": 0,
+                }
+                rows = {123: (1, resident), 999: (1, 999999)}
+                if include_helper:
+                    rows[124] = (123, 2048)
+                if during_snapshot is not None:
+                    during_snapshot(self)
+                return rows
+
+        return ControlledReader()
+
+    @staticmethod
+    def sampler(reader, terminal=None):
+        with mock.patch.object(benchmark.sys, "platform", "darwin"), \
+             mock.patch.object(benchmark, "DarwinTreeReader", return_value=reader):
+            if terminal is None:
+                return benchmark.TreeRSSSampler(123, .01)
+            return benchmark.TreeRSSSampler(123, .01, terminal_observed=terminal.is_set)
+
+    def sample_manually(self, sampler, iterations=1):
+        calls = []
+
+        def finish_after_iteration(interval):
+            calls.append(interval)
+            if len(calls) >= iterations:
+                sampler.stopped.set()
+            return False
+
+        with mock.patch.object(sampler.stopped, "wait", side_effect=finish_after_iteration), \
+             mock.patch.object(sampler.thread, "start", side_effect=AssertionError("real sampler thread forbidden")) as launch:
+            sampler._sample()
+        launch.assert_not_called()
+        self.assertIsNone(sampler.thread.ident)
+
+    @staticmethod
+    def measurement(sampler):
+        measurement = WorkloadMeasurementTests.valid_measurement()
+        measurement["rssSampler"] = dict(sampler.receipt(), available=True)
+        return measurement
+
+    def test_terminal_before_snapshot_prevents_any_collector_read(self):
+        terminal = benchmark.threading.Event()
+        terminal.set()  # Simulate the successful exact-PID wait4 owner only.
+        reader = self.reader(0)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler)
+        self.assertEqual(reader.calls, 0)
+        self.assertEqual(sampler.samples, [])
+        self.assertEqual(sampler.receipt()["failedSamples"], [])
+        self.assertEqual(sampler.receipt()["collectorDiagnostics"], [])
+        with self.assertRaisesRegex(ValueError, "RSS samples are missing or failed"):
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+
+    def test_terminal_during_snapshot_excludes_zero_and_positive_rows_with_raw_diagnostic(self):
+        for rss in (0, 4096):
+            with self.subTest(rootRSSBytes=rss):
+                terminal = benchmark.threading.Event()
+                reader = self.reader(rss, lambda _reader: terminal.set(), include_helper=True)
+                sampler = self.sampler(reader, terminal)
+                self.sample_manually(sampler)
+                receipt = sampler.receipt()
+                self.assertEqual(reader.calls, 1)
+                self.assertTrue(terminal.is_set())
+                self.assertEqual(receipt["sampleCount"], 0)
+                self.assertEqual(receipt["samples"], [])
+                self.assertEqual(receipt["failedSamples"], [])
+                self.assertEqual(receipt["collectorDiagnosticsOmitted"], 0)
+                self.assertEqual(len(receipt["collectorDiagnostics"]), 1)
+                diagnostic = receipt["collectorDiagnostics"][0]
+                self.assertEqual(diagnostic["kind"], "exact-wait4-terminal-during-snapshot")
+                self.assertEqual(diagnostic["rootRSSBytes"], rss)
+                self.assertEqual(diagnostic["pids"], [123, 124])
+                self.assertIs(diagnostic["terminalFenceSupplied"], True)
+                self.assertIs(diagnostic["terminalObservedBeforeSnapshot"], False)
+                self.assertIs(diagnostic["terminalObservedAfterSnapshot"], True)
+                self.assertEqual(diagnostic["collectorObservation"], reader.last_observation)
+                self.assertLessEqual(diagnostic["snapshotStartedMonotonicSeconds"],
+                                     diagnostic["snapshotFinishedMonotonicSeconds"])
+                self.assertIsNone(receipt["appPeakRSSSampledBytes"])
+
+    def test_terminal_overlap_preserves_previously_accepted_positive_sample(self):
+        for final_rss in (0, 4096):
+            with self.subTest(finalRootRSSBytes=final_rss):
+                terminal = benchmark.threading.Event()
+
+                def terminal_on_second_snapshot(reader):
+                    if reader.calls == 2:
+                        terminal.set()
+
+                reader = self.reader(lambda call: 4096 if call == 1 else final_rss,
+                                     terminal_on_second_snapshot)
+                sampler = self.sampler(reader, terminal)
+                self.sample_manually(sampler, iterations=2)
+                receipt = sampler.receipt()
+                self.assertEqual(reader.calls, 2)
+                self.assertEqual(receipt["sampleCount"], 1)
+                self.assertEqual(receipt["samples"][0]["appRSSBytes"], 4096)
+                self.assertEqual(receipt["appPeakRSSSampledBytes"], 4096)
+                self.assertEqual(receipt["failedSamples"], [])
+                self.assertEqual(len(receipt["collectorDiagnostics"]), 1)
+                self.assertEqual(receipt["collectorDiagnostics"][0]["kind"],
+                                 "exact-wait4-terminal-during-snapshot")
+                self.assertEqual(receipt["collectorDiagnostics"][0]["rootRSSBytes"], final_rss)
+                benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+
+    def test_nonterminal_zero_is_retained_and_failure_message_contains_raw_fields(self):
+        terminal = benchmark.threading.Event()
+        reader = self.reader(0)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler)
+        receipt = sampler.receipt()
+        self.assertFalse(terminal.is_set())
+        self.assertEqual(reader.calls, 1)
+        self.assertEqual(receipt["sampleCount"], 1)
+        self.assertEqual(receipt["samples"][0]["appRSSBytes"], 0)
+        self.assertEqual(receipt["samples"][0]["collectorDiagnostic"], reader.last_observation)
+        self.assertEqual(receipt["samples"][0]["terminalFenceDiagnostic"], {
+            "supplied": True, "observedBeforeSnapshot": False, "observedAfterSnapshot": False})
+        self.assertEqual(receipt["collectorDiagnostics"][0]["kind"], "active-zero-root-RSS")
+        self.assertEqual(receipt["failedSamples"], [])
+        with self.assertRaisesRegex(ValueError, "^RSS sample byte values are invalid") as raised:
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+        for field in ('"flags": 0', '"status": 2', '"residentBytes": 0', '"returnedBytes": 96',
+                      '"rawBSDHeaderHex"', '"rawTaskInfoHex"'):
+            self.assertIn(field, str(raised.exception))
+
+    def test_later_terminal_observation_does_not_retroactively_excuse_active_zero(self):
+        terminal = benchmark.threading.Event()
+        reader = self.reader(0)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler)
+        terminal.set()  # This occurs after the completed active snapshot.
+        sampler.stopped.clear()
+        self.sample_manually(sampler)  # Exercise the pre-terminal fence again.
+        self.assertEqual(reader.calls, 1)
+        self.assertEqual(len(sampler.samples), 1)
+        self.assertEqual(sampler.diagnostics[0]["kind"], "active-zero-root-RSS")
+        with self.assertRaisesRegex(ValueError, "^RSS sample byte values are invalid"):
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+
+    def test_terminal_fence_does_not_erase_a_collector_exception(self):
+        terminal = benchmark.threading.Event()
+
+        def failed_snapshot(_reader):
+            terminal.set()
+            raise RuntimeError("controlled collector failure")
+
+        reader = self.reader(0, failed_snapshot)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler)
+        receipt = sampler.receipt()
+        self.assertTrue(terminal.is_set())
+        self.assertEqual(receipt["samples"], [])
+        self.assertEqual(receipt["failedSamples"], ["controlled collector failure"])
+        self.assertEqual(receipt["collectorDiagnostics"][0]["kind"], "collector-error")
+        self.assertEqual(receipt["collectorDiagnostics"][0]["collectorObservation"], reader.last_observation)
+        with self.assertRaisesRegex(ValueError, "RSS samples are missing or failed"):
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+
+    def test_diagnostic_cap_does_not_reduce_the_invalid_active_sample_population(self):
+        terminal = benchmark.threading.Event()
+        reader = self.reader(0)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler, iterations=11)
+        receipt = sampler.receipt()
+        self.assertEqual(reader.calls, 11)
+        self.assertEqual(receipt["sampleCount"], 11)
+        self.assertEqual(len(receipt["samples"]), 11)
+        self.assertTrue(all(sample["appRSSBytes"] == 0 and sample["pids"] == [123]
+                            for sample in receipt["samples"]))
+        self.assertEqual(receipt["collectorDiagnosticLimit"], 8)
+        self.assertEqual(len(receipt["collectorDiagnostics"]), 8)
+        self.assertEqual(receipt["collectorDiagnosticsOmitted"], 3)
+        self.assertEqual(sum("collectorDiagnostic" in sample for sample in receipt["samples"]), 8)
+        self.assertEqual(sum("terminalFenceDiagnostic" in sample for sample in receipt["samples"]), 8)
+        self.assertTrue(all("collectorDiagnostic" not in sample and "terminalFenceDiagnostic" not in sample
+                            for sample in receipt["samples"][8:]))
+        self.assertEqual(receipt["collectorDiagnosticCountsByKind"], {"active-zero-root-RSS": 11})
+        self.assertEqual(receipt["collectorDiagnosticsOmittedByKind"], {"active-zero-root-RSS": 3})
+        self.assertEqual(receipt["failedSamples"], [])
+        with self.assertRaisesRegex(ValueError, "^RSS sample byte values are invalid") as raised:
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+        self.assertIn('"collectorDiagnosticsOmitted": 3', str(raised.exception))
+
+    def test_invalid_sample_ci_diagnostic_message_has_a_fixed_size_bound(self):
+        terminal = benchmark.threading.Event()
+
+        def oversized_diagnostic(reader):
+            reader.last_observation["zzSyntheticDiagnosticPadding"] = "x" * 20000
+
+        reader = self.reader(0, oversized_diagnostic)
+        sampler = self.sampler(reader, terminal)
+        self.sample_manually(sampler)
+        with self.assertRaisesRegex(ValueError, "^RSS sample byte values are invalid") as raised:
+            benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
+        prefix = "RSS sample byte values are invalid; collector diagnostic="
+        message = str(raised.exception)
+        self.assertTrue(message.startswith(prefix))
+        self.assertLessEqual(len(message) - len(prefix), 8192)
+        self.assertIn('"rawTaskInfoHex"', message)
+        self.assertEqual(len(sampler.samples), 1)
+
+    def test_nonterminal_positive_sample_still_passes_the_existing_rss_oracle(self):
+        reader = self.reader(4096)
+        sampler = self.sampler(reader)
+        self.sample_manually(sampler)
+        receipt = sampler.receipt()
+        self.assertIs(receipt["terminalFenceSupplied"], False)
+        self.assertEqual(receipt["sampleCount"], 1)
+        self.assertEqual(receipt["appPeakRSSSampledBytes"], 4096)
+        self.assertEqual(receipt["collectorDiagnostics"], [])
+        self.assertEqual(receipt["failedSamples"], [])
+        benchmark.validate_rss_measurement(self.measurement(sampler), history_only=True)
 
 
 if __name__ == "__main__":
