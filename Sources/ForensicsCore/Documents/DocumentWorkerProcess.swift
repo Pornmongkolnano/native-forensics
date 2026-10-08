@@ -190,17 +190,37 @@ final class DocumentWorkerProcess: @unchecked Sendable {
               posix_spawnattr_setpgroup(&attributes, 0) == 0,
               posix_spawnattr_setsigdefault(&attributes, &defaults) == 0,
               posix_spawnattr_setsigmask(&attributes, &mask) == 0 else { throw DocumentAnalysisError.launchFailed }
-        let arguments = [executable.path].map { strdup($0) }
         let workerEnvironmentStrings: [String] = ["PATH=/usr/bin:/bin", "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8"]
-        let variables = workerEnvironmentStrings.map { strdup($0) }
-        defer { for pointer in arguments + variables { free(pointer) } }
-        var argv = arguments + [nil], environment = variables + [nil], child: pid_t = 0
-        let result = argv.withUnsafeMutableBufferPointer { argumentBuffer in
-            environment.withUnsafeMutableBufferPointer { environmentBuffer in
-                posix_spawn(&child, executable.path, &actions, &attributes, argumentBuffer.baseAddress!, environmentBuffer.baseAddress!)
-            }
+        var child: pid_t = 0
+        let result = try withSpawnCStringVectors(executablePath: executable.path, environmentStrings: workerEnvironmentStrings) { path, argv, environment in
+            posix_spawn(&child, path, &actions, &attributes, argv, environment)
         }
         guard result == 0, child > 0 else { throw DocumentAnalysisError.launchFailed }
         return child
+    }
+
+    /// strdup owns each copy beyond withCString; keep copies and pointer vectors
+    /// alive until the synchronous spawn call returns, including throwing paths.
+    static func withSpawnCStringVectors<Value>(executablePath: String, environmentStrings: [String],
+        allocate: (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? = { Darwin.strdup($0) },
+        release: (UnsafeMutablePointer<CChar>) -> Void = { Darwin.free($0) },
+        operation: (UnsafePointer<CChar>, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+                    UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) throws -> Value) throws -> Value {
+        let arguments: [UnsafeMutablePointer<CChar>?] = [executablePath.withCString { allocate($0) }]
+        let variables: [UnsafeMutablePointer<CChar>?] = environmentStrings.map { value in
+            value.withCString { allocate($0) }
+        }
+        defer { for pointer in arguments + variables { if let pointer { release(pointer) } } }
+        guard let path = arguments[0], variables.allSatisfy({ $0 != nil }) else { throw DocumentAnalysisError.launchFailed }
+        var argv: [UnsafeMutablePointer<CChar>?] = arguments + [nil]
+        var environment: [UnsafeMutablePointer<CChar>?] = variables + [nil]
+        return try argv.withUnsafeMutableBufferPointer { argumentBuffer in
+            try environment.withUnsafeMutableBufferPointer { environmentBuffer in
+                guard let argumentBase = argumentBuffer.baseAddress, let environmentBase = environmentBuffer.baseAddress else {
+                    throw DocumentAnalysisError.launchFailed
+                }
+                return try operation(UnsafePointer(path), argumentBase, environmentBase)
+            }
+        }
     }
 }
