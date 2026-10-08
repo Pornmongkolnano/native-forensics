@@ -23,7 +23,9 @@ jobs:
       - name: Toolchain
         run: swift --version
       - name: Benchmark harness safety regressions
-        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline test_benchmark_process_timing test_stage_autopsy_repaired_profile test_app_bundle test_native_distribution
+        run: PYTHONPATH=Tests/NativeEngine python3 -m unittest test_benchmark_native_engine test_compare_forensics_pipeline test_benchmark_process_timing test_stage_autopsy_repaired_profile test_app_bundle test_native_distribution test_native_workload_benchmark test_xpc_packaging_runtime
+      - name: Decoder runtime harness oracle tests
+        run: python3 -m unittest discover -s Tests/Runtime -p 'test_document_runtime_gates.py'
       - name: Build pinned native engine
         run: python3 script/build_native_engine.py
       - name: Native filesystem regressions
@@ -39,7 +41,7 @@ jobs:
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
         run: swift test --filter ForensicsCoreTests --experimental-maximum-parallelization-width 4
       - name: Native workspace correctness tests
-        run: swift test --skip-build --filter NativeForensicsTests
+        run: swift test --skip-build --filter NativeForensicsTests --experimental-maximum-parallelization-width 4
       - name: Cooperative executor blocking regression
         env:
           SWIFT_CONCURRENCY_COOPERATIVE_POOL_STRICT: "1"
@@ -54,7 +56,7 @@ jobs:
           NFTSK_SYNTHETIC_FIXTURES: ${{ github.workspace }}/local/ci-native/fixtures
         run: swift test -c release --filter ForensicsCoreTests --experimental-maximum-parallelization-width 4
       - name: Optimized native workspace correctness tests
-        run: swift test -c release --skip-build --filter NativeForensicsTests
+        run: swift test -c release --skip-build --filter NativeForensicsTests --experimental-maximum-parallelization-width 4
       - name: Independent synthetic end-to-end workflow
         run: |
           python3 script/milestone_fixture_oracle.py --generate local/ci-milestone-fixture
