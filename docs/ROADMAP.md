@@ -1,19 +1,21 @@
 # แผนพัฒนา NativeForensics
 
-ล่าสุด **0.6.0 / build 15** มี bounded case-wide content index, two-file Codex comparison, filesystem/Chromium timeline, case integrity audit และ development distribution/source/relink workflow แล้ว ดู [รุ่นปัจจุบัน](NATIVE-0.6.md) และ [actual synthetic workflow](MILESTONE-WORKFLOW.md) ไม่ปิด 1.0 trust/clean-machine/M5 gates จากการผ่าน local tests
+ฐานที่เก็บไว้คือ **0.6.0 / build15** และ rollback ZIP ส่วน **0.7.0 / build16 — frozen D development candidate** ผ่าน Debug/Release correctness, actual AES-wrapper API subset, four-product build/static, bounded GUI และ [executed local R2 source/rebuild/relink/system-installer](R2-DISTRIBUTION-CURRENT-2026-10-08.md) แล้ว ดู [current D evidence](NATIVE-0.7.md), [ฐาน0.6](NATIVE-0.6.md) และ [historical synthetic workflow](MILESTONE-WORKFLOW.md) เป้าหมายเต็มคงตาม [completion audit](GOAL-COMPLETION.md); ad hoc/local acceptance ไม่ปิด trust/clean-machine/M5/whole-goal gates
 
-## สถานะการดำเนินแผนวันที่ 8 October 2026
+## สถานะการดำเนินแผนวันที่8 October2026
 
 | ช่วง | Implementation และขอบเขตปัจจุบัน | Gate ที่ยังเปิด |
 |---|---|---|
-| 1 งานไม่หาย | v1 sidecars, notes/revisions, analysis/extraction history, fresh text/hex preview | ทุก storage/power-loss scenario และ cryptographic authenticity |
-| 2 เอกสาร/ค้นเนื้อหา | verified isolated decoding; bounded literal case-wide index; Thai/short-query/reopen/stale/cancel coverage | OCR/legacy Office, large/cold/mixed RAM measurements; deprecated Seatbelt backend ต้องมี supported distribution replacement |
-| 3 Codex เปรียบเทียบ | สอง UTF-8 files, exact review/redaction, disclosure-bound citations, immutable history/follow-up | live two-file synthetic provider smoke ผ่านแยกจาก fake-provider receipt; PDF disclosure references และ broader provider behavior เป็นงานต่อยอด |
-| 4 Timeline/รายงาน | filesystem + allocated Chromium History/explicit coherent WAL, timezone policy, source navigation, JSON/Markdown | parser families อื่น, deleted/free SQLite pages, PDF report layout |
-| 5 Recovery | JPEG/PNG/PDF/ZIP corpus, independent/updated PDFs, malformed candidates, strict PNG completeness | arbitrary fragmented/damaged media; no original-name/deletion inference |
-| 6 Distribution | deterministic development ZIP, safe installer, pinned sources/licenses/relink recipes/receipts | Developer ID/notarization, clean machine, physical M5, older macOS and thermal/battery measurements |
+| 1 งานไม่หาย | Versioned sidecars/revisions, explicitv2migration/backup/rollback, immutablejobs; actual full/digestOnly parent-child save+quit/reopen byte preservation; [Release headless history n5](HISTORY-RELEASE-2026-10-08.md) ผ่าน | Case-only Saved History entrypoint UX, loadedanswer/freshciteafterrestart/changedsourceRefusal; complete publication races/power-loss/GUIaggregateRSS/trustedidentity |
+| 2 เอกสาร/ค้นเนื้อหา | D XPC14scopes passed/brokerdeathunavailable77, actual binary provenance/caps/cancel/policy; literal/phrase/prefix+incremental verification; C captured-frame5/5แยกartifact | Brokerdeath/publictask-control, fivehostESRCHcause, broadercold/mixed/full-app budgets/currentGUI; OCR/legacybodiesคงlater scope |
+| 3 Codex เปรียบเทียบ | Actual one-pageASCII PDFreview/redaction/freshprequitprefixopen; two liveparent-child responses8+4disclosedrefs; full/digestOnly binding | Loadedanswer/freshciteafterrestart/changedsourceRefusal และ case-only History UX; broaderproviderbehavior/completePDFgate |
+| 4 Timeline/รายงาน | Filesystem/allocated Chromium-WAL/UTF8syslog, explicit time/source refs, JSON/Markdown/PDF | Current end-to-end/GUI reportreadback; additional parserfamilies/deleted-freeSQLite; renderer-onlyไม่แทนextraction/provider |
+| 5 Recovery | JPEG/PNG/PDF/ZIP corpus, independent/updated PDFs, malformedcandidates/strictPNG completeness; UDIFraw-carverguard | Arbitrary fragmented/damaged media; no original-name/deletion inference |
+| 6 Distribution | Local D ZIP25,504,203B/SHA59d1600f…7173be; extracted four-product/native196/relink196+EFS31/system-installer ordinary transactions passed; Python217 | Originallicense decision, Developer ID/notarization/Gatekeeper, clean older macOS/physicalM5; power-loss/concurrent publication/thermal-battery |
 
-Phase 1 broad-format gatesด้านล่างคงเปิดตามจริง NTFS 0.1.3 เพิ่ม fail-closed guards และ valid ATTRIBUTE_LIST/uninitialized-tail fixtures; การปฏิเสธ compression/EFS ไม่ใช่การประกาศว่ารองรับการถอดข้อมูลเหล่านี้ แผน 1.0 ยังไม่ complete จน external trust/compatibility และ coverage ที่จะประกาศผ่านการตรวจจริง
+Engine **0.1.5/TSK4.15** ผ่าน existing196native และ31actual-helper EFS กับ separate Windows-created21,888,890-byte RAWtwin [bounded profile](EFS-KEY-PIPELINE.md) รวมcorpuscompression/ATTRIBUTE_LIST/deletedchain/civil-timeของ [0.1.4](FILESYSTEM-COMPLETION.md) Ordinary encrypted extractionยังrefused; plaintextผ่านexplicit matching-key operation ไม่ใช่generalEFS/BitLocker
+
+D fullDebugCore727/80+Native268/31 และ Release727/80+268/31ผ่าน; newencrypted-snapshotopt-inถูกskipในmainCore จึงใช้ **separate actualAES API2 tests** ทั้งDebug/ReleaseสำหรับUDIFwrapperรอบunencryptedvolume Disk-user snapshots/bootFileVaultไม่qualified PlainUDIFhistorical GUI16,384Bexportผ่าน; current-file/encrypted GUIยังเปิด Prior675/75 snapshotobserver15issuesเก็บไว้และdiagnosticrerunไม่พิสูจน์cause/fixของcontention D XPC14/77ยังqualified ไม่โอนCframe/Abenchmarkเป็นDperformance [รายละเอียดทุกscope](NATIVE-0.7.md)
 
 Native Mac foundation และ filesystem workflow มี implementation แล้ว ปัจจุบัน **Phase 1 coverage ยัง IN PROGRESS** เวอร์ชัน 0.5 เพิ่ม assignment recovery, bounded UDF VAT history, isolated document previews, selected-document text search และ transactional batch export ตาม [assignment validation](ASSIGNMENT-VALIDATION-2026-10-07.md) ผลนี้ไม่ปิด broad-format, artifact-analysis หรือ distribution gates
 
@@ -74,7 +76,7 @@ Gate: fabricated/out-of-range/stale references ถูกแสดง unresolved;
 - **Recovery:** ใช้ PhotoRec adapter เป็น candidate ที่ต้องทดลอง พร้อม private output/scratch และ candidate offset/range/status/hash ระบุ unknown/unavailable เมื่อพิสูจน์ source extents ไม่ได้ แยก recovered logical bytes จาก original source extents และไม่อนุมาน contiguous range จาก output size เริ่ม JPEG/PNG/PDF/ZIP ที่มี oracle; fragmented/incomplete/false-positive และ two-independent-PDF/incremental-update gates ด้านล่างต้องผ่าน Carved candidate กับ deleted filesystem entry เป็นคนละชนิดข้อมูล
 - **Release:** ปิด bugs ภายใน advertised capability และแจกพร้อม notices/corresponding source/relink materials, Developer ID/notarization เมื่อมี signing identity พร้อม ทดสอบ clean machine, macOS versions ที่ประกาศ และ physical MacBook Air M5 ไม่ลด Gatekeeper เพื่อชดเชย packaging ที่ยังไม่ผ่าน
 
-APFS/FileVault, OCR ทุกไฟล์ และ engine rewrite ต้องมี ADR กับ independent corpus/measurement แยกหลัง workflow ข้างต้นพร้อม; ไม่ใช่ dependency ของ Save/preview/search แรก
+APFS มี [separate system-view ADR](ADR-APFS-SYSTEM-VIEW.md) และ independent bounded profile corpus แล้ว แต่ snapshot/boot FileVault combinations ต้องมี positive acquisition/content evidence เพิ่ม OCR ทุกไฟล์และ engine rewrite ยังต้องมี ADR กับ independent corpus/measurement แยก ไม่ใช่ dependency ของ Save/preview/search แรก
 
 ### Backlog รอบแรกและการวัดผล
 
@@ -130,15 +132,15 @@ App 0.2.3 เพิ่ม single-pass background path search พร้อม sup
 
 Acceptance gates ที่ยังต้องปิดก่อน Phase 1 complete:
 
-- NTFS corpus เพิ่ม ATTRIBUTE_LIST, multilevel directory indexes, compression/EFS และ deleted clusters ที่ถูกเขียนทับ; corpus ปัจจุบันเป็น minimal nonbootable volume
-- Unknown-offset DST overlap/gap policy; classic FAT invalid-calendar handling แก้ใน engine 0.1.2 และตรวจด้วย independent matrices แล้ว; offset ที่ไม่ทราบค่าต้องคง timezone assumption
-- Fragmented deleted FAT recovery เมื่อ chain ถูกล้าง และ differential references ของ damaged/reallocated files; known intact NTFS deleted runs และ allocated fragmented FAT ผ่าน exact-byte checks แล้ว
+- ATTRIBUTE_LIST/multilevel indexes, bounded compression, overwritten/deleted bytes และ bounded matching-key EFS มี independent positives/negatives แล้ว ต้องคง advertised profile/oracles ผ่าน current client/GUI/release gates; synthetic NTFS volumes ไม่รับรองทุก Windows acquisition
+- Unknown-offset DST overlap/gap, political folds และ classic FAT invalid-calendar handling ผ่าน independent corpus แล้ว ต้องคง raw civil values/precision/candidates โดยไม่เลือก host-timezone instant ที่ไม่ได้บันทึก
+- Fragmented deleted FAT retained/cleared/damaged/reallocated mappings มี independent differential checks แล้ว ต้องคง explicit uncertainty/refusal ของ unknown multi-cluster order; exported current bytes ไม่รับรอง historical content
 - Negative input/protocol/cancel coverage พร้อม retained partial/error state และ safe export races; ผลที่ผ่านจริงระบุใน Validation ไม่อนุมานจาก code
 - วัด worker policy ทั้งแอปต่อจาก helper 1/2/4 experiment ที่ผ่านแล้ว: Swift prehash/publication, mixed/cold/large inputs, battery/thermal และ GUI RAM; 50,000/64 MiB limits ไม่แทน memory scheduler
 - Full GUI flow เพิ่ม create/inspect cancellation, fresh unsupported input, partition-open partial results และ cancel/save/publication races; success, listing-limit partial reopen/export, native hash cancellation และ retained-cache failure ผ่านพร้อม hash/receipt readback แล้ว
 - Independent fixture outputs และ differential reference ตรงกันภายใน advertised capability ไม่ประกาศรองรับจาก compiled generic TSK formats เพียงอย่างเดียว
 
-**UDF ไม่มีใน TSK adapter ที่เลือก** แต่ 0.5 มี Swift adapter แยกสำหรับ RAW 2,048-byte / UDF 2.01 physical/virtual VAT profile พร้อม synthetic malformed-input corpus และ independent assignment extents/hash oracle ยังไม่ครอบคลุม UDF ทุก profile APFS/FileVault/encrypted filesystems ถูกปิดไว้สำหรับ Phase 3 ส่วน SQLite result store/migrations ยังเป็นทางเลือกหลัง bounded JSON และ workload จำเป็นต้องใช้
+**UDF ไม่มีใน TSK adapter ที่เลือก** แต่ 0.5 มี Swift adapter แยกสำหรับ RAW 2,048-byte / UDF 2.01 physical/virtual VAT profile พร้อม synthetic malformed-input corpus และ independent assignment extents/hash oracle ยังไม่ครอบคลุม UDF ทุก profile 0.7 เพิ่ม separate experimental APFS allocated system view และ bounded EFS matching-key pipeline ตาม positive corpus; snapshots/boot FileVault/other encrypted profiles คง Phase 3 gates SQLite result store ยังเป็นทางเลือกหลัง bounded JSON/workload measurement ส่วน manifest-v2 migration ที่มีแล้วเป็น explicit transaction ไม่ใช่ automatic storage-backend migration
 
 ก่อนแจก helper ต้องจัด dependency source/licenses/relink package ให้ครบ Local `.engine/relink/` และ source archives เป็น artifacts ที่เก็บไว้สำหรับงานนี้ ไม่ใช่ completed distribution package
 

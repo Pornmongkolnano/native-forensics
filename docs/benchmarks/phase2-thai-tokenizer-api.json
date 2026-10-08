@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-10-08",
+  "kind": "synthetic-public-api-experiment",
+  "runtime": "/usr/bin/osascript -l JavaScript",
+  "hostOS": { "version": "27.0.1", "build": "26A434" },
+  "repositoryCompilerOrTestsRun": false,
+  "experiments": [
+    {
+      "api": "NLTokenizer",
+      "unit": "word",
+      "language": "th",
+      "input": "ภาษาไทย",
+      "tokens": [{ "utf16Offset": 0, "utf16Length": 7, "text": "ภาษาไทย" }]
+    },
+    {
+      "api": "CFStringTokenizer",
+      "unitsTested": ["word", "wordBoundary"],
+      "locale": "th_TH",
+      "input": "ภาษาไทย",
+      "tokensInBothUnits": [{ "utf16Offset": 0, "utf16Length": 7, "text": "ภาษาไทย" }]
+    },
+    {
+      "api": "CFStringTokenizer",
+      "unit": "word",
+      "locale": "th_TH",
+      "input": "ภาษา ไทย",
+      "tokens": [
+        { "utf16Offset": 0, "utf16Length": 4, "text": "ภาษา" },
+        { "utf16Offset": 5, "utf16Length": 3, "text": "ไทย" }
+      ]
+    },
+    {
+      "api": "CFStringTokenizer",
+      "unit": "word",
+      "locale": "th_TH",
+      "input": "ฉันรักภาษาไทย",
+      "tokens": [
+        { "utf16Offset": 0, "utf16Length": 3, "text": "ฉัน" },
+        { "utf16Offset": 3, "utf16Length": 3, "text": "รัก" },
+        { "utf16Offset": 6, "utf16Length": 7, "text": "ภาษาไทย" }
+      ]
+    }
+  ],
+  "conclusion": "A compound can remain a single token despite explicit Thai selection. The phrase matcher compares raw Thai contents across whitespace at real token edges without inventing component words.",
+  "primarySources": [
+    "https://developer.apple.com/documentation/naturallanguage/nltokenizer",
+    "https://developer.apple.com/documentation/naturallanguage/nltokenizer/setlanguage(_:)",
+    "https://developer.apple.com/documentation/corefoundation/kcfstringtokenizerunitwordboundary"
+  ]
+}

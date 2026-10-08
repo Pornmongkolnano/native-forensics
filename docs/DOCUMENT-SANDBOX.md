@@ -1,10 +1,14 @@
 # Document decoder access boundary
 
-`DocumentAnalysisClient` now applies a required per-request Seatbelt policy before
-starting `NFDocumentDecoder`. All application and workflow-probe callers use that
-public client. There is no public switch or environment variable that disables
-the policy, and no automatic unrestricted fallback. This is a development
-backend whose compatibility must be retested on each supported macOS release.
+Bundled applications use the supported entitlement-based App Sandbox/XPC
+backend described in [XPC-DECODE.md](XPC-DECODE.md), with no fallback to this
+launcher. `DocumentAnalysisClient(developmentHelperURL:)` applies the required
+per-request Seatbelt policy before starting `NFDocumentDecoder` for non-bundled
+CLI/SwiftPM development. There is no public switch or environment variable that
+disables the policy, and no automatic unrestricted fallback. This is a
+development backend whose compatibility must be retested on each supported
+macOS release. The old custom profile's no-write/no-other-exec behavior must not
+be attributed to App Sandbox, which grants the XPC service its own container.
 
 ## Request and access flow
 
@@ -102,9 +106,10 @@ project code; the operation names and dyld bootstrap needs were checked against
 the current system policy files without importing their broader permissions.
 
 [Apple App Sandbox](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox)
-is the supported entitlement-based model. A future signed distribution must
-evaluate an isolated App Sandbox/XPC decoder with minimal file grants and test
-its actual boundary; ad-hoc signing, notarization, resource limits, and this
-Seatbelt development backend are distinct properties. This change does not
-disable Gatekeeper, change quarantine, add Apple developer identities, sandbox
-the entire workbench, or assert that the native filesystem engine is sandboxed.
+is the supported entitlement-based model used by the bundled
+[XPC document broker and fresh inherited worker](XPC-DECODE.md). Its minimal entitlements and real
+runtime boundary must be validated independently; ad-hoc signing,
+notarization, resource limits, and this Seatbelt development backend are
+distinct properties. Neither backend disables Gatekeeper, changes quarantine,
+adds Apple developer identities, sandboxes the entire workbench, or asserts that
+the native filesystem engine is sandboxed.

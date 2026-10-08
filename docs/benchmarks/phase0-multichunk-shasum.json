@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixture": {
+    "name": "large-pattern.dd",
+    "byteCount": 3145745,
+    "recipe": "bytes 0...255 repeated 12288 times, then bytes 0...16",
+    "retainedBinaryInGit": false
+  },
+  "hashScope": "selected-file-bytes",
+  "independentTool": {
+    "executable": "/usr/bin/shasum",
+    "version": "6.02",
+    "arguments": [
+      "-a",
+      "256",
+      "large-pattern.dd"
+    ],
+    "exitCode": 0,
+    "stdout": "69112280f593fd44684d97d3fe42cdcb84da4ae495d8e1db649f06c3596a7ce6  large-pattern.dd"
+  },
+  "expectedSHA256": "69112280f593fd44684d97d3fe42cdcb84da4ae495d8e1db649f06c3596a7ce6",
+  "nativeValidation": "This receipt records the external hash only. Current Swift/native test execution must be recorded separately."
+}
