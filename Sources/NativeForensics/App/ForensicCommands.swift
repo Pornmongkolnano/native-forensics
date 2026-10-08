@@ -82,6 +82,8 @@ struct ForensicCommands: Commands {
                 .disabled(workspace?.currentCase == nil || workspace?.isBusy == true)
             Button("Compare Two Files with Codex") { workspace?.showComparison() }
                 .disabled(workspace?.selectedEvidence == nil || workspace?.isBusy == true)
+            Button("Saved Comparisons…") { workspace?.openComparisonHistory() }
+                .disabled(workspace?.canOpenComparisonHistory != true)
             Button("Recorded Timeline") { workspace?.showTimeline() }
                 .disabled(workspace?.selectedEvidence == nil || workspace?.isBusy == true)
             Button("Audit Case Integrity") { workspace?.showCaseIntegrity() }

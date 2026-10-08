@@ -13,18 +13,25 @@ struct MultiEvidenceAnalysisView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Label("Compare with Codex", systemImage: "doc.on.doc")
+                Label(store.isHistoryOnly ? "Saved Comparisons" : "Compare with Codex", systemImage: "doc.on.doc")
                     .font(.title2.weight(.semibold))
                 Spacer()
                 Text(verbatim: store.connectionStatus).font(.caption).foregroundStyle(.secondary)
             }
-            Text("Two verified files · UTF-8 ≤32 KiB/file · PDF text ≤16 KiB/file / 32 KiB PDF total · 64 KiB combined")
-                .font(.caption).foregroundStyle(.secondary)
-            TextField("Reviewed question", text: $store.question, axis: .vertical)
-                .textFieldStyle(.roundedBorder).lineLimit(2...3).disabled(store.isWorking)
+            if store.isHistoryOnly {
+                Text("Browse this case’s saved interpretations locally. Current source bytes remain unverified. Close this history and prepare the matching files to review a new request or freshly open cited content.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Two verified files · UTF-8 ≤32 KiB/file · PDF text ≤16 KiB/file / 32 KiB PDF total · 64 KiB combined")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextField("Reviewed question", text: $store.question, axis: .vertical)
+                    .textFieldStyle(.roundedBorder).lineLimit(2...3).disabled(store.isWorking)
+            }
             HStack {
-                Picker("Comparison panel", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
-                Button("Reverify Files", action: store.prepareContext).disabled(store.isWorking)
+                Picker("Comparison panel", selection: $tab) {
+                    ForEach(store.isHistoryOnly ? [.history, .answer] : Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented)
+                if !store.isHistoryOnly { Button("Reverify Files", action: store.prepareContext).disabled(!store.canPrepareContext) }
             }
             panel.frame(maxHeight: .infinity, alignment: .top)
             Divider()
@@ -34,22 +41,26 @@ struct MultiEvidenceAnalysisView: View {
                     Button("Clear Parent", action: store.clearParent).disabled(store.isWorking)
                 }
             }
-            Text("Only this exact reviewed question, disclosure and optional prior answer are sent to OpenAI through Codex. No disk image is sent. Saving is a separate local retention choice.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("I reviewed the exact aggregate payload and agree to send it.", isOn: $reviewed)
-                .toggleStyle(.checkbox).disabled(!store.canAnalyze || tab != .payload)
+            if !store.isHistoryOnly {
+                Text("Only this exact reviewed question, disclosure and optional prior answer are sent to OpenAI through Codex. No disk image is sent. Saving is a separate local retention choice.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("I reviewed the exact aggregate payload and agree to send it.", isOn: $reviewed)
+                    .toggleStyle(.checkbox).disabled(!store.canAnalyze || tab != .payload)
+            }
             if let error = store.errorMessage { Text(verbatim: error).font(.caption).foregroundStyle(.red).lineLimit(3).textSelection(.enabled) }
             HStack {
                 if store.isWorking { ProgressView().controlSize(.small); Button("Cancel", action: store.cancel) }
-                else {
+                else if !store.isHistoryOnly {
                     Button("Copy Payload", action: store.copyContextPrompt).disabled(store.outboundPrompt.isEmpty)
                     Button("Save Comparison…") { reviewingSave = true }.disabled(!store.canSaveAnalysis)
-                    Button("Reviewed Follow-up", action: store.beginFollowUp).disabled(store.savedRecord == nil)
+                    Button("Reviewed Follow-up", action: store.beginFollowUp).disabled(!store.canBeginFollowUp)
                 }
                 Spacer()
                 Button("Close", action: store.close).keyboardShortcut(.cancelAction).disabled(store.isWorking)
-                Button("Send to Codex") { guard reviewed else { return }; store.analyze(confirmedPrompt: store.outboundPrompt) }
-                    .disabled(!reviewed || !store.canAnalyze).keyboardShortcut(.defaultAction)
+                if !store.isHistoryOnly {
+                    Button("Send to Codex") { guard reviewed else { return }; store.analyze(confirmedPrompt: store.outboundPrompt) }
+                        .disabled(!reviewed || !store.canAnalyze).keyboardShortcut(.defaultAction)
+                }
             }
             Text(verbatim: store.phase).font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }
@@ -58,6 +69,9 @@ struct MultiEvidenceAnalysisView: View {
         .onChange(of: store.outboundPrompt) { _, _ in reviewed = false }
         .onChange(of: store.isWorking) { _, working in if working { reviewed = false } }
         .onChange(of: store.result != nil) { _, available in if available { tab = .answer } }
+        .onChange(of: store.isHistoryOnly, initial: true) { _, historyOnly in
+            tab = historyOnly ? .history : .ranges; reviewed = false
+        }
     }
 
     @ViewBuilder private var panel: some View {
@@ -186,7 +200,7 @@ struct MultiEvidenceAnalysisView: View {
                 .foregroundStyle(reference.state == .disclosed ? Color.secondary : Color.orange)
             Spacer()
             Button(reference.pdfRange == nil ? "Open Verified Bytes" : "Open Verified PDF Span") { store.openReference(reference) }
-                .disabled(reference.state != .disclosed || store.isWorking)
+                .disabled(!store.canOpenReference(reference))
         }
     }
     private var historyPanel: some View {
@@ -197,20 +211,34 @@ struct MultiEvidenceAnalysisView: View {
                 Button("Newest") { store.loadHistory() }.disabled(store.isWorking)
                 Button("Load Older") { store.loadHistory(older: true) }.disabled(!store.canLoadOlderHistory)
             }
-            List {
-            if store.history.isEmpty { Text("No saved comparisons in this case.").foregroundStyle(.secondary) }
-            ForEach(store.history) { record in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(verbatim: record.title).lineLimit(2)
-                        Text("\(record.createdAt.formatted()) · \(record.retention == .full ? "Exact request retained" : "Request digest only")\(record.parentRecordID == nil ? "" : " · Follow-up")")
-                            .font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if store.history.isEmpty { Text("No saved comparisons in this case.").foregroundStyle(.secondary) }
+                    ForEach(store.history) { record in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: record.title).lineLimit(2)
+                                Text("\(record.createdAt.formatted()) · \(record.retention == .full ? "Exact request retained" : "Request digest only")\(record.parentRecordID == nil ? "" : " · Follow-up")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Open") { store.loadRecord(id: record.id); tab = .answer }
+                                .buttonStyle(.borderless)
+                                .disabled(store.isWorking)
+                                .accessibilityLabel("Open saved comparison \(record.title)")
+                                .accessibilityIdentifier("comparison-history-open-\(record.id.uuidString.lowercased())")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .accessibilityElement(children: .contain)
+                        Divider()
                     }
-                    Spacer()
-                    Button("Open") { store.loadRecord(id: record.id); tab = .answer }.disabled(store.isWorking)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
             }
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityIdentifier("comparison-history-records")
         }
     }
 }

@@ -7,6 +7,12 @@ extension WorkspaceStore {
             && currentCase != nil && selectedEvidence != nil && selectedFilesystemResult != nil
             && caseWork.canChangeSelection && recovery.canChangeSelection
     }
+    var canOpenComparisonHistory: Bool { !isBusy && currentCase != nil }
+
+    func openComparisonHistory() {
+        guard canOpenComparisonHistory, let forensicCase = currentCase else { return }
+        comparisonAssistant.configureHistory(forensicCase: forensicCase)
+    }
 
     func showContentSearch() {
         guard !isBusy, let forensicCase = currentCase else { return }

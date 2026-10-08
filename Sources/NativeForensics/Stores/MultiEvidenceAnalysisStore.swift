@@ -10,7 +10,10 @@ final class MultiEvidenceAnalysisStore {
     typealias Verify = @Sendable (EvidenceRecord, EnumerationResult) async throws -> Void
     typealias Analyze = AssistantAnalysisStore.Analyze
     typealias Save = @Sendable (MultiEvidenceAnalysisRecord, URL) async throws -> Void
+    typealias History = @Sendable (URL, MultiEvidenceRecordSummary?) async throws -> [MultiEvidenceRecordSummary]
+    typealias LoadRecord = @Sendable (UUID, URL) async throws -> MultiEvidenceAnalysisRecord?
     var isPresented = false
+    private(set) var isHistoryOnly = false
     var question = "เปรียบเทียบข้อมูลในสองไฟล์ แยกสิ่งที่สังเกตได้จากข้อสันนิษฐานและอ้างช่วงข้อความที่เปิดเผย" { didSet { if oldValue != question { invalidateAnswer() } } }
     var firstRanges = "" { didSet { if oldValue != firstRanges { invalidateDisclosure() } } }
     var firstRedactions = "" { didSet { if oldValue != firstRedactions { invalidateDisclosure() } } }
@@ -26,7 +29,7 @@ final class MultiEvidenceAnalysisStore {
     private(set) var history: [MultiEvidenceRecordSummary] = []
     private(set) var historyCursor: MultiEvidenceRecordSummary?
     private(set) var historyShowsOlderPage = false
-    var canLoadOlderHistory: Bool { !isWorking && historyCursor != nil }
+    var canLoadOlderHistory: Bool { isPresented && !isWorking && !isClosing && historyCase != nil && historyCursor != nil }
     private(set) var isWorking = false
     private(set) var phase = "Prepare two files locally. No request is sent until exact review."
     var errorMessage: String?
@@ -34,6 +37,7 @@ final class MultiEvidenceAnalysisStore {
     private(set) var openedReferenceLabel: String?
     @ObservationIgnored private(set) var jobTask: Task<Void, Never>?
     @ObservationIgnored private var selection: Selection?
+    @ObservationIgnored private var historyCase: ForensicCase?
     @ObservationIgnored private var generation: UUID?
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private var settingDefaults = false
@@ -42,15 +46,26 @@ final class MultiEvidenceAnalysisStore {
     @ObservationIgnored private let verify: Verify
     @ObservationIgnored private let analyzeRequest: Analyze
     @ObservationIgnored private let save: Save
+    @ObservationIgnored private let readHistory: History
+    @ObservationIgnored private let readRecord: LoadRecord
     @ObservationIgnored private let scheduler: ForensicWorkScheduler
     var hasActiveWork: Bool { jobTask != nil }
-    var outboundPrompt: String { guard let context else { return "" }; return (try? MultiEvidencePrompt.make(context: context, question: question, parent: parentRecord)) ?? "" }
-    var canAnalyze: Bool { isPresented && !isWorking && !isClosing && !outboundPrompt.isEmpty && CodexCLIAvailability.issue(for: cliPath) == nil }
-    var canSaveAnalysis: Bool { !isWorking && !isClosing && completed != nil && savedRecord == nil && selection?.forensicCase != nil }
+    var outboundPrompt: String { guard !isHistoryOnly, let context else { return "" }; return (try? MultiEvidencePrompt.make(context: context, question: question, parent: parentRecord)) ?? "" }
+    var canPrepareContext: Bool { isPresented && !isHistoryOnly && !isWorking && !isClosing && selection != nil }
+    var canAnalyze: Bool { isPresented && !isHistoryOnly && !isWorking && !isClosing && !outboundPrompt.isEmpty && CodexCLIAvailability.issue(for: cliPath) == nil }
+    var canSaveAnalysis: Bool { !isHistoryOnly && !isWorking && !isClosing && completed != nil && savedRecord == nil && selection?.forensicCase != nil }
+    var canBeginFollowUp: Bool {
+        guard isPresented, !isHistoryOnly, !isWorking, !isClosing, let savedRecord, let context else { return false }
+        return hasPreparedBindings(for: savedRecord.context) && savedRecord.context.hasSameDisclosure(as: context)
+    }
     var filePaths: [String] { selection?.files.map(\.path) ?? [] }
-    var connectionStatus: String { CodexCLIAvailability.issue(for: cliPath) == nil ? "Codex CLI found · ChatGPT sign-in required" : "Set up Codex CLI in Settings" }
+    var connectionStatus: String {
+        if isHistoryOnly { return "Local history · source bytes remain unverified" }
+        return CodexCLIAvailability.issue(for: cliPath) == nil ? "Codex CLI found · ChatGPT sign-in required" : "Set up Codex CLI in Settings"
+    }
 
-    init(executableURL: URL? = nil, prepare: Prepare? = nil, verify: Verify? = nil, save: Save? = nil, analyze: Analyze? = nil, scheduler: ForensicWorkScheduler = .shared) {
+    init(executableURL: URL? = nil, prepare: Prepare? = nil, verify: Verify? = nil, save: Save? = nil, analyze: Analyze? = nil,
+         history: History? = nil, loadRecord: LoadRecord? = nil, scheduler: ForensicWorkScheduler = .shared) {
         self.scheduler = scheduler
         cliPath = executableURL?.path ?? CodexCLIAvailability.configuredPath
         self.prepare = prepare ?? { caseID, evidence, result, files, helper in
@@ -68,6 +83,8 @@ final class MultiEvidenceAnalysisStore {
             }
         }
         self.save = save ?? { record, caseURL in try await MultiEvidenceRecordStore.saveAsync(record, in: caseURL) }
+        readHistory = history ?? { url, before in try MultiEvidenceRecordStore.history(in: url, before: before) }
+        readRecord = loadRecord ?? { id, url in try MultiEvidenceRecordStore.load(id: id, in: url) }
         analyzeRequest = analyze ?? { prompt, executable in try await CodexAnalysisClient(executableURL: executable, timeout: 180).analyze(prompt: prompt) }
     }
 
@@ -79,12 +96,22 @@ final class MultiEvidenceAnalysisStore {
         }
         selection = Selection(caseID: forensicCase?.manifest.id ?? UUID(), evidence: evidence, result: result,
             files: files, helperURL: helperURL, forensicCase: forensicCase)
+        historyCase = forensicCase; isHistoryOnly = false
         parentRecord = nil; context = nil; verifiedFiles = []; history = []; historyCursor = nil; historyShowsOlderPage = false; invalidateAnswer()
         isPresented = true; prepareContext()
     }
 
+    /// Historical browsing needs only the owned case, never live evidence or a CLI.
+    func configureHistory(forensicCase: ForensicCase) {
+        guard !isWorking && !isClosing else { return }
+        selection = nil; historyCase = forensicCase; isHistoryOnly = true
+        parentRecord = nil; context = nil; verifiedFiles = []; history = []; historyCursor = nil; historyShowsOlderPage = false
+        invalidateAnswer()
+        isPresented = true; loadHistory()
+    }
+
     func prepareContext() {
-        guard isPresented, !isWorking, !isClosing, let selection else { return }
+        guard canPrepareContext, let selection else { return }
         let id = start("Verifying complete files and decoding PDF text locally…")
         context = nil; invalidateAnswer()
         let operation = prepare
@@ -116,7 +143,7 @@ final class MultiEvidenceAnalysisStore {
     }
 
     func rebuildDisclosure() {
-        guard !isWorking, !isClosing else { return }
+        guard !isHistoryOnly, !isWorking, !isClosing else { return }
         do { try buildDisclosure(); errorMessage = nil; phase = "Disclosure rebuilt locally. Review the exact payload again." }
         catch { context = nil; errorMessage = error.localizedDescription }
     }
@@ -206,17 +233,20 @@ final class MultiEvidenceAnalysisStore {
     }
 
     func loadHistory(older: Bool = false) {
-        guard !isWorking, !isClosing, let forensicCase = selection?.forensicCase else { return }
+        guard isPresented, !isWorking, !isClosing, let forensicCase = historyCase else { return }
         let before = older ? historyCursor : nil
         if older && before == nil { return }
         let id = start("Reading a bounded historical comparison page locally…")
+        let operation = readHistory
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
             do {
-                let worker = Task.detached(priority: .utility) { try MultiEvidenceRecordStore.history(in: forensicCase.bundleURL, before: before) }
-                let items = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                try Task.checkCancellation(); guard generation == id, !isClosing else { return }
-                updateHistory(items, older: older)
+                try await withHeavyWork(.historyRead) { permit in
+                    let items = try await permit.run { try await operation(forensicCase.bundleURL, before) }
+                    try Task.checkCancellation(); guard generation == id, !isClosing, isCurrentHistoryCase(forensicCase) else { return }
+                    updateHistory(items, older: older)
+                    phase = "Historical comparison page loaded. Current source bytes remain unverified."
+                }
             } catch is CancellationError { phase = "History page cancelled." }
             catch { errorMessage = error.localizedDescription }
         }
@@ -227,25 +257,29 @@ final class MultiEvidenceAnalysisStore {
     }
 
     func loadRecord(id recordID: UUID) {
-        guard !isWorking, !isClosing, let forensicCase = selection?.forensicCase else { return }
+        guard isPresented, !isWorking, !isClosing, let forensicCase = historyCase else { return }
+        parentRecord = nil; invalidateAnswer()
         let id = start("Opening historical comparison; source bytes are not reverified by this read…")
+        let operation = readRecord
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
             do {
-                let worker = Task.detached(priority: .utility) { try MultiEvidenceRecordStore.load(id: recordID, in: forensicCase.bundleURL) }
-                let record = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                try Task.checkCancellation(); guard generation == id, !isClosing, let record else { return }
-                parentRecord = nil; openedReferenceText = nil; openedReferenceLabel = nil
-                completed = nil; savedRecord = record; result = record.result; references = record.references
-                phase = "Historical comparison opened. Digest-only records do not retain disclosed text."
+                try await withHeavyWork(.historyRead) { permit in
+                    let record = try await permit.run { try await operation(recordID, forensicCase.bundleURL) }
+                    try Task.checkCancellation(); guard generation == id, !isClosing, isCurrentHistoryCase(forensicCase) else { return }
+                    guard let record else { throw CaseWorkError.historyUnavailable }
+                    guard record.context.files.allSatisfy({ $0.binding.caseID == forensicCase.manifest.id }) else { throw CaseWorkError.scopeMismatch }
+                    parentRecord = nil; openedReferenceText = nil; openedReferenceLabel = nil
+                    completed = nil; savedRecord = record; result = record.result; references = record.references
+                    phase = "Historical comparison opened. Digest-only records do not retain disclosed text."
+                }
             } catch is CancellationError { phase = "Opening history cancelled." }
             catch { errorMessage = error.localizedDescription }
         }
     }
 
     func beginFollowUp() {
-        guard !isWorking, !isClosing, let savedRecord, let context,
-              savedRecord.context.hasSameDisclosure(as: context) else {
+        guard canBeginFollowUp, let savedRecord else {
             errorMessage = MultiEvidenceError.parentMismatch.localizedDescription; return
         }
         parentRecord = savedRecord; invalidateAnswer()
@@ -254,7 +288,7 @@ final class MultiEvidenceAnalysisStore {
     func clearParent() { guard !isWorking else { return }; parentRecord = nil; invalidateAnswer() }
 
     func openReference(_ reference: MultiEvidenceReference) {
-        guard !isWorking, !isClosing, references.contains(reference), reference.state == .disclosed, let selection,
+        guard canOpenReference(reference), let selection,
               let context = completed?.context ?? savedRecord?.context ?? context else { return }
         let id = start("Reextracting and verifying the cited source/derived span…"), operation = prepare
         openedReferenceText = nil; openedReferenceLabel = nil
@@ -280,13 +314,29 @@ final class MultiEvidenceAnalysisStore {
     func cancel() { jobTask?.cancel() }
     func close() {
         let pending = beginShutdown()
-        Task { if let pending { await pending.value }; isPresented = false; verifiedFiles = []; context = nil; selection = nil; parentRecord = nil; invalidateAnswer(); isClosing = false }
+        Task { if let pending { await pending.value }; isPresented = false; verifiedFiles = []; context = nil; selection = nil; historyCase = nil; isHistoryOnly = false; parentRecord = nil; history = []; historyCursor = nil; historyShowsOlderPage = false; invalidateAnswer(); isClosing = false }
     }
     func beginShutdown() -> Task<Void, Never>? { isClosing = true; jobTask?.cancel(); return jobTask }
     func prepareForTermination() { isClosing = true; isPresented = false; jobTask?.cancel() }
-    func copyContextPrompt() { guard !outboundPrompt.isEmpty else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(outboundPrompt, forType: .string) }
+    func copyContextPrompt() { guard !isHistoryOnly, !outboundPrompt.isEmpty else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(outboundPrompt, forType: .string) }
     private func start(_ phase: String) -> UUID { let id = UUID(); generation = id; isWorking = true; errorMessage = nil; self.phase = phase; return id }
     private func finish(_ id: UUID) { guard generation == id else { return }; generation = nil; isWorking = false; jobTask = nil }
+    func canOpenReference(_ reference: MultiEvidenceReference) -> Bool {
+        guard isPresented, !isHistoryOnly, !isWorking, !isClosing, references.contains(reference), reference.state == .disclosed,
+              let boundContext = completed?.context ?? savedRecord?.context ?? context else { return false }
+        return hasPreparedBindings(for: boundContext)
+    }
+    private func hasPreparedBindings(for context: MultiEvidenceContext) -> Bool {
+        guard let selection, verifiedFiles.count == 2, context.files.count == 2,
+              verifiedFiles.map({ $0.binding.selectedEntry }) == selection.files else { return false }
+        return zip(context.files, verifiedFiles).allSatisfy { disclosure, file in
+            disclosure.binding == file.binding && disclosure.contentSHA256 == file.receipt.sha256
+                && disclosure.binding.caseID == selection.caseID && disclosure.binding.evidenceID == selection.evidence.id
+        }
+    }
+    private func isCurrentHistoryCase(_ forensicCase: ForensicCase) -> Bool {
+        historyCase?.manifest.id == forensicCase.manifest.id && historyCase?.bundleURL == forensicCase.bundleURL
+    }
     /// Keep admission through owned decoder/helper cleanup and subsequent case
     /// publication. Await release before the UI owner marks its task finished.
     private func withHeavyWork<Value: Sendable>(_ kind: ForensicWorkKind,
