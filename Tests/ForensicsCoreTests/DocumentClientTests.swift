@@ -5,6 +5,70 @@ import Testing
 @testable import ForensicsCore
 
 struct DocumentClientTests {
+    @Test func previewDefaultObserverPreservesActualClientResultAndSource() async throws {
+        let fixture = try DocumentMockFixture()
+        defer { fixture.remove() }
+        let service = FilesystemDocumentPreviewService(engine: EngineClient(helperURL: fixture.helper), documents: fixture.client)
+        let result = try await service.analyzeDocument(fixture.input)
+        #expect(result.status == .decoded)
+        #expect(result.textPages.first?.text == "trusted fixture")
+        #expect(result.sourceSHA256 == fixture.input.expectedSHA256)
+        #expect(try Data(contentsOf: fixture.source) == Data("trusted fixture".utf8))
+    }
+
+    @Test func previewObserverForwardsActualStartedAndExitedOwnerEvents() async throws {
+        let fixture = try DocumentMockFixture()
+        defer { fixture.remove() }
+        let events = DocumentLifecycleFixtureEvents()
+        let service = FilesystemDocumentPreviewService(engine: EngineClient(helperURL: fixture.helper), documents: fixture.client,
+            decoderLifecycle: events.record)
+        let result = try await service.analyzeDocument(fixture.input)
+        let recorded = events.snapshot
+        #expect(result.status == .decoded)
+        #expect(recorded.count == 2)
+        guard let first = recorded.first, let last = recorded.last,
+              case .started(let startedPID, let backend) = first,
+              case .exited(let exitedPID) = last else { Issue.record("Actual lifecycle sequence missing"); return }
+        #expect(backend == .developmentSeatbelt)
+        #expect(startedPID == exitedPID)
+        #expect(Darwin.kill(startedPID, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test func timeoutLifecycleReportsExitedOnlyAfterTheOwnedChildWasReaped() async throws {
+        let fixture = try DocumentMockFixture(hang: true)
+        defer { fixture.remove() }
+        let events = DocumentLifecycleFixtureEvents()
+        let client = DocumentAnalysisClient(helperURL: fixture.helper, timeout: 0.25, sandboxPolicy: .disabledForTesting)
+        await #expect(throws: DocumentAnalysisError.timeout) { try await client.analyze(fixture.input, lifecycle: events.record) }
+        let values = events.snapshot
+        guard values.count == 2, case .started(let pid, _) = values[0], case .exited(let exited) = values[1] else {
+            Issue.record("Timeout lifecycle lacked positive owned reap"); return
+        }
+        #expect(pid == exited); #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test func cancellationLifecycleWaitsForItsActuallyStartedOwnedChild() async throws {
+        let fixture = try DocumentMockFixture(hang: true)
+        defer { fixture.remove() }
+        let events = DocumentLifecycleFixtureEvents()
+        let (stream, continuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let client = fixture.client
+        let task = Task {
+            defer { continuation.finish() }
+            return try await client.analyze(fixture.input, lifecycle: { event in
+                events.record(event)
+                if case .started(let pid, _) = event { continuation.yield(pid) }
+            })
+        }
+        var iterator = stream.makeAsyncIterator()
+        guard let pid = await iterator.next() else { _ = try await task.value; Issue.record("No owned child"); return }
+        task.cancel()
+        do { _ = try await task.value; Issue.record("Cancellation returned a result") }
+        catch { #expect(error is CancellationError) }
+        let values = events.snapshot
+        guard values.count == 2, case .exited(let exited) = values[1] else { Issue.record("Cancelled child was not reaped"); return }
+        #expect(pid == exited); #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+    }
     @Test func inputSizeHashAndNoFollowAreVerifiedBeforeLaunch() async throws {
         let fixture = try DocumentMockFixture()
         defer { fixture.remove() }
@@ -105,6 +169,13 @@ struct DocumentClientTests {
         defer { invalid.remove() }
         await #expect(throws: DocumentAnalysisError.invalidResponse) { try await invalid.client.analyze(invalid.input) }
     }
+}
+
+private final class DocumentLifecycleFixtureEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [DocumentDecoderLifecycleEvent] = []
+    var snapshot: [DocumentDecoderLifecycleEvent] { lock.withLock { events } }
+    func record(_ event: DocumentDecoderLifecycleEvent) { lock.withLock { events.append(event) } }
 }
 
 private struct DocumentMockFixture {

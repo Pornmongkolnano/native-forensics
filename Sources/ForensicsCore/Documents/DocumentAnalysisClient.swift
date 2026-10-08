@@ -123,7 +123,8 @@ public struct DocumentAnalysisClient: Sendable {
                             started: started, lifecycle: lifecycle).run(normalized)
                     case .developmentSeatbelt:
                         return try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
-                            cancellation: cancellation, started: started, sandboxPolicy: sandboxPolicy).run(normalized)
+                            cancellation: cancellation, started: started, sandboxPolicy: sandboxPolicy,
+                            lifecycle: lifecycle).run(normalized)
                     }
                 }
             } onCancel: { cancellation.cancel() }

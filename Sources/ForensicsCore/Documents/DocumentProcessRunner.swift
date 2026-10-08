@@ -7,6 +7,14 @@ struct DocumentProcessRunner {
     let cancellation: DocumentCancellation
     let started: (@Sendable (Int32) -> Void)?
     let sandboxPolicy: DocumentSandboxPolicy
+    let lifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)?
+
+    init(helperURL: URL, timeout: TimeInterval, cancellation: DocumentCancellation,
+         started: (@Sendable (Int32) -> Void)?, sandboxPolicy: DocumentSandboxPolicy,
+         lifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)? = nil) {
+        self.helperURL = helperURL; self.timeout = timeout; self.cancellation = cancellation
+        self.started = started; self.sandboxPolicy = sandboxPolicy; self.lifecycle = lifecycle
+    }
 
     func run(_ input: DocumentInput) throws -> DocumentAnalysis {
         if cancellation.isCancelled { throw CancellationError() }
@@ -26,7 +34,10 @@ struct DocumentProcessRunner {
         defer { channels.close() }
         let child = try spawn(executable, input: input, channels: channels)
         channels.closeChildEnds()
-        defer { terminateAndReap(child) }
+        defer {
+            if terminateAndReap(child) { lifecycle?(.exited(processIdentifier: child)) }
+        }
+        lifecycle?(.started(processIdentifier: child, backend: .developmentSeatbelt))
         started?(child)
         do {
             let response = try exchange(request, child: child, channels: channels)
@@ -146,7 +157,7 @@ struct DocumentProcessRunner {
         }
     }
 
-    private func terminateAndReap(_ child: pid_t) {
+    private func terminateAndReap(_ child: pid_t) -> Bool {
         // The unreaped leader pins ownership while the request group is stopped.
         _ = Darwin.kill(-child, SIGTERM)
         var exit = siginfo_t()
@@ -156,7 +167,10 @@ struct DocumentProcessRunner {
         }
         _ = Darwin.kill(-child, SIGKILL)
         var status: Int32 = 0
-        while Darwin.waitpid(child, &status, 0) < 0 && errno == EINTR {}
+        var result: pid_t
+        repeat { result = Darwin.waitpid(child, &status, 0) } while result < 0 && errno == EINTR
+        // An ECHILD/error is uncertainty, never a positive physical-exit event.
+        return result == child
     }
 
     private func uptime() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000 }

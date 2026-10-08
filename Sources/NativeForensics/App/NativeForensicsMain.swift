@@ -11,6 +11,14 @@ import SwiftUI
 enum NativeForensicsMain {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == "--content-index-probe" {
+            Task.detached {
+                let code = await ContentIndexBundledProbe.run(Array(arguments.dropFirst()))
+                Darwin.exit(code)
+            }
+            RunLoop.main.run()
+            return
+        }
         guard arguments.first == "--document-xpc-probe" else {
             NativeForensicsApp.main()
             return

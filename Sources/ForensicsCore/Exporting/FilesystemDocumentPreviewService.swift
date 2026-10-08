@@ -16,9 +16,11 @@ public struct FilesystemDocumentPreview: Sendable, Equatable {
 public struct FilesystemDocumentPreviewService: Sendable {
     public let engine: EngineClient
     public let documents: DocumentAnalysisClient
+    private let decoderLifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)?
 
-    public init(engine: EngineClient, documents: DocumentAnalysisClient) {
-        self.engine = engine; self.documents = documents
+    public init(engine: EngineClient, documents: DocumentAnalysisClient,
+                decoderLifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)? = nil) {
+        self.engine = engine; self.documents = documents; self.decoderLifecycle = decoderLifecycle
     }
 
     public func preview(evidence: EvidenceRecord, result: EnumerationResult, file: FilesystemEntry) async throws -> FilesystemDocumentPreview {
@@ -33,8 +35,9 @@ public struct FilesystemDocumentPreviewService: Sendable {
             file: file, outputURL: scratch.outputURL, options: options, expectedSourceHashes: result.sourceFileHashes)
         try scratch.claim(output.receipt, identity: output.identity)
         try Task.checkCancellation()
-        let analysis = try await documents.analyze(DocumentInput(fileURL: scratch.outputURL,
-            expectedSHA256: output.receipt.sha256, expectedByteCount: output.receipt.byteCount))
+        let input = DocumentInput(fileURL: scratch.outputURL,
+            expectedSHA256: output.receipt.sha256, expectedByteCount: output.receipt.byteCount)
+        let analysis = try await analyzeDocument(input)
         try scratch.validate()
         // The isolated decoder may take seconds. Recheck every container after
         // it returns instead of presenting a result for an edited source set.
@@ -58,6 +61,13 @@ public struct FilesystemDocumentPreviewService: Sendable {
                 guard let hash = result.sourceFileHashes[$0] else { throw VerifiedContentError.staleEvidence }
                 return hash
             }), analysis: analysis)
+    }
+
+    /// Kept internal so fixture tests can verify callback forwarding using the
+    /// actual client without changing extraction or source verification.
+    func analyzeDocument(_ input: DocumentInput) async throws -> DocumentAnalysis {
+        if let decoderLifecycle { return try await documents.analyze(input, lifecycle: decoderLifecycle) }
+        return try await documents.analyze(input)
     }
 }
 

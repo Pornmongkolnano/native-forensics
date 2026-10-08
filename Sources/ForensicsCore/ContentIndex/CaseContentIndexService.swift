@@ -31,10 +31,11 @@ public struct CaseContentIndexService: Sendable {
         self.decoderIdentityProvider = decoderIdentity
     }
 
-    public init(engineHelperURL: URL, documentHelperURL: URL) {
+    public init(engineHelperURL: URL, documentHelperURL: URL,
+                decoderLifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)? = nil) {
         let decoder = DocumentAnalysisClient(helperURL: documentHelperURL)
         let service = FilesystemDocumentPreviewService(engine: EngineClient(helperURL: engineHelperURL),
-            documents: decoder)
+            documents: decoder, decoderLifecycle: decoderLifecycle)
         self.init(preview: { try await service.preview(evidence: $0, result: $1, file: $2) },
             decoderFingerprint: { try await decoder.decoderBinarySHA256() },
             decoderIdentity: { try await decoder.currentDecoderIdentity() })
