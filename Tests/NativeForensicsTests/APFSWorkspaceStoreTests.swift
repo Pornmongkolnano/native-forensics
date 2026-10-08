@@ -420,10 +420,11 @@ struct APFSWorkspaceStoreTests {
     @Test("Global workspace Cancel reaches the APFS owner, keeps busy until drain, and preserves late quarantine")
     func globalWorkspaceCancelDrainsAPFS() async throws {
         let fixture = APFSUIFixture(), gate = APFSUIInspectionGate()
-        let apfs = makeStore(load: { _, _ in try fixture.cache() }, inspect: { evidence, options, container, volume in
+        let scheduler = ForensicWorkScheduler()
+        let apfs = makeStore(scheduler: scheduler, load: { _, _ in try fixture.cache() }, inspect: { evidence, options, container, volume in
             try await gate.inspect(evidence: evidence, options: options, container: container, volume: volume)
         })
-        let workspace = WorkspaceStore(helperURL: URL(fileURLWithPath: "/unused-engine"), apfs: apfs)
+        let workspace = WorkspaceStore(helperURL: URL(fileURLWithPath: "/unused-engine"), apfs: apfs, scheduler: scheduler)
         workspace.currentCase = fixture.forensicCase
         apfs.configure(evidence: fixture.evidence, in: fixture.forensicCase); await apfs.waitForPendingWork()
         let saved = apfs.result

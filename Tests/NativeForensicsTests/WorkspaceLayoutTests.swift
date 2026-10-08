@@ -13,11 +13,12 @@ struct WorkspaceLayoutTests {
     func opticalViewport(size: CGSize, hasCompletedExport: Bool) async throws {
         _ = NSApplication.shared
         let fixture = LayoutOpticalFixture()
+        let scheduler = ForensicWorkScheduler()
         let optical = OpticalWorkspaceStore(documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"),
             load: { _, _ in fixture.result }, exportForAutopsy: { _, result, _, destination, _ in
                 try layoutAutopsyReceipt(result, destination: destination)
-            })
-        let workspace = WorkspaceStore(helperURL: URL(fileURLWithPath: "/usr/bin/true"), optical: optical)
+            }, scheduler: scheduler)
+        let workspace = WorkspaceStore(helperURL: URL(fileURLWithPath: "/usr/bin/true"), optical: optical, scheduler: scheduler)
         workspace.currentCase = fixture.forensicCase
         workspace.selectedEvidenceID = fixture.evidence.id
         workspace.section = .optical

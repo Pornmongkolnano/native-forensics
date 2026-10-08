@@ -16,7 +16,7 @@ struct WorkspaceWorkObservationTests {
         let gate = WorkObservationGate<CarvingResult?>()
         let store = RecoveryWorkspaceStore(photoRecURL: fixture.helper,
             load: { _, _ in try await gate.request() },
-            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in [:] }))
+            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in [:] }), scheduler: ForensicWorkScheduler())
         let start = WorkObservationChanges()
         #expect(!observe({ store.hasActiveWork }, changes: start))
         store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
@@ -58,7 +58,7 @@ struct WorkspaceWorkObservationTests {
         let notes = WorkObservationGate<[UUID: RecoveryAnnotation]>()
         let store = RecoveryWorkspaceStore(photoRecURL: fixture.helper,
             load: { _, _ in try await load.request() },
-            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in try await notes.request() }))
+            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in try await notes.request() }), scheduler: ForensicWorkScheduler())
         store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
         await load.waitForRequest()
         let ownTask = try #require(store.activeTask)
@@ -84,7 +84,7 @@ struct WorkspaceWorkObservationTests {
     func opticalOwnership() async throws {
         let fixture = WorkObservationFixture()
         let gate = WorkObservationGate<UDFInspectionResult?>()
-        let store = OpticalWorkspaceStore(load: { _, _ in try await gate.request() })
+        let store = OpticalWorkspaceStore(load: { _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         let start = WorkObservationChanges()
         #expect(!observe({ store.hasActiveWork }, changes: start))
         store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
@@ -105,7 +105,7 @@ struct WorkspaceWorkObservationTests {
         let fixture = WorkObservationFixture()
         let gate = WorkObservationGate<FilesystemDocumentPreview>()
         let store = FilesystemDocumentPreviewStore(engineHelperURL: fixture.helper,
-            load: { _, _, _ in try await gate.request() })
+            load: { _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         store.configure(evidence: fixture.evidence, result: fixture.filesystem, file: fixture.file)
         let start = WorkObservationChanges()
         #expect(!observe({ store.hasActiveWork }, changes: start))
@@ -128,7 +128,7 @@ struct WorkspaceWorkObservationTests {
         let fixture = WorkObservationFixture()
         let gate = WorkObservationGate<FilesystemBatchExportResult>()
         let store = FilesystemBatchExportStore(engineHelperURL: fixture.helper,
-            export: { _, _, _, _, _ in try await gate.request() })
+            export: { _, _, _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         let destination = URL(fileURLWithPath: "/synthetic/observed-batch")
         let start = WorkObservationChanges()
         #expect(!observe({ store.hasActiveWork }, changes: start))

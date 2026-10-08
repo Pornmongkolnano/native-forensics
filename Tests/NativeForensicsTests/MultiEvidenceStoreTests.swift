@@ -119,7 +119,7 @@ struct MultiEvidenceStoreTests {
         let verified = fixture.files
         return MultiEvidenceAnalysisStore(executableURL: fixture.executable,
             prepare: { _, _, _, _, _ in verified },
-            analyze: { prompt, _ in try await gate.analyze(prompt) })
+            analyze: { prompt, _ in try await gate.analyze(prompt) }, scheduler: ForensicWorkScheduler())
     }
     private func configure(_ store: MultiEvidenceAnalysisStore, _ fixture: MultiEvidenceStoreFixture) async {
         store.configure(evidence: fixture.evidence, result: fixture.result, files: fixture.entries,

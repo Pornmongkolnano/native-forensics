@@ -149,7 +149,7 @@ struct ContentPreviewStoreTests {
     }
 
     private func makeStore(_ gate: ContentLoadGate) -> ContentPreviewStore {
-        ContentPreviewStore { _, _, file, _ in try await gate.load(fileID: file.id) }
+        ContentPreviewStore(load: { _, _, file, _ in try await gate.load(fileID: file.id) }, scheduler: ForensicWorkScheduler())
     }
     private func configure(_ store: ContentPreviewStore, _ fixture: ContentStoreFixture) {
         store.configure(evidence: fixture.evidence, result: fixture.result, file: fixture.file,

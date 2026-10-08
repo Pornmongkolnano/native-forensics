@@ -28,7 +28,7 @@ struct TimelineWorkspaceStoreTests {
     }
     @Test func buildsSelectedEvidenceAndFiltersAllEvents() async throws {
         let value = selection()
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"))
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         #expect(store.report?.events.count == 2)
         #expect(store.binding?.evidenceID == value.1.id)
@@ -41,7 +41,7 @@ struct TimelineWorkspaceStoreTests {
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), filesystemLoad: { caseID, evidence, result, historical in
             await gate.hold()
             return try FilesystemTimeline.make(caseID: caseID, evidence: evidence, result: result, historical: historical)
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem()
         try await gate.waitStarted()
         store.reset(); await gate.release(); try await settle(store)
@@ -52,7 +52,7 @@ struct TimelineWorkspaceStoreTests {
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), filesystemLoad: { caseID, evidence, result, historical in
             await gate.hold()
             return try FilesystemTimeline.make(caseID: caseID, evidence: evidence, result: result, historical: historical)
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await gate.waitStarted()
         let drain = store.beginShutdown()
         #expect(drain != nil); #expect(store.hasActiveWork)
@@ -65,7 +65,7 @@ struct TimelineWorkspaceStoreTests {
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), browserLoad: { caseID, evidence, result, file in
             let binding = try TimelineSourceBinding.make(caseID: UUID(), evidence: evidence, result: result, historical: false)
             return BrowserTimelineResult(events: [], receipts: [], binding: binding)
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         let original = store.report
         store.loadSelectedBrowserHistory(); try await settle(store)
@@ -92,7 +92,7 @@ struct TimelineWorkspaceStoreTests {
             return SyslogTimelineResult(events: [event], receipts: [TimelineArtifactReceipt(file: artifact, role: "syslog")],
                 parserReceipt: TimelineParserReceipt(parser: "syslog-record", version: "1", parameters: ["fixture": "workspace lifecycle fake"], sourceSHA256: hash,
                     derivedTextSHA256: hash, unitCount: 1, lineCount: 1, eventCount: 1), binding: binding, warnings: ["Fake loader checks store lifecycle, not source extraction."])
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadSelectedBrowserHistory(); try await settle(store)
         #expect(store.report?.events.count == 3)
         store.selectedSyslogID = "file"; store.loadSelectedSyslog(); try await settle(store)
@@ -114,7 +114,7 @@ struct TimelineWorkspaceStoreTests {
             return SyslogTimelineResult(events: [], receipts: [TimelineArtifactReceipt(file: artifact, role: "syslog")],
                 parserReceipt: TimelineParserReceipt(parser: "syslog-record", version: "1", parameters: [:], sourceSHA256: hash,
                     derivedTextSHA256: hash, unitCount: 1, lineCount: 0, eventCount: 0), binding: binding, warnings: [])
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.selectedSyslogID = "file"; store.loadSelectedSyslog(); try await gate.waitStarted()
         store.reset(); await gate.release(); try await settle(store)
         #expect(store.report == nil); #expect(store.rows.isEmpty); #expect(store.selectedSyslogID == nil)
@@ -125,7 +125,7 @@ struct TimelineWorkspaceStoreTests {
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), export: { report, output, forbidden in
             await capture.record(report, forbidden)
             return try await TimelineReportExporter.export(report, to: output, forbiddenURLs: forbidden)
-        })
+        }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.query = "one.txt"; try await settle(store); #expect(store.rows.count == 1)
         store.examinerNotes = "Examiner note"
@@ -141,7 +141,7 @@ struct TimelineWorkspaceStoreTests {
     }
     @Test func oversizeNotesDoNotStartExporter() async throws {
         let value = selection()
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"))
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.examinerNotes = String(repeating: "x", count: TimelineLimits.maximumNotesBytes + 1)
         store.exportReport(to: URL(fileURLWithPath: "/unused"))
@@ -149,7 +149,7 @@ struct TimelineWorkspaceStoreTests {
     }
     @Test func visibleFilterCancellationDrainsAndCannotPublishRows() async throws {
         let value = selection()
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"))
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.query = "one.txt"
         #expect(store.isFiltering)
@@ -174,7 +174,7 @@ struct TimelineWorkspaceStoreTests {
         let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-chosen-parent-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: parent) }
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { parent })
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { parent }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.chooseExport()
         #expect(store.isPresentingPanel)
@@ -190,7 +190,7 @@ struct TimelineWorkspaceStoreTests {
         let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-canceled-parent-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: parent) }
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.chooseExport(); try await gate.waitStarted()
         #expect(store.isPresentingPanel); #expect(store.hasActiveWork)
@@ -205,7 +205,7 @@ struct TimelineWorkspaceStoreTests {
         let parent = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("timeline-stale-parent-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: parent) }
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.chooseExport(); try await gate.waitStarted()
         store.reset()
@@ -220,7 +220,7 @@ struct TimelineWorkspaceStoreTests {
     }
     @Test func shutdownDrainsPendingFolderChoiceWithoutPublication() async throws {
         let value = selection(), gate = TimelineFolderGate()
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() })
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), chooseExportParent: { await gate.hold() }, scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         store.chooseExport(); try await gate.waitStarted()
         let drain = store.beginShutdown()
@@ -231,7 +231,7 @@ struct TimelineWorkspaceStoreTests {
     }
     @Test func timelineViewConstructionDoesNotRequireLiveEngine() async throws {
         let value = selection()
-        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"))
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), scheduler: ForensicWorkScheduler())
         configure(store, value); store.loadFilesystem(); try await settle(store)
         _ = TimelineWorkspaceView(store: store, openFile: { _, _ in })
         #expect(store.rows.count == 2)

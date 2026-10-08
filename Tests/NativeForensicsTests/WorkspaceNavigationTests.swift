@@ -129,7 +129,7 @@ struct WorkspaceNavigationTests {
                           entry("first-photo", name: "photo.jpg"),
                           entry("first-deleted", name: "removed.zip", deleted: true)]
         let secondFiles = [entry("second-media", name: "interview.mp4")]
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.currentCase = ForensicCase(bundleURL: caseURL,
                                             manifest: CaseManifest(id: caseID, name: "Navigation Regression",
                                                                    evidence: [firstEvidence, secondEvidence]))

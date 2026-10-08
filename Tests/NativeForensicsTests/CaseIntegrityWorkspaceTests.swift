@@ -13,7 +13,7 @@ struct CaseIntegrityWorkspaceTests {
         let store = CaseIntegrityWorkspaceStore(audit: { forensicCase, options, _ in
             await captured.record(options.freshEvidenceRehash)
             return Self.report(forensicCase, fresh: options.freshEvidenceRehash)
-        })
+        }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: forensicCase)
         #expect(store.canAudit)
         #expect(!store.freshEvidenceRehash)
@@ -32,7 +32,7 @@ struct CaseIntegrityWorkspaceTests {
         let gate = IntegrityReportGate()
         let store = CaseIntegrityWorkspaceStore(audit: { forensicCase, options, _ in
             await gate.hold(Self.report(forensicCase, fresh: options.freshEvidenceRehash))
-        })
+        }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: oldCase); store.runAudit()
         let task = try #require(store.activeTask)
         await gate.waitForOwner()
@@ -56,7 +56,7 @@ struct CaseIntegrityWorkspaceTests {
             let report = Self.report(forensicCase, fresh: options.freshEvidenceRehash)
             if await captured.values.count > 1 { return await gate.hold(report) }
             return report
-        })
+        }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: forensicCase); store.runAudit()
         await (try #require(store.activeTask)).value
         let earlier = try #require(store.report)
@@ -76,7 +76,7 @@ struct CaseIntegrityWorkspaceTests {
         let forensicCase = fixtureCase(), gate = IntegrityReportGate()
         let store = CaseIntegrityWorkspaceStore(audit: { forensicCase, options, _ in
             await gate.hold(Self.report(forensicCase, fresh: options.freshEvidenceRehash))
-        })
+        }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: forensicCase); store.runAudit()
         await gate.waitForOwner()
         let shutdown = try #require(store.beginShutdown())
@@ -95,7 +95,7 @@ struct CaseIntegrityWorkspaceTests {
         let store = CaseIntegrityWorkspaceStore(audit: { forensicCase, options, _ in Self.report(forensicCase, fresh: options.freshEvidenceRehash) },
             chooseDestination: { _ in await chooser.hold() }, export: { _, _, _, destination, privatePaths in
                 await capture.record(privatePaths); return destination
-            })
+            }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: forensicCase); store.runAudit()
         await (try #require(store.activeTask)).value
         store.exportReport(format: .json)
@@ -114,7 +114,7 @@ struct CaseIntegrityWorkspaceTests {
         let store = CaseIntegrityWorkspaceStore(audit: { forensicCase, options, _ in Self.report(forensicCase, fresh: options.freshEvidenceRehash) },
             chooseDestination: { _ in destination }, export: { _, _, _, output, privatePaths in
                 await capture.record(privatePaths); return output
-            })
+            }, scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: forensicCase); store.runAudit()
         await (try #require(store.activeTask)).value
         #expect(!store.includePrivatePaths)
@@ -128,7 +128,8 @@ struct CaseIntegrityWorkspaceTests {
 
     @Test("A foreign report receipt is rejected before display or export")
     func foreignReceipt() async throws {
-        let store = CaseIntegrityWorkspaceStore(audit: { _, options, _ in Self.report(Self.makeCase(), fresh: options.freshEvidenceRehash) })
+        let store = CaseIntegrityWorkspaceStore(audit: { _, options, _ in Self.report(Self.makeCase(), fresh: options.freshEvidenceRehash) },
+            scheduler: ForensicWorkScheduler())
         store.configure(forensicCase: fixtureCase()); store.runAudit()
         await (try #require(store.activeTask)).value
         #expect(store.report == nil)

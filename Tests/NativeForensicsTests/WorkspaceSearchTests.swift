@@ -149,7 +149,7 @@ struct WorkspaceSearchTests {
             entry(id: "second-cafe", path: "/café/évidence.txt"),
             entry(id: "second-tokyo", path: "/東京/証拠.txt")
         ]
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.currentCase = ForensicCase(
             bundleURL: bundleURL,
             manifest: CaseManifest(id: caseID, name: "Search Regression", evidence: [firstEvidence, secondEvidence])

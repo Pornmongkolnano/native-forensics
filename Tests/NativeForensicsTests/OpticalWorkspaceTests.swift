@@ -357,7 +357,7 @@ struct OpticalWorkspaceTests {
         let fixture = OpticalUIFixture()
         let store = makeStore(load: { _, _ in fixture.result })
         #expect(!store.canExportForAutopsy)
-        let workspace = WorkspaceStore(optical: store)
+        let workspace = WorkspaceStore(optical: store, scheduler: ForensicWorkScheduler())
         workspace.currentCase = fixture.forensicCase
         workspace.selectedEvidenceID = fixture.evidence.id
         await (try #require(store.activeTask)).value
@@ -391,7 +391,7 @@ struct OpticalWorkspaceTests {
                            chooseAutopsyDestination: OpticalWorkspaceStore.ChooseAutopsyDestination? = nil) -> OpticalWorkspaceStore {
         OpticalWorkspaceStore(documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: load,
             inspect: inspect, analyze: analyze, export: export, exportForAutopsy: exportForAutopsy,
-            chooseAutopsyDestination: chooseAutopsyDestination)
+            chooseAutopsyDestination: chooseAutopsyDestination, scheduler: ForensicWorkScheduler())
     }
 }
 

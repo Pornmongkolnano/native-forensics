@@ -250,9 +250,8 @@ struct AssistantPersistenceTests {
 
     private func makeStore(_ fixture: AssistantPersistenceFixture, provider: PersistenceProviderGate,
         save: AssistantAnalysisStore.Save? = nil) -> AssistantAnalysisStore {
-        AssistantAnalysisStore(executableURL: fixture.executable, save: save) { prompt, _ in
-            try await provider.analyze(prompt)
-        }
+        AssistantAnalysisStore(executableURL: fixture.executable, save: save,
+            analyze: { prompt, _ in try await provider.analyze(prompt) }, scheduler: ForensicWorkScheduler())
     }
 
     private func prepare(_ store: AssistantAnalysisStore, fixture: AssistantPersistenceFixture, includeCase: Bool = true) async throws {

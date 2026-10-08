@@ -12,7 +12,7 @@ struct FilesystemUsabilityTests {
         let fixture = UsabilityFixture(name: "misleading.jpg")
         let gate = UsabilityGate<FilesystemDocumentPreview>()
         let store = FilesystemDocumentPreviewStore(engineHelperURL: fixture.helper,
-            load: { _, _, _ in try await gate.request() })
+            load: { _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         store.configure(evidence: fixture.evidence, result: fixture.analysis, file: fixture.file)
         #expect(await gate.calls == 0)
         #expect(store.canLoad && store.preview == nil)
@@ -31,7 +31,7 @@ struct FilesystemUsabilityTests {
         let first = UsabilityFixture(id: "first"), second = UsabilityFixture(id: "second")
         let gate = UsabilityGate<FilesystemDocumentPreview>()
         let store = FilesystemDocumentPreviewStore(engineHelperURL: first.helper,
-            load: { _, _, _ in try await gate.request() })
+            load: { _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         store.configure(evidence: first.evidence, result: first.analysis, file: first.file)
         store.load()
         let oldTask = try #require(store.loadTask)
@@ -57,7 +57,7 @@ struct FilesystemUsabilityTests {
         let fixture = UsabilityFixture(), foreign = UsabilityFixture(id: "foreign")
         let gate = UsabilityGate<FilesystemDocumentPreview>()
         let store = FilesystemDocumentPreviewStore(engineHelperURL: fixture.helper,
-            load: { _, _, _ in try await gate.request() })
+            load: { _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         store.configure(evidence: fixture.evidence, result: fixture.analysis, file: fixture.file)
         store.load(); let task = try #require(store.loadTask)
         await gate.next(); await gate.succeed(foreign.preview()); await task.value
@@ -74,7 +74,7 @@ struct FilesystemUsabilityTests {
     func separatePreviewLimit() {
         let small = UsabilityFixture(size: 2 * 1_024 * 1_024)
         let store = FilesystemDocumentPreviewStore(engineHelperURL: small.helper,
-            load: { _, _, _ in throw CancellationError() })
+            load: { _, _, _ in throw CancellationError() }, scheduler: ForensicWorkScheduler())
         store.configure(evidence: small.evidence, result: small.analysis, file: small.file)
         #expect(store.canLoad)
         let tooLarge = UsabilityFixture(size: DocumentLimits.maximumInputBytes + 1)
@@ -98,7 +98,7 @@ struct FilesystemUsabilityTests {
     @Test("Batch count uses every filtered match rather than the visible 100-row table page")
     func allMatchedCount() {
         let fixture = UsabilityFixture()
-        let workspace = WorkspaceStore(helperURL: fixture.helper)
+        let workspace = WorkspaceStore(helperURL: fixture.helper, scheduler: ForensicWorkScheduler())
         workspace.currentCase = ForensicCase(bundleURL: URL(fileURLWithPath: "/synthetic/case.nfcase"),
             manifest: CaseManifest(name: "Synthetic export count", evidence: [fixture.evidence]))
         workspace.filesystemResults[fixture.evidence.id] = fixture.analysis
@@ -120,7 +120,7 @@ struct FilesystemUsabilityTests {
         let fixture = UsabilityFixture()
         let gate = UsabilityGate<FilesystemBatchExportResult>()
         let store = FilesystemBatchExportStore(engineHelperURL: fixture.helper,
-            export: { _, _, _, _, _ in try await gate.request() })
+            export: { _, _, _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         let firstDestination = URL(fileURLWithPath: "/synthetic/export-one")
         store.start(analysis: fixture.analysis, files: [fixture.file], destination: firstDestination,
                     caseURL: URL(fileURLWithPath: "/synthetic/case.nfcase"))
@@ -143,7 +143,7 @@ struct FilesystemUsabilityTests {
         let fixture = UsabilityFixture(), foreign = UsabilityFixture(id: "foreign")
         let gate = UsabilityGate<FilesystemBatchExportResult>()
         let store = FilesystemBatchExportStore(engineHelperURL: fixture.helper,
-            export: { _, _, _, _, _ in try await gate.request() })
+            export: { _, _, _, _, _ in try await gate.request() }, scheduler: ForensicWorkScheduler())
         let destination = URL(fileURLWithPath: "/synthetic/export")
         store.start(analysis: fixture.analysis, files: [fixture.file], destination: destination,
                     caseURL: URL(fileURLWithPath: "/synthetic/case.nfcase"))

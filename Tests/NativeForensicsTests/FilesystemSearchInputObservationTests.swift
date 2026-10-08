@@ -258,7 +258,7 @@ struct FilesystemSearchInputObservationTests {
     @Test("The real workspace setter returns its own mutation ID, while no-op and generic refresh stay unstamped")
     func workspaceBindingBoundary() async throws {
         let timing = UIInteractionTiming(enabled: true, uptime: { 10.05 })
-        let workspace = WorkspaceStore(uiTiming: timing)
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler(), uiTiming: timing)
         defer { workspace.cancelFilesystemSearch() }
         let first = workspace.setFilesystemSearchTextFromEditor("SYNTHETIC-SECRET-DO-NOT-LOG")
         #expect(first.changed && first.trialID != nil)

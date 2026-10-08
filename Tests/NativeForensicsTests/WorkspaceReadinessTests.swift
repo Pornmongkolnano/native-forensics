@@ -16,7 +16,7 @@ struct WorkspaceReadinessTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try CaseStore.create(name: "First", in: root)
         let second = try CaseStore.create(name: "Second", in: root)
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.openCase(at: first.bundleURL)
         let originalManifest = try Data(contentsOf: first.bundleURL.appendingPathComponent("manifest.json"))
 
@@ -46,7 +46,7 @@ struct WorkspaceReadinessTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try CaseStore.create(name: "First", in: root)
         let second = try CaseStore.create(name: "Second", in: root)
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.openCase(at: first.bundleURL)
         workspace.searchText = "preserved"
         workspace.openCase(at: root.appendingPathComponent("missing.nativecase"))
@@ -70,7 +70,7 @@ struct WorkspaceReadinessTests {
         try corrupt.write(to: cache)
         let manifest = try Data(contentsOf: fixture.forensicCase.bundleURL.appendingPathComponent("manifest.json"))
         let source = try Data(contentsOf: fixture.source)
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.openCase(at: fixture.forensicCase.bundleURL)
         let loading = try #require(workspace.filesystemLoadTask)
         await loading.value
@@ -89,7 +89,7 @@ struct WorkspaceReadinessTests {
     func missingHelperPreflight() async throws {
         let fixture = try await recordedFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let workspace = WorkspaceStore(helperURL: fixture.root.appendingPathComponent("missing-helper"))
+        let workspace = WorkspaceStore(helperURL: fixture.root.appendingPathComponent("missing-helper"), scheduler: ForensicWorkScheduler())
         workspace.openCase(at: fixture.forensicCase.bundleURL)
         await workspace.filesystemLoadTask?.value
         workspace.analyzeSelectedImage()
@@ -265,7 +265,7 @@ struct WorkspaceReadinessTests {
         let forensicCase = try CaseStore.create(name: "Cancelled", in: root)
         let source = root.appendingPathComponent("source.raw")
         try Data(repeating: 0x42, count: 4096).write(to: source)
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.openCase(at: forensicCase.bundleURL)
         workspace.inspectImage(at: source)
         #expect(workspace.isInspecting)
@@ -296,7 +296,7 @@ struct WorkspaceReadinessTests {
         // fallback, never the signal that the commit is ready for cancellation.
         let watchdog = ManifestCommitWatchdog(descriptor: descriptor)
         defer { watchdog.stop() }
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         workspace.openCase(at: forensicCase.bundleURL)
         workspace.inspectImage(at: source)
         var commitIsWaiting = false
@@ -357,8 +357,9 @@ struct WorkspaceReadinessTests {
     @Test("Termination cancels every workspace and waits for their cleanup acknowledgements")
     func allWorkspaceJobsDrain() async throws {
         let lifecycle = WorkspaceLifecycle()
-        let first = WorkspaceStore()
-        let second = WorkspaceStore()
+        let scheduler = ForensicWorkScheduler()
+        let first = WorkspaceStore(scheduler: scheduler)
+        let second = WorkspaceStore(scheduler: scheduler)
         let firstGate = CleanupGate()
         let secondGate = CleanupGate()
         first.isEngineRunning = true
@@ -393,7 +394,7 @@ struct WorkspaceReadinessTests {
     @Test("A closed window stays registered until its native job completes cleanup")
     func closedWorkspaceIsRetained() async throws {
         let lifecycle = WorkspaceLifecycle()
-        let workspace = WorkspaceStore()
+        let workspace = WorkspaceStore(scheduler: ForensicWorkScheduler())
         let gate = CleanupGate()
         workspace.isEngineRunning = true
         let job = Task { await gate.wait(); workspace.isEngineRunning = false; workspace.engineTask = nil }

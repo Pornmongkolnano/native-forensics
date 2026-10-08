@@ -162,7 +162,7 @@ struct RecoveryWorkspaceTests {
     func notesGuard() async throws {
         let fixture = RecoveryUIFixture()
         let store = store(load: { _, _ in fixture.result })
-        let workspace = WorkspaceStore(recovery: store)
+        let workspace = WorkspaceStore(recovery: store, scheduler: ForensicWorkScheduler())
         workspace.currentCase = fixture.forensicCase
         workspace.selectedEvidenceID = fixture.evidence.id
         await (try #require(store.activeTask)).value
@@ -228,7 +228,8 @@ struct RecoveryWorkspaceTests {
                 saveAnnotation: { value, result, _ in await persistence.save(value, jobID: result.jobID) })
         }
         let store = RecoveryWorkspaceStore(photoRecURL: URL(fileURLWithPath: "/usr/bin/true"),
-            documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: { _, _ in fixture.result }, examination: examination())
+            documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: { _, _ in fixture.result }, examination: examination(),
+            scheduler: ForensicWorkScheduler())
         store.configure(evidence: fixture.evidence, in: fixture.forensicCase)
         await (try #require(store.activeTask)).value
         await store.examination.waitForPendingWork()
@@ -242,7 +243,8 @@ struct RecoveryWorkspaceTests {
         #expect(store.retainedDraftCount == 0)
         #expect(store.analysis == nil)
         let reopened = RecoveryWorkspaceStore(photoRecURL: URL(fileURLWithPath: "/usr/bin/true"),
-            documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: { _, _ in fixture.result }, examination: examination())
+            documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: { _, _ in fixture.result }, examination: examination(),
+            scheduler: ForensicWorkScheduler())
         reopened.configure(evidence: fixture.evidence, in: fixture.forensicCase)
         await (try #require(reopened.activeTask)).value
         await reopened.examination.waitForPendingWork()
@@ -259,7 +261,7 @@ struct RecoveryWorkspaceTests {
                        analyze: RecoveryWorkspaceStore.Analyze? = nil) -> RecoveryWorkspaceStore {
         RecoveryWorkspaceStore(photoRecURL: URL(fileURLWithPath: "/usr/bin/true"),
             documentHelperURL: URL(fileURLWithPath: "/usr/bin/true"), load: load, recover: recover, analyze: analyze,
-            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in [:] }))
+            examination: RecoveryExaminationStore(loadAnnotations: { _, _ in [:] }), scheduler: ForensicWorkScheduler())
     }
 }
 

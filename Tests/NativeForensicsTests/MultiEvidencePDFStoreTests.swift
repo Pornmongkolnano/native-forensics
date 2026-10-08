@@ -168,7 +168,7 @@ struct MultiEvidencePDFStoreTests {
                            provider: PDFStoreProvider) -> MultiEvidenceAnalysisStore {
         .init(executableURL: fixture.executable,
               prepare: { _, _, _, _, _ in await preparation.prepare() },
-              analyze: { prompt, _ in await provider.analyze(prompt) })
+              analyze: { prompt, _ in await provider.analyze(prompt) }, scheduler: ForensicWorkScheduler())
     }
     private func configure(_ store: MultiEvidenceAnalysisStore, _ fixture: PDFStoreFixture) async {
         store.configure(evidence: fixture.evidence, result: fixture.result, files: fixture.entries,

@@ -249,7 +249,7 @@ struct AssistantStoreTests {
         let second = try CaseStore.create(name: "Other", in: fixture.directory)
         let manifestURL = first.bundleURL.appendingPathComponent("manifest.json")
         let originalManifest = try Data(contentsOf: manifestURL)
-        let workspace = WorkspaceStore(helperURL: fixture.helper)
+        let workspace = WorkspaceStore(helperURL: fixture.helper, scheduler: ForensicWorkScheduler())
         workspace.currentCase = ForensicCase(bundleURL: first.bundleURL,
             manifest: CaseManifest(id: first.manifest.id, name: first.manifest.name, evidence: [fixture.evidence]))
         workspace.filesystemResults[fixture.evidence.id] = fixture.enumeration
@@ -318,7 +318,7 @@ struct AssistantStoreTests {
     private func makeStore(_ fixture: AssistantStoreFixture, gate: AssistantRequestGate) -> AssistantAnalysisStore {
         AssistantAnalysisStore(executableURL: fixture.executable, analyze: { prompt, executable in
             try await gate.analyze(prompt: prompt, executable: executable)
-        })
+        }, scheduler: ForensicWorkScheduler())
     }
 
     private func prepare(_ store: AssistantAnalysisStore, fixture: AssistantStoreFixture) async throws {

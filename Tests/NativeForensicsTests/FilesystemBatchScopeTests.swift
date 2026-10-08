@@ -96,6 +96,7 @@ private struct BatchScopeFixture: Sendable {
 
     @MainActor func workspace() -> WorkspaceStore {
         let bytes = payload
+        let scheduler = ForensicWorkScheduler()
         let batch = FilesystemBatchExportStore(engineHelperURL: URL(fileURLWithPath: "/synthetic/helper"),
             export: { analysis, files, destination, _, _ in
                 let canonical = destination.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
@@ -112,8 +113,8 @@ private struct BatchScopeFixture: Sendable {
                     engineVersion: analysis.engineVersion, patchDigest: analysis.patchDigest)
                 try JSONEncoder().encode(value).write(to: manifest, options: .withoutOverwriting)
                 return value
-            })
-        let workspace = WorkspaceStore(filesystemBatchExport: batch)
+            }, scheduler: scheduler)
+        let workspace = WorkspaceStore(filesystemBatchExport: batch, scheduler: scheduler)
         workspace.currentCase = forensicCase
         workspace.filesystemResults = [firstEvidence.id: firstAnalysis, secondEvidence.id: secondAnalysis]
         workspace.selectedEvidenceID = firstEvidence.id
