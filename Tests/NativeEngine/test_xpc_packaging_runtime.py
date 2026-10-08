@@ -15,6 +15,7 @@ from xml.parsers.expat import ExpatError
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "script"))
 import validate_app_bundle as bundle_validator
 import source_provenance
+import package_app
 
 
 SANDBOX = "com.apple.security.app-sandbox"
@@ -297,11 +298,11 @@ class _WorkerBundleFixture:
                 extension = ".m" if directory.endswith("/NFDecoderIPC") else ".h" if directory.endswith("/CSQLite3") else ".swift"
                 self.write(self.source_root / directory / ("Synthetic" + extension), b"synthetic target input")
         self.info = {"CFBundleExecutable": "NativeForensics", "CFBundlePackageType": "APPL",
-            "CFBundleIdentifier": "io.github.pornmongkolnano.nativeforensics", "CFBundleShortVersionString": "0.7.0",
-            "CFBundleVersion": "16", "LSMinimumSystemVersion": "14.0"}
+            "CFBundleIdentifier": "io.github.pornmongkolnano.nativeforensics", "CFBundleShortVersionString": package_app.APP_VERSION,
+            "CFBundleVersion": package_app.APP_BUILD, "LSMinimumSystemVersion": "14.0"}
         self.xpc_info = {"CFBundleExecutable": "NFDocumentDecoderXPC", "CFBundlePackageType": "XPC!",
-            "CFBundleIdentifier": bundle_validator.XPC_IDENTIFIER, "CFBundleShortVersionString": "0.7.0",
-            "CFBundleVersion": "16", "LSMinimumSystemVersion": "14.0", "XPCService": {"ServiceType": "Application"}}
+            "CFBundleIdentifier": bundle_validator.XPC_IDENTIFIER, "CFBundleShortVersionString": package_app.APP_VERSION,
+            "CFBundleVersion": package_app.APP_BUILD, "LSMinimumSystemVersion": "14.0", "XPCService": {"ServiceType": "Application"}}
         self.write(self.source_root / source_provenance.XPC_INFO_INPUT, plistlib.dumps(self.xpc_info))
         self.write(self.source_root / source_provenance.XPC_ENTITLEMENTS_INPUT, plistlib.dumps({SANDBOX: True}))
         self.write(self.source_root / source_provenance.WORKER_ENTITLEMENTS_INPUT, plistlib.dumps({SANDBOX: True, INHERIT: True}))
@@ -323,7 +324,7 @@ class _WorkerBundleFixture:
         self.write(self.app / "Contents/Resources/engine-manifest.json", json.dumps(engine).encode())
         policy = {"buildConfiguration": "release", "buildPathPolicy": source_provenance.BUILD_PATH_POLICY,
                   "packagingTransform": "strip-S-on-staged-release-copy"}
-        self.app_receipt = {"schemaVersion": 1, "path": "Contents/MacOS/NativeForensics", "appVersion": "0.7.0", "appBuild": "16",
+        self.app_receipt = {"schemaVersion": 1, "path": "Contents/MacOS/NativeForensics", "appVersion": package_app.APP_VERSION, "appBuild": package_app.APP_BUILD,
             "compiledBinarySha256": self.digest(b"synthetic app"), **policy,
             **source_provenance.make_source_receipt(self.source_root, "NativeForensics")}
         self.decoder_receipt = {"schemaVersion": 2, "protocolVersion": 1, "path": "Contents/Helpers/NFDocumentDecoder",

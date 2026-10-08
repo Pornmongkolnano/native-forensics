@@ -24,8 +24,8 @@ from source_provenance import (verify_build_receipt, apply_staged_privacy_transf
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "NativeForensics"
-APP_VERSION = "0.7.0"
-APP_BUILD = "16"
+APP_VERSION = "0.7.1"
+APP_BUILD = "18"
 
 
 def report_retained_path_candidate(label: str, candidate: Path) -> None:

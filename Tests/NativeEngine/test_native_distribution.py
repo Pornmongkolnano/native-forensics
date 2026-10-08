@@ -90,8 +90,8 @@ class DistributionTests(unittest.TestCase):
         self.create_app("Contents/Resources/EngineLicenses/example/LICENSE", b"source license")
         self.create_app("Contents/Resources/EngineLicenses/THIRD_PARTY_NOTICES.md", b"notices")
         info = {"CFBundleExecutable": "NativeForensics", "CFBundlePackageType": "APPL",
-            "CFBundleIdentifier": "io.github.pornmongkolnano.nativeforensics", "CFBundleShortVersionString": "0.7.0",
-            "CFBundleVersion": "16", "LSMinimumSystemVersion": "14.0"}
+            "CFBundleIdentifier": "io.github.pornmongkolnano.nativeforensics", "CFBundleShortVersionString": package_app.APP_VERSION,
+            "CFBundleVersion": package_app.APP_BUILD, "LSMinimumSystemVersion": "14.0"}
         self.create_app("Contents/Info.plist", plistlib.dumps(info))
         self.create_app("Contents/Helpers/NFDocumentDecoder", b"synthetic decoder", 0o755)
         self.decoder = {"schemaVersion": 2, "protocolVersion": 1, "architecture": "arm64", "minimumMacOS": "14.0",
@@ -101,7 +101,7 @@ class DistributionTests(unittest.TestCase):
             "packagingTransform": "strip-S-on-staged-release-copy",
             **source_provenance.make_source_receipt(self.root, "NFDocumentDecoder")}
         self.create_app("Contents/Resources/document-decoder-manifest.json", json.dumps(self.decoder).encode())
-        self.app_source = {"schemaVersion": 1, "path": "Contents/MacOS/NativeForensics", "appVersion": "0.7.0", "appBuild": "16",
+        self.app_source = {"schemaVersion": 1, "path": "Contents/MacOS/NativeForensics", "appVersion": package_app.APP_VERSION, "appBuild": package_app.APP_BUILD,
             "compiledBinarySha256": self.digest(b"synthetic app"),
             "buildConfiguration": "release", "buildPathPolicy": source_provenance.BUILD_PATH_POLICY,
             "packagingTransform": "strip-S-on-staged-release-copy",
