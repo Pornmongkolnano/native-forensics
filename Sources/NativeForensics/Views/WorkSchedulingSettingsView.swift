@@ -6,7 +6,10 @@ struct WorkSchedulingSettingsView: View {
 
     var body: some View {
         Section("Work and energy") {
-            Picker("New workflow priority", selection: Binding(get: { monitor.mode }, set: monitor.selectMode)) {
+            Picker("New workflow priority", selection: Binding<ForensicEnergyMode>(
+                get: { monitor.mode },
+                set: { (mode: ForensicEnergyMode) in monitor.selectMode(mode) }
+            )) {
                 Text("Automatic").tag(ForensicEnergyMode.automatic)
                 Text("Conserve energy").tag(ForensicEnergyMode.conserveEnergy)
             }
