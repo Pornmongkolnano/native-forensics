@@ -11,7 +11,7 @@ public enum EngineResultStore {
         try EngineValidation.result(result)
         let forensicCase = try CaseStore.open(at: caseURL)
         try validateScope(result, evidenceID: evidenceID, forensicCase: forensicCase)
-        let data = try encoder().encode(result)
+        let data = try EngineFilesystemCacheCoding.encode(result)
         guard data.count <= EngineValidation.resultLimit else { throw EngineError.limitExceeded("The filesystem cache exceeds 64 MiB.") }
         try withCaseLock(forensicCase.bundleURL) {
             // The manifest may have changed while waiting for another writer.
@@ -44,58 +44,23 @@ public enum EngineResultStore {
         }
     }
 
+    /// Reads historical metadata under a cancellable shared case lock. Call
+    /// outside an already-held writer transaction; no source is reverified.
     public static func load(evidenceID: UUID, in caseURL: URL) throws -> EnumerationResult? {
-        let forensicCase = try CaseStore.open(at: caseURL)
-        guard forensicCase.manifest.evidence.contains(where: { $0.id == evidenceID }) else {
-            throw EngineError.invalidCache("The evidence identifier does not belong to this case.")
-        }
-        let directory = try cacheDescriptor(in: forensicCase.bundleURL, create: false)
-        guard directory >= 0 else { return nil }
-        defer { Darwin.close(directory) }
-        let descriptor = Darwin.openat(directory, evidenceID.uuidString.lowercased() + ".json", O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard descriptor >= 0 else {
-            if errno == ENOENT { return nil }
-            throw EngineError.invalidCache("The filesystem cache must be a readable regular file.")
-        }
-        defer { Darwin.close(descriptor) }
-        let before = try FileAccess.identity(of: descriptor)
-        guard before.size <= EngineValidation.resultLimit else { throw EngineError.limitExceeded("The filesystem cache exceeds 64 MiB.") }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 65_536)
-        while Int64(data.count) < before.size {
-            let requested = Int(min(Int64(buffer.count), before.size - Int64(data.count)))
-            let count = try buffer.withUnsafeMutableBytes { try FileAccess.read(descriptor, into: $0, count: requested) }
-            guard count > 0 else { throw EngineError.invalidCache("The filesystem cache changed while being read.") }
-            data.append(contentsOf: buffer.prefix(count))
-        }
-        guard try FileAccess.identity(of: descriptor) == before else { throw EngineError.invalidCache("The filesystem cache changed while being read.") }
-        let result: EnumerationResult
-        do { result = try decoder().decode(EnumerationResult.self, from: data) }
-        catch { throw EngineError.invalidCache("The filesystem cache is malformed or uses an unsupported schema.") }
-        try EngineValidation.result(result)
-        try validateScope(result, evidenceID: evidenceID, forensicCase: forensicCase)
-        return result
+        try EngineFilesystemCacheReader.load(evidenceID: evidenceID, in: caseURL)
     }
 
-    private static func validateScope(_ result: EnumerationResult, evidenceID: UUID, forensicCase: ForensicCase) throws {
+    static func loadForTesting(evidenceID: UUID, in caseURL: URL,
+        checkpoint: @escaping (EngineFilesystemCacheReadCheckpoint) throws -> Void) throws -> EnumerationResult? {
+        try EngineFilesystemCacheReader.load(evidenceID: evidenceID, in: caseURL, checkpoint: checkpoint)
+    }
+
+    static func validateScope(_ result: EnumerationResult, evidenceID: UUID, forensicCase: ForensicCase) throws {
         guard let evidence = forensicCase.manifest.evidence.first(where: { $0.id == evidenceID }),
               result.sourcePaths.contains(evidence.sourcePath), result.sourceFileHashes[evidence.sourcePath] == evidence.sha256,
               result.sourcePaths.allSatisfy({ !FileAccess.isInside(URL(fileURLWithPath: $0), directory: forensicCase.bundleURL) }) else {
             throw EngineError.invalidCache("The filesystem result does not match this evidence record and its selected-file SHA-256.")
         }
-    }
-
-    private static func encoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
-    }
-
-    private static func decoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 
     private static func withCaseLock(_ bundle: URL, body: () throws -> Void) throws {

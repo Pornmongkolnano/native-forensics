@@ -81,9 +81,12 @@ final class OpticalWorkspaceStore {
     @ObservationIgnored private(set) var activeTask: Task<Void, Never>?
     @ObservationIgnored private(set) var filterTask: Task<Void, Never>?
 
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
+
     init(documentHelperURL: URL? = nil, load: Load? = nil, inspect: Inspect? = nil,
          analyze: Analyze? = nil, export: Export? = nil, exportForAutopsy: ExportForAutopsy? = nil,
-         chooseAutopsyDestination: ChooseAutopsyDestination? = nil) {
+         chooseAutopsyDestination: ChooseAutopsyDestination? = nil, scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         self.documentHelperURL = documentHelperURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/NFDocumentDecoder")
         loadRequest = load ?? { evidence, forensicCase in
             try UDFInspector.loadLatest(in: forensicCase, evidenceID: evidence.id)
@@ -116,7 +119,7 @@ final class OpticalWorkspaceStore {
         return nil
     }
     var documentUnavailableReason: String? {
-        if !FileManager.default.isExecutableFile(atPath: documentHelperURL.path) { return DocumentAnalysisError.unavailable.localizedDescription }
+        if !DocumentAnalysisClient(helperURL: documentHelperURL).isAvailable { return DocumentAnalysisError.unavailable.localizedDescription }
         if let entry = selectedEntry, entry.byteCount > DocumentLimits.maximumInputBytes { return "Document preview is bounded to files up to 128 MiB. Export the verified file for external examination." }
         return nil
     }
@@ -166,7 +169,7 @@ final class OpticalWorkspaceStore {
             for job in previous { await job.value }
             do {
                 try Task.checkCancellation()
-                let value = try await Self.work { try await operation(selection.evidence, selection.forensicCase) }
+                let value = try await self.scheduler.run(.historyRead) { _ in try await operation(selection.evidence, selection.forensicCase) }
                 try Task.checkCancellation()
                 guard self.matches(id, selection: selection) else { return }
                 if let value { try Self.verifyBinding(value, selection: selection) }
@@ -197,7 +200,7 @@ final class OpticalWorkspaceStore {
             defer { self.finish(id) }
             for job in previous { await job.value }
             do {
-                let value = try await Self.work { [weak self] in
+                let value = try await self.scheduler.run(.opticalHistory) { [weak self] _ in
                     // The worker owns only its operation and frozen source;
                     // progress does not extend the workspace lifetime.
                     try await operation(selection.evidence, selection.forensicCase, selectedOptions) { [weak self] update in
@@ -243,7 +246,7 @@ final class OpticalWorkspaceStore {
             guard let self else { return }
             defer { self.jobs[id] = nil; if self.previewID == id { self.previewID = nil; self.isPreviewing = false; self.activeTask = nil } }
             do {
-                let value = try await Self.work { try await operation(entry, result, selection.forensicCase, helper) }
+                let value = try await self.scheduler.run(.documentPreview) { _ in try await operation(entry, result, selection.forensicCase, helper) }
                 try Task.checkCancellation()
                 guard self.previewID == id, self.selection == selection, self.selectedEntryID == entry.id,
                       self.result?.jobID == result.jobID, !self.isClosing else { return }
@@ -296,7 +299,7 @@ final class OpticalWorkspaceStore {
         guard let selection, let result, let entry = selectedEntry else { return }
         let operation = exportRequest
         do {
-            let receipt = try await Self.work { try await operation(entry, result, selection.forensicCase, destination) }
+            let receipt = try await self.scheduler.run(.extraction) { _ in try await operation(entry, result, selection.forensicCase, destination) }
             guard matches(id, selection: selection), self.result?.jobID == result.jobID, selectedEntryID == entry.id else { return }
             try Self.verifyReceipt(receipt, entry: entry, result: result)
             lastExport = receipt
@@ -318,7 +321,7 @@ final class OpticalWorkspaceStore {
             defer { self.finish(id) }
             guard let destination = await CasePanelService.newOpticalReport(), !self.isClosing, !Task.isCancelled else { return }
             do {
-                let exported = try await Self.work {
+                let exported = try await self.scheduler.run(.opticalHistory) { _ in
                     try UDFReportBuilder.exportMarkdown(result: result, analyses: selectedAnalyses,
                         in: selection.forensicCase, to: destination)
                 }
@@ -374,7 +377,7 @@ final class OpticalWorkspaceStore {
                     forensicCase: selection.forensicCase)
                 self.autopsyExportDestination = target
                 self.statusMessage = "Verifying the recorded source and exporting all UDF states for Autopsy…"
-                let value = try await Self.work { [weak self] in
+                let value = try await self.scheduler.run(.batchExport) { [weak self] _ in
                     try await operation(selection.evidence, result, selection.forensicCase, target) { [weak self] update in
                         Task { @MainActor [weak self] in
                             guard let self, self.matches(id, selection: selection), self.isExportingAutopsy,

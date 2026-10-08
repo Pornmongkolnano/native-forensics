@@ -76,7 +76,8 @@ struct FilesystemInspectorView: View {
                         if let file = workspace.selectedFilesystemFile {
                             FilesystemFileDetailsView(file: file, displayTimezone: displayTimezone)
                             Button(action: workspace.chooseExtractionDestination) {
-                                Label("Extract to New File…", systemImage: "square.and.arrow.up")
+                                Label(workspace.canDecryptSelectedEFSFile ? "Decrypt EFS to New File…" : "Extract to New File…",
+                                      systemImage: workspace.canDecryptSelectedEFSFile ? "lock.open" : "square.and.arrow.up")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
@@ -157,6 +158,11 @@ private struct FilesystemFileDetailsView: View {
                         timestamp("Modified", seconds: file.modifiedEpoch, nanoseconds: file.modifiedNanoseconds)
                         timestamp("Accessed", seconds: file.accessedEpoch, nanoseconds: file.accessedNanoseconds)
                         timestamp("Metadata Changed", seconds: file.changedEpoch, nanoseconds: file.changedNanoseconds)
+                        if let provenance = file.timestampProvenance {
+                            civilTimestamp("Created civil time", value: provenance.created)
+                            civilTimestamp("Modified civil time", value: provenance.modified)
+                            civilTimestamp("Accessed civil time", value: provenance.accessed)
+                        }
                         Text("Recorded seconds and nanoseconds are retained. Display timezone changes presentation only.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -164,6 +170,16 @@ private struct FilesystemFileDetailsView: View {
                     .padding(.top, 8)
                 }
                 .font(.caption)
+            }
+            if let status = file.recoveryStatus {
+                InspectorField(label: "Recovery interpretation", value: status)
+            }
+            if let warnings = file.recoveryWarnings {
+                ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             GroupBox {
                 DisclosureGroup("Filesystem Address", isExpanded: $metadataExpanded) {
@@ -192,6 +208,30 @@ private struct FilesystemFileDetailsView: View {
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+        }
+    }
+
+    @ViewBuilder private func civilTimestamp(_ title: String, value: FilesystemCivilTimestamp?) -> some View {
+        if let value {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).foregroundStyle(.secondary)
+                Text(value.civil ?? "No valid civil time").textSelection(.enabled)
+                Text(value.status.rawValue + (value.timezone.map { " · " + $0 } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
+                if value.status == .ambiguousLocalTime {
+                    Text("Two possible instants; neither has been selected.")
+                        .font(.caption).foregroundStyle(.orange)
+                } else if value.status == .nonexistentLocalTime {
+                    Text("This local time falls in a DST gap and has no matching instant.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                if !value.candidateEpochs.isEmpty {
+                    Text("Candidate epoch seconds: " + value.candidateEpochs.map(String.init).joined(separator: ", "))
+                        .font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+                }
+                Text("Raw date/time: \(value.rawDate)/\(value.rawTime) · precision \(value.precisionNanoseconds) ns")
+                    .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -271,6 +311,21 @@ private struct FilesystemExtractionReceiptView: View {
                 InspectorField(label: "Output Path", value: receipt.outputPath)
                 InspectorField(label: "Extracted Bytes", value: receipt.byteCount.formatted())
                 InspectorHashField(label: "Extracted File SHA-256", hash: receipt.sha256)
+                if let status = receipt.contentStatus { InspectorField(label: "Content interpretation", value: status) }
+                if let decryption = receipt.decryption {
+                    InspectorField(label: "Decryption profile", value: decryption.profile)
+                    InspectorField(label: "EFS recipient", value: decryption.recipientRole.rawValue)
+                    InspectorHashField(label: "Encrypted stream SHA-256", hash: decryption.ciphertextSHA256)
+                    Label("Source and output verification does not authenticate historical EFS plaintext.", systemImage: "lock.open")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let warnings = receipt.warnings {
+                    ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Text(verified
                      ? "Scope: extracted-file-bytes. Source verification completed after extraction."
                      : "Scope: extracted-file-bytes. Post-extraction source verification did not complete; review the error before using this output.")

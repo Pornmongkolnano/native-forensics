@@ -19,6 +19,7 @@ struct DocumentProcessRunner {
               metadata.st_mode & S_IFMT == S_IFREG, Darwin.access(executable.path, X_OK) == 0 else {
             throw DocumentAnalysisError.unavailable
         }
+        let decoderReceipt = try DocumentDecoderExecutableReceipt.inspect(executable, cancellation: cancellation)
         let request = try JSONEncoder().encode(input)
         guard request.count <= 16 * 1_024 else { throw DocumentAnalysisError.invalidInput }
         let channels = try DocumentChannels()
@@ -34,7 +35,10 @@ struct DocumentProcessRunner {
             catch { throw DocumentAnalysisError.invalidResponse }
             try DocumentAnalysisClient.validate(analysis, for: input)
             try source.verify(input, cancellation: cancellation)
-            return analysis
+            try decoderReceipt.verify(cancellation: cancellation)
+            return try analysis.attachingProvenance(executableSHA256: decoderReceipt.sha256,
+                codeSigningCDHash: nil, isolation: sandboxPolicy == .required ? .requiredDevelopmentSeatbelt : .testFixture,
+                timeout: timeout)
         } catch {
             if cancellation.isCancelled { throw CancellationError() }
             throw error
@@ -236,7 +240,7 @@ enum DocumentSandbox {
     }
 }
 
-private final class DocumentChannels {
+final class DocumentChannels {
     var inputRead: Int32 = -1, inputWrite: Int32 = -1
     var outputRead: Int32 = -1, outputWrite: Int32 = -1
     var errorRead: Int32 = -1, errorWrite: Int32 = -1

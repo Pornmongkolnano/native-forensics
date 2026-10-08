@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -6,10 +7,30 @@ import Foundation
 public struct EngineClient: Sendable {
     public let helperURL: URL
     public let timeouts: EngineTimeouts
+    private let afterValidatedActivityForTesting: (@Sendable () -> Void)?
+    private let inputWriteForTesting: (@Sendable (Int32, UnsafeRawBufferPointer) -> Int)?
 
     public init(helperURL: URL, timeouts: EngineTimeouts = EngineTimeouts()) {
         self.helperURL = helperURL
         self.timeouts = timeouts
+        self.afterValidatedActivityForTesting = nil
+        self.inputWriteForTesting = nil
+    }
+
+    /// Internal, per-call scheduling checkpoint after validated activity is
+    /// recorded. Public clients never install it or bypass any deadline.
+    init(helperURL: URL, timeouts: EngineTimeouts, afterValidatedActivityForTesting: @escaping @Sendable () -> Void) {
+        self.helperURL = helperURL; self.timeouts = timeouts
+        self.afterValidatedActivityForTesting = afterValidatedActivityForTesting
+        self.inputWriteForTesting = nil
+    }
+
+    /// Synchronous actual-pipe write seam. Buffers remain borrowed inside the
+    /// blocking runner; public clients always use the bounded POSIX writer.
+    init(helperURL: URL, timeouts: EngineTimeouts, inputWriteForTesting: @escaping @Sendable (Int32, UnsafeRawBufferPointer) -> Int) {
+        self.helperURL = helperURL; self.timeouts = timeouts
+        self.afterValidatedActivityForTesting = nil
+        self.inputWriteForTesting = inputWriteForTesting
     }
 
     public func enumerate(imageURL: URL, options: EngineOptions = EngineOptions(), progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> EnumerationResult {
@@ -56,21 +77,46 @@ public struct EngineClient: Sendable {
             expectedSourceHashes: expectedSourceHashes, progress: progress).receipt
     }
 
+    /// Explicit EFS derivation with single-use, borrowed credential buffers.
+    /// Key bytes travel only over this job's anonymous stdin pipe. Source
+    /// verification and exclusive output publication match ordinary extraction.
+    public func extractDecrypted(imageURL: URL, file: FilesystemEntry, outputURL: URL, keyMaterial: EFSKeyMaterial, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> ExtractionResult {
+        defer { keyMaterial.discard() }
+        return try await extractDecrypted(imagePaths: Self.imagePaths(for: imageURL), file: file, outputURL: outputURL,
+            keyMaterial: keyMaterial, options: options, expectedSourceHashes: expectedSourceHashes, progress: progress)
+    }
+
+    public func extractDecrypted(imagePaths: [URL], file: FilesystemEntry, outputURL: URL, keyMaterial: EFSKeyMaterial, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> ExtractionResult {
+        defer { keyMaterial.discard() }
+        return try await extractOwned(imagePaths: imagePaths, file: file, outputURL: outputURL, options: options,
+            expectedSourceHashes: expectedSourceHashes, progress: progress, decryptionKey: keyMaterial).receipt
+    }
+
     /// Private-content consumers retain publication identity independently of
     /// the public, serializable receipt. Never adopt a later pathname occupant.
-    func extractOwned(imagePaths: [URL], file: FilesystemEntry, outputURL: URL, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }) async throws -> (receipt: ExtractionResult, identity: SourceIdentity) {
+    func extractOwned(imagePaths: [URL], file: FilesystemEntry, outputURL: URL, options: EngineOptions = EngineOptions(), expectedSourceHashes: [String: String] = [:], progress: @escaping @Sendable (EngineProgress) -> Void = { _ in }, decryptionKey: EFSKeyMaterial? = nil) async throws -> (receipt: ExtractionResult, identity: SourceIdentity) {
         try options.validate()
         try EngineValidation.file(file)
         guard !file.isDirectory else { throw EngineError.invalidRequest("Choose a regular file for extraction.") }
+        if decryptionKey != nil {
+            guard !file.isDeleted, file.encryptionStatus == .ntfsEFSEncrypted,
+                  file.attributeType == 128, file.attributeID != nil, file.attributeName == "" else {
+                throw EngineError.invalidRequest("Choose an allocated NTFS EFS unnamed DATA candidate with explicit stream metadata.")
+            }
+        }
         let destination = try Self.outputDestination(outputURL, sources: imagePaths)
         let transaction = try EngineOutputTransaction(destination: destination)
         defer { transaction.cleanup() }
         let inspections = try await Self.inspectSources(imagePaths, expectedHashes: expectedSourceHashes, progress: progress)
         let stagedOutput = transaction.stagedOutput
-        let outcome = try await execute(imagePaths: imagePaths, operation: "extract", options: options, file: file, outputPath: stagedOutput.path, progress: progress)
+        let operation = decryptionKey == nil ? "extract" : "extract-efs"
+        let outcome = try await execute(imagePaths: imagePaths, operation: operation, options: options, file: file, outputPath: stagedOutput.path, progress: progress, keyMaterial: decryptionKey)
         try Self.matchInspections(inspections, sources: outcome.sources)
         guard outcome.status == .completed, let receipt = outcome.extraction,
-              receipt.outputPath == stagedOutput.path, receipt.byteCount == file.size else {
+              receipt.outputPath == stagedOutput.path, receipt.byteCount == file.size,
+              (decryptionKey == nil
+                ? (receipt.decryption == nil && (receipt.contentStatus.map({ $0 == (file.isDeleted ? "recovery-candidate" : "logical-content") }) ?? true))
+                : (receipt.contentStatus == "decrypted-content" && receipt.decryption != nil)) else {
             throw EngineError.protocolViolation("The extraction receipt does not describe the requested file.")
         }
         // Verify independently before publishing; a helper receipt alone is not
@@ -86,7 +132,8 @@ public struct EngineClient: Sendable {
         // RENAME_EXCL makes the final publication race-safe. Existing files,
         // directories and symlinks are preserved, even if created mid-job.
         let publishedIdentity = try transaction.publish(identity: outputIdentity)
-        return (ExtractionResult(outputPath: destination.path, byteCount: receipt.byteCount, sha256: receipt.sha256), publishedIdentity)
+        return (ExtractionResult(outputPath: destination.path, byteCount: receipt.byteCount, sha256: receipt.sha256,
+            contentStatus: receipt.contentStatus, warnings: receipt.warnings, decryption: receipt.decryption), publishedIdentity)
     }
 
     /// Single-file convenience. Multi-segment EWF requires explicit ordered
@@ -133,7 +180,7 @@ public struct EngineClient: Sendable {
         }
     }
 
-    private func execute(imagePaths: [URL], operation: String, options: EngineOptions, file: FilesystemEntry?, outputPath: String?, progress: @escaping @Sendable (EngineProgress) -> Void) async throws -> EngineOutcome {
+    private func execute(imagePaths: [URL], operation: String, options: EngineOptions, file: FilesystemEntry?, outputPath: String?, progress: @escaping @Sendable (EngineProgress) -> Void, keyMaterial: EFSKeyMaterial? = nil) async throws -> EngineOutcome {
         try Task.checkCancellation()
         try options.validate()
         guard [timeouts.startup, timeouts.inactivity, timeouts.cancellationGrace, timeouts.terminationGrace].allSatisfy({ $0.isFinite && $0 > 0 }) else {
@@ -142,10 +189,27 @@ public struct EngineClient: Sendable {
         let cancellation = EngineCancellation()
         let helper = helperURL
         let limits = timeouts
+        let activityCheckpoint = afterValidatedActivityForTesting
+        let inputWrite = inputWriteForTesting
         do {
             let outcome = try await withTaskCancellationHandler {
                 try await BlockingWork.run {
-                    try EngineRunner(helperURL: helper, timeouts: limits, cancellation: cancellation).run(
+                    let runner = EngineRunner(helperURL: helper, timeouts: limits, cancellation: cancellation,
+                        afterValidatedActivityForTesting: activityCheckpoint, inputWriteForTesting: inputWrite)
+                    if let keyMaterial {
+                        return try keyMaterial.consume { privateKey, certificate in
+                            // The certificate is public derivation provenance.
+                            // Hash its borrowed bytes directly; never derive a
+                            // private-key digest or create a credential Data.
+                            var certificateHasher = Insecure.SHA1()
+                            certificateHasher.update(bufferPointer: certificate)
+                            let certificateSHA1 = certificateHasher.finalize().map { String(format: "%02x", $0) }.joined()
+                            return try runner.run(imagePaths: imagePaths, operation: operation, options: options, file: file,
+                                outputPath: outputPath, progress: progress,
+                                credentials: EngineCredentialBuffers(privateKey: privateKey, certificate: certificate, certificateSHA1: certificateSHA1))
+                        }
+                    }
+                    return try runner.run(
                         imagePaths: imagePaths, operation: operation, options: options, file: file,
                         outputPath: outputPath, progress: progress
                     )
@@ -328,6 +392,20 @@ private struct EngineRequest: Encodable {
     let hashLogicalImage: Bool
     let file: EngineExtractionRequest?
     let outputPath: String?
+    let credentialTransport: EngineCredentialDescriptor?
+}
+
+private struct EngineCredentialDescriptor: Encodable {
+    let profile = EFSKeyMaterial.profile
+    let privateKeyBytes: Int
+    let certificateBytes: Int
+}
+
+/// These non-Sendable pointers never leave the synchronous producer callback.
+private struct EngineCredentialBuffers {
+    let privateKey: UnsafeRawBufferPointer
+    let certificate: UnsafeRawBufferPointer
+    let certificateSHA1: String
 }
 
 private struct EngineExtractionRequest: Encodable {
@@ -336,9 +414,11 @@ private struct EngineExtractionRequest: Encodable {
     let attributeType: Int32?
     let attributeID: Int32?
     let size: Int64
+    let attributeName: String?
     init(_ file: FilesystemEntry) {
         fsOffsetBytes = file.fsOffsetBytes; metaAddress = file.metaAddress
         attributeType = file.attributeType; attributeID = file.attributeID; size = file.size
+        attributeName = file.attributeName
     }
 }
 
@@ -366,6 +446,9 @@ private struct EngineFrame: Decodable {
     let outputPath: String?
     let byteCount: Int64?
     let sha256: String?
+    let contentStatus: String?
+    let warnings: [String]?
+    let decryption: ExtractionDecryptionReceipt?
     let fileCount: Int64?
 }
 
@@ -385,6 +468,7 @@ private struct EngineStream {
     let jobID: String
     let operation: String
     let options: EngineOptions
+    let expectedCertificateSHA1: String?
     var outcome: EngineOutcome
     var nextSequence: Int64 = 0
     var receivedHello = false
@@ -414,7 +498,7 @@ private struct EngineStream {
 
     mutating func consume(_ frame: EngineFrame, progress: @Sendable (EngineProgress) -> Void) throws {
         guard frame.protocolVersion == 1, frame.jobID == jobID, frame.sequence == nextSequence,
-              outcome.status == nil else { throw EngineError.protocolViolation("Unexpected protocol version, job, sequence or frame after terminal status.") }
+              outcome.status == nil, frame.decryption == nil || frame.type == "extracted" else { throw EngineError.protocolViolation("Unexpected protocol version, job, sequence or frame after terminal status.") }
         nextSequence += 1
         if !receivedHello, frame.type != "hello" { throw EngineError.protocolViolation("The first engine frame must be hello.") }
         switch frame.type {
@@ -427,6 +511,9 @@ private struct EngineStream {
             }
             receivedHello = true
             outcome.engineVersion = version; outcome.patchDigest = digest
+            if operation == "extract-efs", !capabilities.contains("ntfs-efs-rsa-aes256-der") {
+                throw EngineError.protocolViolation("The native engine does not advertise the required EFS key profile.")
+            }
         case "image":
             guard outcome.image == nil, let type = frame.imageType, let size = frame.logicalSize,
                   let sector = frame.sectorSize, let actualPaths = frame.imagePaths else {
@@ -451,7 +538,7 @@ private struct EngineStream {
             try EngineValidation.image(image)
             outcome.image = image
         case "volume":
-            guard operation != "extract", let volume = frame.volume,
+            guard !["extract", "extract-efs"].contains(operation), let volume = frame.volume,
                   volumeIDs.insert(volume.id).inserted, outcome.volumes.count < 4096 else {
                 throw EngineError.protocolViolation("Unexpected or duplicate filesystem volume.")
             }
@@ -480,15 +567,39 @@ private struct EngineStream {
                   outcome.warnings.count + errorMessages.count < 1024 else {
                 throw EngineError.protocolViolation("Invalid or excessive engine diagnostics.")
             }
-            if frame.type == "warning" { outcome.warnings.append("\(code): \(message)") }
-            else { errorMessages.append("\(code): \(message)") }
+            // A failed credential job never promotes raw helper diagnostics to
+            // caller-visible logs. Structured successful provenance is checked
+            // separately, while ordinary jobs retain their existing messages.
+            let diagnostic = operation == "extract-efs" ? "The native engine reported an EFS diagnostic." : "\(code): \(message)"
+            if frame.type == "warning" { outcome.warnings.append(diagnostic) }
+            else { errorMessages.append(diagnostic) }
         case "extracted":
-            guard operation == "extract", outcome.extraction == nil, let path = frame.outputPath,
+            guard ["extract", "extract-efs"].contains(operation), outcome.extraction == nil, let path = frame.outputPath,
                   let count = frame.byteCount, let hash = frame.sha256, count >= 0,
-                  path.hasPrefix("/"), EngineValidation.text(path), EngineValidation.validHash(hash) else {
+                  path.hasPrefix("/"), EngineValidation.text(path), EngineValidation.validHash(hash),
+                  frame.warnings.map({ $0.count <= 32 && $0.allSatisfy({ EngineValidation.text($0, maximum: 4_096) }) }) ?? true else {
                 throw EngineError.protocolViolation("Invalid or unexpected extraction receipt.")
             }
-            outcome.extraction = ExtractionResult(outputPath: path, byteCount: count, sha256: hash)
+            let receiptWarnings: [String]?
+            if operation == "extract-efs" {
+                guard frame.contentStatus == "decrypted-content", let decryption = frame.decryption,
+                      frame.warnings?.isEmpty == false else {
+                    throw EngineError.protocolViolation("An EFS extraction requires explicit decryption provenance and its authentication limitation.")
+                }
+                try EngineValidation.decryption(decryption, plaintextBytes: count)
+                guard decryption.certificateSHA1 == expectedCertificateSHA1 else {
+                    throw EngineError.protocolViolation("The EFS receipt does not identify the selected DER certificate.")
+                }
+                receiptWarnings = [ExtractionDecryptionReceipt.unauthenticatedPlaintextWarning]
+            } else {
+                guard frame.decryption == nil,
+                      frame.contentStatus.map({ ["logical-content", "recovery-candidate"].contains($0) }) ?? true else {
+                    throw EngineError.protocolViolation("An ordinary extraction cannot claim decrypted content.")
+                }
+                receiptWarnings = frame.warnings
+            }
+            outcome.extraction = ExtractionResult(outputPath: path, byteCount: count, sha256: hash,
+                contentStatus: frame.contentStatus, warnings: receiptWarnings, decryption: frame.decryption)
         case "completed", "partial", "failed", "cancelled":
             guard let status = EngineTerminalStatus(rawValue: frame.type), let count = frame.fileCount,
                   count == outcome.files.count, frame.message.map({ EngineValidation.text($0) }) ?? true else {
@@ -504,7 +615,7 @@ private struct EngineStream {
                 throw EngineError.protocolViolation("The engine reported errors but claimed complete success.")
             }
         default:
-            throw EngineError.protocolViolation("Unknown engine frame type: \(frame.type.prefix(128)).")
+            throw EngineError.protocolViolation(operation == "extract-efs" ? "Unknown EFS engine frame type." : "Unknown engine frame type: \(frame.type.prefix(128)).")
         }
     }
 
@@ -512,12 +623,13 @@ private struct EngineStream {
         guard pending.isEmpty else { throw EngineError.protocolViolation("The engine output ended in a truncated frame.") }
         guard receivedHello, let status = outcome.status else { throw EngineError.protocolViolation("The engine exited without hello and terminal status.") }
         if status == .cancelled { throw CancellationError() }
-        let diagnostic = String(decoding: stderr.prefix(EngineValidation.stderrLimit), as: UTF8.self)
+        let diagnostic = operation == "extract-efs" ? "" : String(decoding: stderr.prefix(EngineValidation.stderrLimit), as: UTF8.self)
         guard status != .failed, exitStatus == 0 else {
+            if operation == "extract-efs" { throw EngineError.helperFailed("The native engine could not complete the EFS extraction (exit \(exitStatus)).") }
             let detail = (errorMessages + outcome.warnings).joined(separator: "\n")
             throw EngineError.helperFailed("The engine failed (exit \(exitStatus)). \(detail)\(diagnostic.isEmpty ? "" : "\n" + diagnostic)")
         }
-        if operation != "extract" {
+        if !["extract", "extract-efs"].contains(operation) {
             guard outcome.image != nil else { throw EngineError.protocolViolation("No image metadata accompanied the result.") }
             if options.hashLogicalImage && outcome.image?.logicalSha256 == nil {
                 throw EngineError.protocolViolation("The requested logical-image SHA-256 is missing.")
@@ -529,13 +641,102 @@ private struct EngineStream {
     }
 }
 
+/// The JSON line and borrowed DER buffers are distinct segments. In particular
+/// no growing Data/String ever contains credential bytes or a JSON cancel line
+/// spliced into an incomplete binary credential segment.
+private struct EngineInputTransport {
+    enum WriteFailure: Error { case closedPipe }
+    let request: Data
+    let credentials: EngineCredentialBuffers?
+    let cancelRequest: Data
+    private var phase = 0 // request, private DER, certificate DER, idle, cancel, complete
+    private var offset = 0
+
+    init(request: Data, credentials: EngineCredentialBuffers?, cancelRequest: Data) {
+        self.request = request; self.credentials = credentials; self.cancelRequest = cancelRequest
+    }
+
+    var hasPendingBytes: Bool { phase < 3 || phase == 4 }
+    var credentialsAreComplete: Bool { credentials == nil || phase >= 3 }
+
+    /// Returns false when the helper would still interpret JSON as DER. The
+    /// caller must close owned stdin and terminate its owned process instead.
+    mutating func enqueueCancellation() -> Bool {
+        guard credentialsAreComplete else { return false }
+        if phase == 3 { phase = 4; offset = 0 }
+        // Ordinary jobs preserve request-first then cancel ordering.
+        if credentials == nil && phase == 0 { cancellationQueued = true }
+        return true
+    }
+
+    private var cancellationQueued = false
+
+    mutating func writeNext(to descriptor: Int32, using hook: (@Sendable (Int32, UnsafeRawBufferPointer) -> Int)?) throws {
+        guard hasPendingBytes else { return }
+        let currentOffset = offset
+        let written: Int
+        let remaining: Int
+        switch phase {
+        case 0:
+            remaining = request.count - currentOffset
+            written = request.withUnsafeBytes { bytes in
+                Self.write(UnsafeRawBufferPointer(rebasing: bytes[currentOffset..<(currentOffset + min(remaining, 65_536))]), to: descriptor, hook: hook)
+            }
+        case 1, 2:
+            guard let credentials else { throw EngineError.protocolViolation("Missing credential transport segment.") }
+            let bytes = phase == 1 ? credentials.privateKey : credentials.certificate
+            remaining = bytes.count - currentOffset
+            written = Self.write(UnsafeRawBufferPointer(rebasing: bytes[currentOffset..<(currentOffset + min(remaining, 65_536))]), to: descriptor, hook: hook)
+        case 4:
+            remaining = cancelRequest.count - currentOffset
+            written = cancelRequest.withUnsafeBytes { bytes in
+                Self.write(UnsafeRawBufferPointer(rebasing: bytes[currentOffset..<(currentOffset + min(remaining, 65_536))]), to: descriptor, hook: hook)
+            }
+        default: return
+        }
+        if written > 0 {
+            guard written <= min(remaining, 65_536) else { throw EngineError.protocolViolation("The engine input writer exceeded its borrowed segment.") }
+            offset += written
+            if offset == currentOffset + remaining {
+                offset = 0
+                switch phase {
+                case 0: phase = credentials == nil ? (cancellationQueued ? 4 : 3) : 1
+                case 1: phase = 2
+                case 2: phase = 3
+                case 4: phase = 5
+                default: break
+                }
+            }
+        } else if written < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK {
+            if errno == EPIPE { throw WriteFailure.closedPipe }
+            throw FileAccess.posixError("Cannot write engine request")
+        }
+    }
+
+    private static func write(_ bytes: UnsafeRawBufferPointer, to descriptor: Int32, hook: (@Sendable (Int32, UnsafeRawBufferPointer) -> Int)?) -> Int {
+        if let hook { return hook(descriptor, bytes) }
+        return Darwin.write(descriptor, bytes.baseAddress, bytes.count)
+    }
+}
+
 private struct EngineRunner {
     let helperURL: URL
     let timeouts: EngineTimeouts
     let cancellation: EngineCancellation
+    let afterValidatedActivityForTesting: (@Sendable () -> Void)?
+    let inputWriteForTesting: (@Sendable (Int32, UnsafeRawBufferPointer) -> Int)?
 
-    func run(imagePaths: [URL], operation: String, options: EngineOptions, file: FilesystemEntry?, outputPath: String?, progress: @Sendable (EngineProgress) -> Void) throws -> EngineOutcome {
+    func run(imagePaths: [URL], operation: String, options: EngineOptions, file: FilesystemEntry?, outputPath: String?, progress: @Sendable (EngineProgress) -> Void, credentials: EngineCredentialBuffers? = nil) throws -> EngineOutcome {
         if cancellation.isCancelled { throw CancellationError() }
+        guard (operation == "extract-efs") == (credentials != nil) else {
+            throw EngineError.invalidRequest("Only an explicit EFS extraction may supply binary credentials.")
+        }
+        if let credentials {
+            guard (1...EFSKeyMaterial.maximumPrivateKeyBytes).contains(credentials.privateKey.count),
+                  (1...EFSKeyMaterial.maximumCertificateBytes).contains(credentials.certificate.count) else {
+                throw EngineError.invalidRequest("EFS credential transport exceeds its bounded DER profile.")
+            }
+        }
         guard !imagePaths.isEmpty, imagePaths.count <= 1024 else { throw EngineError.invalidRequest("Supply between 1 and 1,024 ordered image files.") }
         let canonical = try imagePaths.map(FileAccess.localURL)
         guard Set(canonical.map(\.path)).count == canonical.count else { throw EngineError.invalidRequest("Image segments must not be duplicated.") }
@@ -556,10 +757,13 @@ private struct EngineRunner {
         _ = try FileAccess.identity(at: helper)
         guard Darwin.access(helper.path, X_OK) == 0 else { throw EngineError.invalidRequest("The native engine helper is not executable.") }
         let jobID = UUID().uuidString
-        let request = EngineRequest(jobID: jobID, operation: operation, imagePaths: canonical.map(\.path), imageType: options.imageType, sectorSize: options.sectorSize, timezone: options.timezone, maxFiles: options.maxFiles, hashLogicalImage: options.hashLogicalImage, file: file.map(EngineExtractionRequest.init), outputPath: outputPath)
+        let credentialDescriptor = credentials.map { EngineCredentialDescriptor(privateKeyBytes: $0.privateKey.count, certificateBytes: $0.certificate.count) }
+        let request = EngineRequest(jobID: jobID, operation: operation, imagePaths: canonical.map(\.path), imageType: options.imageType, sectorSize: options.sectorSize, timezone: options.timezone, maxFiles: options.maxFiles, hashLogicalImage: options.hashLogicalImage, file: file.map(EngineExtractionRequest.init), outputPath: outputPath, credentialTransport: credentialDescriptor)
         var outgoing = try JSONEncoder().encode(request)
         guard outgoing.count <= EngineValidation.frameLimit else { throw EngineError.limitExceeded("The engine request exceeds 1 MiB.") }
         outgoing.append(10)
+        let cancelRequest = Data("{\"protocolVersion\":1,\"jobID\":\"\(jobID)\",\"operation\":\"cancel\"}\n".utf8)
+        var input = EngineInputTransport(request: outgoing, credentials: credentials, cancelRequest: cancelRequest)
         let channels = try EngineChannels()
         defer { channels.close() }
         let process = try EngineProcess(executable: helper, channels: channels)
@@ -568,36 +772,37 @@ private struct EngineRunner {
         let stdoutFD = channels.outputRead
         let stderrFD = channels.errorRead
         let stdinFD = channels.inputWrite
-        var stream = EngineStream(jobID: jobID, operation: operation, options: options, outcome: EngineOutcome(sources: identities))
+        var stream = EngineStream(jobID: jobID, operation: operation, options: options,
+            expectedCertificateSHA1: credentials?.certificateSHA1, outcome: EngineOutcome(sources: identities))
         var stderr = Data()
         var outputEOF = false, errorEOF = false, inputClosed = false
-        var outgoingOffset = 0
         let started = uptime()
         var lastActivity = started
         var cancelledAt: Double?
         var terminatedAt: Double?
         var exitedAt: Double?
         var timeoutError: EngineError?
-        let cancelRequest = Data("{\"protocolVersion\":1,\"jobID\":\"\(jobID)\",\"operation\":\"cancel\"}\n".utf8)
         var buffer = [UInt8](repeating: 0, count: 65_536)
+        // A maximum-size legal frame plus its newline fits within one pass's
+        // byte ceiling; each channel still has a finite read-count bound.
+        let maximumReadPasses = EngineValidation.frameLimit / buffer.count + 1
+        func requestCancellation(at instant: Double) {
+            cancelledAt = instant
+            if !input.enqueueCancellation() {
+                // Until both complete DER segments have been written, a JSON
+                // cancel would corrupt credential framing. Close only this
+                // job's stdin and use its pinned owned process group instead.
+                if !inputClosed { channels.closeInput(); inputClosed = true }
+                process.signal(SIGTERM); terminatedAt = instant
+            }
+        }
         while true {
+            var validatedActivityInPass = false
             let now = uptime()
             let isRunning = try process.isRunning()
             if !isRunning && exitedAt == nil { exitedAt = now }
             if cancellation.isCancelled && cancelledAt == nil {
-                cancelledAt = now
-                outgoing.append(cancelRequest)
-            }
-            if cancelledAt == nil && timeoutError == nil {
-                if !stream.receivedHello && now - started > timeouts.startup {
-                    timeoutError = .timeout("The native engine did not send hello before its startup deadline.")
-                } else if stream.receivedHello && now - lastActivity > timeouts.inactivity {
-                    timeoutError = .timeout("The native engine stopped reporting activity before its stage deadline.")
-                }
-                if timeoutError != nil {
-                    cancelledAt = now
-                    outgoing.append(cancelRequest)
-                }
+                requestCancellation(at: now)
             }
             if let cancelledAt, isRunning, now - cancelledAt >= timeouts.cancellationGrace, terminatedAt == nil {
                 process.signal(SIGTERM)
@@ -610,7 +815,7 @@ private struct EngineRunner {
             var polling = [
                 pollfd(fd: outputEOF ? -1 : stdoutFD, events: Int16(POLLIN), revents: 0),
                 pollfd(fd: errorEOF ? -1 : stderrFD, events: Int16(POLLIN), revents: 0),
-                pollfd(fd: inputClosed || outgoingOffset == outgoing.count ? -1 : stdinFD, events: Int16(POLLOUT), revents: 0)
+                pollfd(fd: inputClosed || !input.hasPendingBytes ? -1 : stdinFD, events: Int16(POLLOUT), revents: 0)
             ]
             let polled = Darwin.poll(&polling, nfds_t(polling.count), 50)
             if polled < 0 {
@@ -621,17 +826,21 @@ private struct EngineRunner {
             // discarded stderr beyond the diagnostic cap, without deadlock.
             for index in 0..<2 where polling[index].revents != 0 {
                 let fd = index == 0 ? stdoutFD : stderrFD
-                for _ in 0..<16 {
+                for _ in 0..<maximumReadPasses {
                     let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
                     if count > 0 {
-                        let data = Data(buffer.prefix(count))
                         if index == 0 {
+                            let data = Data(buffer.prefix(count))
                             let previousSequence = stream.nextSequence
                             try stream.receive(data, progress: progress)
                             // Partial bytes are not a heartbeat. Only validated
                             // complete protocol frames refresh the stage timer.
-                            if stream.nextSequence > previousSequence { lastActivity = uptime() }
-                        } else if stderr.count < EngineValidation.stderrLimit {
+                            if stream.nextSequence > previousSequence {
+                                lastActivity = uptime()
+                                validatedActivityInPass = true
+                            }
+                        } else if operation != "extract-efs" && stderr.count < EngineValidation.stderrLimit {
+                            let data = Data(buffer.prefix(count))
                             stderr.append(data.prefix(EngineValidation.stderrLimit - stderr.count))
                         }
                     } else if count == 0 {
@@ -646,32 +855,54 @@ private struct EngineRunner {
                     }
                 }
             }
+            // Buffered, complete frames may already be waiting after this
+            // worker was descheduled. Validate that bounded tail before using
+            // a fresh clock to decide whether the helper stopped reporting.
+            let afterDrain = uptime()
+            let runningAfterDrain = try process.isRunning()
+            if !runningAfterDrain && exitedAt == nil { exitedAt = afterDrain }
+            let terminalAndExited = stream.outcome.status != nil && !runningAfterDrain
+            if cancelledAt == nil && timeoutError == nil && !terminalAndExited {
+                if !stream.receivedHello && afterDrain - started > timeouts.startup {
+                    timeoutError = .timeout("The native engine did not send hello before its startup deadline.")
+                } else if stream.receivedHello && afterDrain - lastActivity > timeouts.inactivity {
+                    timeoutError = .timeout("The native engine stopped reporting activity before its stage deadline.")
+                }
+                if timeoutError != nil {
+                    requestCancellation(at: afterDrain)
+                }
+            }
+            // Progress callbacks can request cancellation during the drain.
+            // Observe that request before another credential segment write.
+            if cancellation.isCancelled && cancelledAt == nil { requestCancellation(at: afterDrain) }
             // A worker can be descheduled after observing process exit while
             // the final bytes/EOF are already waiting in its pipes. Drain them
             // before applying the descendant guard; elapsed wall time alone
             // cannot establish that an output writer is still alive.
             try EnginePipeExitDeadline.validate(
-                exitedAt: exitedAt, now: uptime(),
+                exitedAt: exitedAt, now: afterDrain,
                 stdoutFD: outputEOF ? nil : stdoutFD,
                 stderrFD: errorEOF ? nil : stderrFD
             )
+            if stream.outcome.status != nil && !inputClosed {
+                channels.closeInput(); inputClosed = true
+            }
             if !inputClosed && polling[2].revents != 0 {
                 if polling[2].revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
                     channels.closeInput(); inputClosed = true
                 } else {
-                    let written = outgoing.withUnsafeBytes {
-                        Darwin.write(stdinFD, $0.baseAddress?.advanced(by: outgoingOffset), $0.count - outgoingOffset)
+                    do { try input.writeNext(to: stdinFD, using: inputWriteForTesting) }
+                    catch EngineInputTransport.WriteFailure.closedPipe {
+                        channels.closeInput(); inputClosed = true
                     }
-                    if written > 0 { outgoingOffset += written }
-                    else if written < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK {
-                        if errno == EPIPE { channels.closeInput(); inputClosed = true }
-                        else { throw FileAccess.posixError("Cannot write engine request") }
+                    catch {
+                        throw error
                     }
                 }
             }
-            if stream.outcome.status != nil && !inputClosed {
-                channels.closeInput(); inputClosed = true
-            }
+            // The per-call test checkpoint is outside this pass's read loop:
+            // any frames released here can only be drained on the next pass.
+            if validatedActivityInPass { afterValidatedActivityForTesting?() }
         }
         if let timeoutError { throw timeoutError }
         if cancellation.isCancelled { throw CancellationError() }

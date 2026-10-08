@@ -51,6 +51,17 @@ private struct IntegrityAuditWorker {
     private var lastProgressTime: TimeInterval = -.infinity
     private var payloads: [String: (size: Int64, hash: String)] = [:]
     private var expectedPayloads: [String: (size: Int64, hash: String)] = [:]
+    private var metadataDigests: [String: String] = [:]
+    private var metadataSizes: [String: Int] = [:]
+    private var observedStoragePaths = Set<String>()
+    private var unsafeStoragePaths = Set<String>()
+    private var unsupportedStoragePaths = Set<String>()
+    private var migrationBackupVerified = false
+    private var validFilesystemJobArtifacts = Set<UUID>()
+    private var validAPFSJobArtifacts = Set<UUID>()
+    private var apfsResults: [String: (hash: String, size: Int, evidence: UUID, generation: UUID, coverage: APFSReadCoverage)] = [:]
+    private var apfsChecksums: [String: APFSCacheReceipt] = [:]
+    private var apfsLatest: [String: APFSCacheReceipt] = [:]
     private var opticalResults: [String: (hash: String, job: UUID, evidence: UUID)] = [:]
     private var opticalChecksums: [String: IntegrityGenerationPointer] = [:]
     private var opticalLatest: [String: IntegrityGenerationPointer] = [:]
@@ -93,14 +104,14 @@ private struct IntegrityAuditWorker {
             defer { _ = integrityFlock(lock, LOCK_UN) }
             let data = try read("manifest.json", parent: root, maximum: 16 * 1_048_576)
             manifestDigest = hash(data)
-            try schema(data)
+            try schema(data, allowedVersions: [1, 2])
             let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
             let current = try decoder.decode(CaseManifest.self, from: data)
             try validateManifest(current)
             guard current == forensicCase.manifest else { throw CaseIntegrityAuditError.changed }
             try EvidenceViewFiles.validateDirectory(forensicCase.bundleURL, descriptor: root)
             manifest = current
-            add(.pass, "manifest.valid", "Manifest v1 is valid and matches the opened case.", path: "manifest.json", size: Int64(data.count), digest: manifestDigest)
+            add(.pass, "manifest.valid", "Manifest v\(current.schemaVersion) is valid and matches the opened case.", path: "manifest.json", size: Int64(data.count), digest: manifestDigest)
             for (index, evidence) in current.evidence.enumerated() {
                 guard index < options.maximumFiles else { throw CaseIntegrityAuditError.limit }
                 try tick("Checking evidence receipts")
@@ -199,6 +210,7 @@ private struct IntegrityAuditWorker {
             files += 1
             guard files <= options.maximumFiles else { throw CaseIntegrityAuditError.limit }
             let parts = path + [name]
+            observedStoragePaths.insert(parts.joined(separator: "/"))
             var metadata = stat()
             guard Darwin.fstatat(directory, name, &metadata, AT_SYMLINK_NOFOLLOW) == 0 else { throw CaseIntegrityAuditError.changed }
             if metadata.st_mode & S_IFMT == S_IFDIR {
@@ -215,6 +227,7 @@ private struct IntegrityAuditWorker {
                     throw CaseIntegrityAuditError.changed
                 }
             } else if metadata.st_mode & S_IFMT != S_IFREG || metadata.st_nlink != 1 {
+                unsafeStoragePaths.insert(parts.joined(separator: "/"))
                 add(.fail, "storage.unsafe", "Symbolic links, hard-linked records and nonregular items are not followed.", path: knownLabel(parts))
             } else if name.hasPrefix(".") {
                 add(.unavailable, "storage.staging", "Unrecognized temporary metadata was preserved and skipped.", path: knownLabel(parts))
@@ -222,7 +235,10 @@ private struct IntegrityAuditWorker {
                 do { try auditFile(name, parent: directory, parts: parts) }
                 catch is CancellationError { throw CancellationError() }
                 catch CaseIntegrityAuditError.limit { throw CaseIntegrityAuditError.limit }
-                catch CaseIntegrityAuditError.unsupported { add(.unavailable, "metadata.schema.unsupported", "Unknown schema; original record was preserved.", path: knownLabel(parts)) }
+                catch CaseIntegrityAuditError.unsupported {
+                    unsupportedStoragePaths.insert(parts.joined(separator: "/"))
+                    add(.unavailable, "metadata.schema.unsupported", "Unknown schema; original record was preserved.", path: knownLabel(parts))
+                }
                 catch { add(.fail, "metadata.invalid", "Record validation, checksum, identifier or source binding failed.", path: knownLabel(parts)) }
             }
         }
@@ -232,8 +248,8 @@ private struct IntegrityAuditWorker {
 
     private func knownDirectory(_ parts: [String]) -> Bool {
         guard let kind = parts.first else { return true }
-        if ["analyses", "findings", "extractions", "comparisons", "filesystem"].contains(kind) { return parts.count == 1 }
-        if kind == "optical" {
+        if ["analyses", "findings", "extractions", "comparisons", "filesystem", "filesystem-jobs", "migrations"].contains(kind) { return parts.count == 1 }
+        if kind == "optical" || kind == "apfs" {
             switch parts.count {
             case 1: return true
             case 2: return UUID(uuidString: parts[1]) != nil
@@ -257,7 +273,7 @@ private struct IntegrityAuditWorker {
     private func knownLabel(_ parts: [String]) -> String? {
         // Unknown names may contain private strings; retain only declared store
         // labels and valid UUID filenames in the default exportable receipt.
-        guard parts.allSatisfy({ ["analyses", "findings", "extractions", "comparisons", "filesystem", "optical", "recovery", "recovery-notes", "generations", "files", "latest.json", "result.json", "checksum.json", "derived-content-index.json"].contains($0)
+        guard parts.allSatisfy({ ["analyses", "findings", "extractions", "comparisons", "filesystem", "filesystem-jobs", "optical", "apfs", "recovery", "recovery-notes", "generations", "migrations", "files", "latest.json", "result.json", "checksum.json", "derived-content-index.json"].contains($0)
             || UUID(uuidString: $0.replacingOccurrences(of: ".json", with: "")) != nil }) else { return nil }
         return parts.joined(separator: "/")
     }
@@ -269,18 +285,93 @@ private struct IntegrityAuditWorker {
             payloads[path] = try streamHash(name, parent: parent, budget: .payload); return
         }
         let recognized = (parts.count == 1 && name == "derived-content-index.json")
-            || (parts.count == 2 && ["filesystem", "analyses", "findings", "extractions", "comparisons"].contains(kind)
+            || (parts.count == 2 && ["filesystem", "filesystem-jobs", "analyses", "findings", "extractions", "comparisons", "migrations"].contains(kind)
             && name.hasSuffix(".json") && UUID(uuidString: String(name.dropLast(5))) != nil)
-            || (kind == "optical" && ((parts.count == 3 && name == "latest.json")
+            || (["optical", "apfs"].contains(kind) && ((parts.count == 3 && name == "latest.json")
                 || (parts.count == 5 && ["result.json", "checksum.json"].contains(name))))
             || (kind == "recovery" && parts.count == 4 && name == "result.json")
             || (kind == "recovery-notes" && parts.count == 4 && name.hasSuffix(".json") && UUID(uuidString: String(name.dropLast(5))) != nil)
         guard recognized else { add(.unavailable, "storage.unrecognized", "Unrecognized or derived file was preserved and skipped.", path: knownLabel(parts)); return }
-        let maximum: Int64 = kind == "recovery-notes" ? 65_536 : (kind == "filesystem" ? 64 * 1_048_576 :
+        let maximum: Int64 = kind == "recovery-notes" ? 65_536 : (kind == "migrations" ? 16 * 1_048_576 : (["filesystem", "filesystem-jobs"].contains(kind) || (kind == "apfs" && name == "result.json") ? 64 * 1_048_576 :
             (["analyses", "findings", "extractions", "comparisons"].contains(kind) ? 1_048_576 :
-                (name == "checksum.json" || name == "latest.json" ? 4_096 : 32 * 1_048_576)))
+                (name == "checksum.json" || name == "latest.json" ? 4_096 : 32 * 1_048_576))))
         let bytes = try read(name, parent: parent, maximum: maximum)
+        metadataDigests[path] = hash(bytes)
+        metadataSizes[path] = bytes.count
         try schema(bytes)
+        if kind == "apfs" {
+            guard let current = manifest, let evidenceID = UUID(uuidString: parts[1]),
+                  let evidence = current.evidence.first(where: { $0.id == evidenceID }) else { throw CaseIntegrityAuditError.invalid }
+            if name == "result.json" {
+                guard let generationID = UUID(uuidString: parts[3]) else { throw CaseIntegrityAuditError.invalid }
+                let value = try JSONDecoder().decode(APFSInspectionResult.self, from: bytes)
+                try APFSMountedImageAdapter.validate(value, evidence: evidence)
+                apfsResults[parts.dropLast().joined(separator: "/")] = (hash(bytes), bytes.count, evidenceID, generationID, value.coverage)
+                if let job = current.provenance?.jobs.first(where: { $0.id == generationID }) {
+                    let receipt = APFSCacheReceipt(caseID: current.id, evidenceID: evidenceID,
+                        generationID: generationID, resultSHA256: hash(bytes), relativePath: path,
+                        serializedByteCount: bytes.count, coverage: value.coverage)
+                    var expected = try APFSResultStore.jobProvenance(result: value, receipt: receipt,
+                        startedAt: job.startedAt, completedAt: job.completedAt)
+                    if job.artifactByteCount == nil { expected = expected.preservingUnknownArtifactSize() }
+                    guard expected == job else { throw CaseIntegrityAuditError.invalid }
+                    validAPFSJobArtifacts.insert(generationID)
+                }
+            } else {
+                let value = try JSONDecoder().decode(APFSCacheReceipt.self, from: bytes)
+                let resultPath = "apfs/" + evidenceID.uuidString.lowercased() + "/generations/" + value.generationID.uuidString.lowercased() + "/result.json"
+                guard value.schemaVersion == 1, value.caseID == current.id, value.evidenceID == evidenceID,
+                      (1...APFSResultStore.maximumResultBytes).contains(value.serializedByteCount),
+                      EngineValidation.validHash(value.resultSHA256), value.relativePath == resultPath else { throw CaseIntegrityAuditError.invalid }
+                if name == "latest.json" { apfsLatest[parts.dropLast().joined(separator: "/")] = value }
+                else {
+                    guard value.generationID == UUID(uuidString: parts[3]) else { throw CaseIntegrityAuditError.invalid }
+                    apfsChecksums[parts.dropLast().joined(separator: "/")] = value
+                }
+            }
+            add(.pass, "metadata.valid", "APFS historical metadata schema, allocated-view limits and selected-file source scope are valid; evidence was not mounted or freshly verified.", path: path, size: Int64(bytes.count), digest: hash(bytes))
+            return
+        }
+        if kind == "filesystem-jobs" {
+            let value = try CaseWorkCoding.decode(EnumerationResult.self, bytes)
+            try EngineValidation.result(value)
+            guard let jobID = UUID(uuidString: String(name.dropLast(5))), let current = manifest,
+                  value.sourcePaths.allSatisfy({ !FileAccess.isInside(URL(fileURLWithPath: $0), directory: forensicCase.bundleURL) }) else {
+                throw CaseIntegrityAuditError.invalid
+            }
+            guard let job = current.provenance?.jobs.first(where: { $0.id == jobID }) else {
+                add(.unavailable, "job.artifact.unrecorded", "This complete immutable listing has no recorded manifest job. It may be an interrupted save; it was preserved and is not claimed as a verified job.", path: path, size: Int64(bytes.count), digest: hash(bytes))
+                return
+            }
+            guard job.kind == "filesystem.enumeration", let evidence = current.evidence.first(where: { $0.id == job.evidenceID }),
+                  value.sourcePaths.contains(evidence.sourcePath), value.sourceFileHashes[evidence.sourcePath] == evidence.sha256,
+                  value.sourceIdentities.first(where: { $0.path == evidence.sourcePath }).map({ $0.size == evidence.byteCount }) ?? true else {
+                throw CaseIntegrityAuditError.invalid
+            }
+            let expected = try CaseJobProvenance.enumeration(id: jobID, evidence: evidence, result: value,
+                startedAt: job.startedAt, executableSHA256: job.component.executableSHA256,
+                artifactRelativePath: path, artifactSHA256: hash(bytes), artifactByteCount: job.artifactByteCount)
+            guard expected == job else { throw CaseIntegrityAuditError.invalid }
+            validFilesystemJobArtifacts.insert(jobID)
+            add(.pass, "job.listing.valid", "Immutable listing bytes, filename/job identity, selected evidence, component/options, ordered source hashes, status and warnings match their exact historical manifest job.", path: path, size: Int64(bytes.count), digest: hash(bytes))
+            return
+        }
+        if kind == "migrations" {
+            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+            let original = try decoder.decode(CaseManifest.self, from: bytes)
+            try validateManifest(original)
+            guard original.schemaVersion == 1, let current = manifest, original.id == current.id else { throw CaseIntegrityAuditError.invalid }
+            if let receipt = current.provenance?.migration, receipt.backupFilename == name {
+                guard bytes.count == receipt.originalManifestByteCount, hash(bytes) == receipt.originalManifestSHA256,
+                      original.name == current.name, original.createdAt == current.createdAt,
+                      current.evidence.starts(with: original.evidence) else { throw CaseIntegrityAuditError.invalid }
+                migrationBackupVerified = true
+                add(.pass, "migration.backup.valid", "The exact pre-migration manifest matches its immutable receipt; no rollback or source modification was performed.", path: path, size: Int64(bytes.count), digest: hash(bytes))
+            } else {
+                add(.historical, "migration.backup.historical", "A prior or interrupted migration's original manifest backup is historical metadata; it does not establish a current migration.", path: path, size: Int64(bytes.count), digest: hash(bytes))
+            }
+            return
+        }
         if name == "derived-content-index.json", parts.count == 1 {
             let snapshot = try CaseWorkCoding.decode(CaseContentIndexSnapshot.self, bytes)
             try snapshot.validate()
@@ -316,8 +407,7 @@ private struct IntegrityAuditWorker {
             }
             comparisonParents[value.id] = .init(parent: value.parentRecordID)
         } else if kind == "filesystem" {
-            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-            let value = try decoder.decode(EnumerationResult.self, from: bytes)
+            let value = try EngineFilesystemCacheCoding.decode(bytes)
             try EngineValidation.result(value)
             guard let evidence = manifest?.evidence.first(where: { $0.id == UUID(uuidString: String(name.dropLast(5))) }),
                   value.sourcePaths.contains(evidence.sourcePath), value.sourceFileHashes[evidence.sourcePath] == evidence.sha256,
@@ -387,10 +477,11 @@ private struct IntegrityAuditWorker {
     /// pathname. Reopening could follow a concurrently replaced ancestor.
     private func validateManifest(_ current: CaseManifest) throws {
         let name = current.name
-        guard current.schemaVersion == 1, !name.isEmpty, name.count <= 100, name.utf8.count <= 240,
+        guard [1, 2].contains(current.schemaVersion), (current.schemaVersion == 1) == (current.provenance == nil), !name.isEmpty, name.count <= 100, name.utf8.count <= 240,
               name != ".", name != "..", !name.contains("/"), !name.contains("\\"), !name.contains(":"),
               !name.hasSuffix("."), !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               current.createdAt.timeIntervalSince1970.isFinite else { throw CaseIntegrityAuditError.invalid }
+        if let provenance = current.provenance { try provenance.validate(evidence: current.evidence) }
         var identifiers = Set<UUID>(), paths = Set<String>()
         for evidence in current.evidence {
             guard identifiers.insert(evidence.id).inserted, paths.insert(evidence.sourcePath).inserted,
@@ -411,6 +502,59 @@ private struct IntegrityAuditWorker {
     }
 
     private mutating func reconcile() throws {
+        if let provenance = manifest?.provenance {
+            if !migrationBackupVerified { add(.fail, "migration.backup.missing", "The declared exact pre-migration manifest backup was not verified.", path: "migrations") }
+            for job in provenance.jobs {
+                try tick("Checking job provenance")
+                if let path = job.artifactRelativePath, let expected = job.artifactSHA256 {
+                    var sizeChanged = false
+                    if let declared = job.artifactByteCount {
+                        if let actual = metadataSizes[path] {
+                            if actual != declared {
+                                add(.fail, "job.artifact.sizeChanged", "The stored artifact size differs from its historical producer receipt; bytes were preserved.",
+                                    path: knownLabel(path.split(separator: "/").map(String.init)), size: Int64(actual))
+                                sizeChanged = true
+                            }
+                        } else if let actual = payloads[path]?.size, actual != Int64(declared) {
+                            add(.fail, "job.artifact.sizeChanged", "The stored payload size differs from its historical producer receipt; bytes were preserved.",
+                                path: knownLabel(path.split(separator: "/").map(String.init)), size: actual)
+                            sizeChanged = true
+                        }
+                    } else {
+                        add(.unavailable, "job.artifact.sizeUnavailable", "This older historical job did not record an artifact byte count. No expected size was inferred or persisted.",
+                            path: knownLabel(path.split(separator: "/").map(String.init)))
+                    }
+                    if let actual = metadataDigests[path] ?? payloads[path]?.hash, actual != expected {
+                        add(.fail, "job.artifact.changed", "The stored job artifact differs from its recorded digest; historical bytes were preserved.",
+                            path: knownLabel(path.split(separator: "/").map(String.init)), digest: actual)
+                        continue
+                    }
+                    if sizeChanged { continue }
+                    let generationPath = path.split(separator: "/").dropLast().joined(separator: "/")
+                    if unsupportedStoragePaths.contains(path)
+                        || (path.hasPrefix("apfs/") && unsupportedStoragePaths.contains(generationPath + "/checksum.json")) {
+                        add(.unavailable, "job.artifact.unavailable", "The declared job artifact uses an unsupported schema and was preserved without claiming its provenance.",
+                            path: knownLabel(path.split(separator: "/").map(String.init)))
+                        continue
+                    }
+                    if (path.hasPrefix("filesystem-jobs/") && !validFilesystemJobArtifacts.contains(job.id))
+                        || (path.hasPrefix("apfs/") && (!validAPFSJobArtifacts.contains(job.id) || !apfsGenerationVerified(generationPath))) {
+                        let observed = observedStoragePaths.contains(path)
+                            || unsafeStoragePaths.contains(where: { path.hasPrefix($0 + "/") })
+                        add(.fail, observed ? "job.artifact.invalid" : "job.artifact.missing",
+                            observed ? "The declared immutable job artifact was observed but failed safe schema/result/provenance validation." : "The declared immutable job artifact is absent from the fully visited supported store.",
+                            path: knownLabel(path.split(separator: "/").map(String.init)))
+                        continue
+                    }
+                    if let actual = metadataDigests[path] ?? payloads[path]?.hash {
+                        add(actual == expected ? .pass : .fail, actual == expected ? "job.artifact.verified" : "job.artifact.changed",
+                            actual == expected ? "Job component, reconstructible options and ordered source hashes bind this exact stored artifact." : "The stored job artifact differs from its recorded digest; historical bytes were preserved.", path: path, digest: actual)
+                    } else { add(.unavailable, "job.artifact.unavailable", "The declared job artifact was not verified within this audit's supported store scope or budgets.", path: nil) }
+                } else {
+                    add(.historical, "job.provenance.historical", "Job component, reconstructible options, terminal status, warnings and ordered source hashes are historical; no output byte digest was declared.")
+                }
+            }
+        }
         for (path, expected) in expectedPayloads {
             try tick("Verifying recovered payload receipts")
             guard let actual = payloads[path] else { add(.fail, "payload.missing", "A recorded recovered payload is missing or could not be safely hashed.", path: path); continue }
@@ -421,6 +565,44 @@ private struct IntegrityAuditWorker {
         }
         for path in payloads.keys where expectedPayloads[path] == nil {
             add(.fail, "payload.unreferenced", "Recovered payload has no validated result reference.", path: path)
+        }
+        for (path, result) in apfsResults {
+            try tick("Checking APFS generation receipts")
+            if unsupportedStoragePaths.contains(path + "/checksum.json") {
+                add(.unavailable, "apfs.checksum.unavailable", "The immutable APFS checksum uses an unsupported schema; result bytes are preserved without claiming its receipt relation.", path: path + "/checksum.json")
+                continue
+            }
+            let matches = apfsGenerationVerified(path)
+            add(matches ? .pass : .fail, matches ? "apfs.checksum.valid" : "apfs.checksum.invalid",
+                matches ? "Exact immutable APFS result bytes, size, generation/source identity and coverage match their historical checksum receipt." : "The immutable APFS result has no matching checksum receipt for its exact bytes, size, generation/source scope and coverage.",
+                path: path + "/result.json", size: Int64(result.size), digest: result.hash)
+        }
+        for path in apfsChecksums.keys where apfsResults[path] == nil {
+            let unsupported = unsupportedStoragePaths.contains(path + "/result.json")
+            add(unsupported ? .unavailable : .fail, unsupported ? "apfs.checksum.unavailable" : "apfs.checksum.invalid",
+                unsupported ? "The referenced APFS result uses an unsupported schema; its checksum relation remains unverified." : "APFS checksum has no safely validated result generation.", path: path + "/checksum.json")
+        }
+        let apfsNamespaces = Set((Array(apfsResults.keys) + Array(apfsChecksums.keys)).map { $0.split(separator: "/").prefix(2).joined(separator: "/") })
+        for path in apfsNamespaces where apfsLatest[path] == nil {
+            let latest = path + "/latest.json"
+            let unsupported = unsupportedStoragePaths.contains(latest)
+            add(unsupported ? .unavailable : .fail, unsupported ? "apfs.pointer.unavailable" : "apfs.pointer.invalid",
+                unsupported ? "The latest APFS pointer uses an unsupported schema; immutable generations were preserved." : "The APFS generation namespace has no safely validated latest convenience pointer; immutable generations were preserved.", path: latest)
+        }
+        for (path, pointer) in apfsLatest {
+            try tick("Checking APFS latest pointers")
+            let generation = path + "/generations/" + pointer.generationID.uuidString.lowercased()
+            if unsupportedStoragePaths.contains(generation + "/result.json")
+                || unsupportedStoragePaths.contains(generation + "/checksum.json") {
+                add(.unavailable, "apfs.pointer.unavailable", "The latest APFS pointer depends on an unsupported result/checksum schema; its generation relation remains unverified.", path: path + "/latest.json")
+                continue
+            }
+            let result = apfsResults[generation]
+            let matches = apfsChecksums[generation] == pointer && result?.hash == pointer.resultSHA256
+                && result?.size == pointer.serializedByteCount && result?.coverage == pointer.coverage
+                && result?.evidence == pointer.evidenceID && result?.generation == pointer.generationID
+            add(matches ? .pass : .fail, matches ? "apfs.pointer.valid" : "apfs.pointer.invalid",
+                matches ? "The mutable latest APFS pointer resolves to its validated immutable checksum/result generation." : "The latest APFS pointer does not resolve to its declared checksum/result generation.", path: path + "/latest.json")
         }
         for (path, result) in opticalResults {
             let pointer = opticalChecksums[path]
@@ -471,9 +653,17 @@ private struct IntegrityAuditWorker {
         }
     }
 
-    private func schema(_ bytes: Data) throws {
+    private func apfsGenerationVerified(_ path: String) -> Bool {
+        guard let result = apfsResults[path], let receipt = apfsChecksums[path] else { return false }
+        return receipt.caseID == manifest?.id && receipt.evidenceID == result.evidence
+            && receipt.generationID == result.generation && receipt.resultSHA256 == result.hash
+            && receipt.serializedByteCount == result.size && receipt.coverage == result.coverage
+            && receipt.relativePath == path + "/result.json"
+    }
+
+    private func schema(_ bytes: Data, allowedVersions: [Int] = [1]) throws {
         struct Header: Decodable { let schemaVersion: Int }
-        guard try JSONDecoder().decode(Header.self, from: bytes).schemaVersion == 1 else { throw CaseIntegrityAuditError.unsupported }
+        guard try allowedVersions.contains(JSONDecoder().decode(Header.self, from: bytes).schemaVersion) else { throw CaseIntegrityAuditError.unsupported }
     }
 
     private mutating func names(in directory: Int32) throws -> [String] {

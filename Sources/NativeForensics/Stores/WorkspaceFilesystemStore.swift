@@ -8,6 +8,7 @@ extension WorkspaceStore {
         case .caseDetails: return .caseDetails
         case .recovery: return .recovery
         case .optical: return .optical
+        case .apfs: return .apfs
         case .contentSearch: return .contentSearch
         case .comparison: return .comparison
         case .timeline: return .timeline
@@ -28,6 +29,7 @@ extension WorkspaceStore {
         case .caseDetails: section = .caseDetails
         case .recovery: showRecoveredFiles()
         case .optical: showOpticalHistory()
+        case .apfs: showAPFSFiles()
         case .contentSearch: showContentSearch()
         case .comparison: showComparison()
         case .timeline: showTimeline()
@@ -92,16 +94,22 @@ extension WorkspaceStore {
 
     /// Debounce typing and keep Foundation's Unicode matching off the UI actor.
     /// Generation + source-selection guards prevent an old query being published.
-    func refreshFilesystemRows() {
-        cancelFilesystemSearch()
-        guard !isClosing else { return }
+    @discardableResult
+    func refreshFilesystemRows() -> UInt64? {
+        cancelFilesystemSearch(outcome: .superseded)
+        guard !isClosing else { return nil }
+        let timing = filesystemUITiming
+        let trialID = timing.begin()
         let index = filesystemSearchIndex
         let query = filesystemSearchText
         let category = filesystemCategory
+        let searchRows = filesystemRowSearch
         guard !query.isEmpty || category != .all else {
             filesystemRows = (try? index.rows(matching: "")) ?? []
             clearInvisibleFilesystemSelection(in: filesystemRows)
-            return
+            timing.record(.rowsPublished, trialID: trialID)
+            timing.finish(.published, trialID: trialID)
+            return trialID
         }
         let searchID = UUID()
         let evidenceID = selectedEvidenceID
@@ -109,8 +117,16 @@ extension WorkspaceStore {
         let caseURL = currentCase?.bundleURL
         filesystemSearchID = searchID
         isFilteringFilesystem = true
+        let priorOwners = Array(filesystemSearchJobs.values)
+        timing.record(.scheduled, trialID: trialID)
         filesystemSearchTask = Task { [weak self] in
+            var outcome = UIInteractionOutcome.cancelled
             defer {
+                if let cancellation = self?.filesystemSearchCancellationOutcomes.removeValue(forKey: searchID) {
+                    outcome = cancellation
+                }
+                timing.finish(outcome, trialID: trialID)
+                self?.filesystemSearchJobs.removeValue(forKey: searchID)
                 if let self, self.filesystemSearchID == searchID {
                     self.isFilteringFilesystem = false
                     self.filesystemSearchID = nil
@@ -118,10 +134,15 @@ extension WorkspaceStore {
                 }
             }
             do {
+                for owner in priorOwners { await owner.value }
+                try Task.checkCancellation()
                 try await Task.sleep(for: .milliseconds(120))
                 try Task.checkCancellation()
                 let worker = Task.detached(priority: .userInitiated) {
-                    try FilesystemCategory.rows(in: index, matching: query, category: category)
+                    timing.record(.workerStarted, trialID: trialID)
+                    let rows = try searchRows(index, query, category)
+                    timing.record(.workerFinished, trialID: trialID)
+                    return rows
                 }
                 let rows = try await withTaskCancellationHandler {
                     try await worker.value
@@ -134,19 +155,28 @@ extension WorkspaceStore {
                       self.currentCase?.manifest.id == caseID,
                       self.currentCase?.bundleURL == caseURL,
                       self.filesystemSearchText == query,
-                      self.filesystemCategory == category else { return }
+                      self.filesystemCategory == category else { outcome = .superseded; return }
                 self.filesystemRows = rows
                 self.clearInvisibleFilesystemSelection(in: rows)
+                timing.record(.rowsPublished, trialID: trialID)
+                outcome = .published
+            } catch is CancellationError {
+                outcome = .cancelled
             } catch {
+                outcome = .failed
                 // Superseded queries are cancelled; the matching generation's
                 // defer releases its activity state without publishing old rows.
             }
         }
+        if let task = filesystemSearchTask { filesystemSearchJobs[searchID] = task }
+        return trialID
     }
 
-    func cancelFilesystemSearch() {
+    func cancelFilesystemSearch(outcome: UIInteractionOutcome = .cancelled) {
+        if let id = filesystemSearchID { filesystemSearchCancellationOutcomes[id] = outcome }
         filesystemSearchID = nil
         filesystemSearchTask?.cancel()
+        for task in filesystemSearchJobs.values { task.cancel() }
         filesystemSearchTask = nil
         isFilteringFilesystem = false
     }
@@ -179,6 +209,7 @@ extension WorkspaceStore {
         filesystemRows = []
         filesystemFilesByID = [:]
         if let cached = selectedFilesystemResult {
+            if let id = selectedEvidenceID { filesystemListingRetention.touch(id) }
             applyFilesystemOptions(cached)
             rebuildFilesystemIndex()
             refreshFilesystemRows()
@@ -192,9 +223,11 @@ extension WorkspaceStore {
         let sourcePath = evidence.sourcePath
         filesystemLoadID = loadID
         isLoadingFilesystem = true
+        let priorOwners = Array(filesystemLoadJobs.values)
         filesystemLoadTask = Task { [weak self] in
             guard let self else { return }
             defer {
+                self.filesystemLoadJobs.removeValue(forKey: loadID)
                 if self.filesystemLoadID == loadID {
                     self.isLoadingFilesystem = false
                     self.filesystemLoadID = nil
@@ -202,9 +235,12 @@ extension WorkspaceStore {
                 }
             }
             do {
-                let cached = try await Task.detached(priority: .utility) {
-                    try EngineResultStore.load(evidenceID: evidenceID, in: caseURL)
-                }.value
+                for owner in priorOwners { await owner.value }
+                try Task.checkCancellation()
+                let (cached, cost) = try await self.workScheduler.run(.historyRead) { _ in
+                    let cached = try EngineResultStore.load(evidenceID: evidenceID, in: caseURL)
+                    return (cached, try cached.map { try FilesystemListingStringCost.measure($0) })
+                }
                 try Task.checkCancellation()
                 guard self.filesystemLoadID == loadID,
                       self.currentCase?.manifest.id == caseID,
@@ -215,7 +251,9 @@ extension WorkspaceStore {
                         self.errorMessage = "The saved read order does not start with this evidence record. Reanalyze with the recorded image first."
                         return
                     }
-                    self.filesystemResults[evidenceID] = cached
+                    guard let cost, self.retainFilesystemResult(cached, evidenceID: evidenceID, cost: cost) else {
+                        throw EngineError.limitExceeded("The saved listing exceeds the in-memory retention budget. Its disk artifact was preserved.")
+                    }
                     self.applyFilesystemOptions(cached)
                     self.rebuildFilesystemIndex()
                     self.refreshFilesystemRows()
@@ -229,6 +267,7 @@ extension WorkspaceStore {
                 self.errorMessage = "The saved filesystem result could not be read: \(error.localizedDescription) The cache was preserved. Reanalyze the source to create a validated replacement."
             }
         }
+        if let task = filesystemLoadTask { filesystemLoadJobs[loadID] = task }
     }
 
     func analyzeSelectedImage() {
@@ -237,6 +276,7 @@ extension WorkspaceStore {
               let forensicCase = currentCase else { return }
         guard ensureEngineAvailable() else { return }
         let jobID = beginEngineJob(label: "Verifying source before analysis…")
+        let startedAt = Date()
         let options = engineOptions
         let sources = [URL(fileURLWithPath: evidence.sourcePath)] + additionalImageSegments
         section = .filesystem
@@ -244,28 +284,55 @@ extension WorkspaceStore {
             guard let self else { return }
             defer { self.finishEngineJob(jobID) }
             var cacheWasSaved = false
+            var permit: ForensicWorkPermit?
             do {
-                try await self.verifySource(evidence, jobID: jobID)
+                self.engineOperationLabel = "Waiting for the application workflow slot…"
+                let admitted = try await self.workScheduler.acquire(.filesystemAnalysis)
+                permit = admitted
+                try Task.checkCancellation()
+                let helperURL = self.engineHelperURL
+                let helperSHA: String?
+                if forensicCase.manifest.schemaVersion == 2 {
+                    helperSHA = try await admitted.run { try await ImageInspector.inspect(url: helperURL, progress: { _ in }).sha256 }
+                } else { helperSHA = nil }
+                try await admitted.run { try await self.verifySource(evidence, jobID: jobID) }
                 self.engineOperationLabel = "Reading filesystem…"
-                let result = try await self.engineClient.enumerate(
-                    imagePaths: sources,
-                    options: options,
-                    progress: self.engineProgressCallback(jobID)
-                )
+                let client = self.engineClient, callback = self.engineProgressCallback(jobID)
+                let result = try await admitted.run {
+                    try await client.enumerate(imagePaths: sources, options: options, progress: callback)
+                }
                 try Task.checkCancellation()
                 self.engineOperationLabel = "Verifying source after analysis…"
-                try await self.verifySource(evidence, jobID: jobID)
+                try await admitted.run { try await self.verifySource(evidence, jobID: jobID) }
                 try Task.checkCancellation()
                 self.engineOperationLabel = "Saving filesystem result…"
                 self.engineProgress = nil
                 self.verificationProgress = nil
                 let evidenceID = evidence.id
                 let caseURL = forensicCase.bundleURL
-                try await Task.detached(priority: .utility) {
+                if let helperSHA {
+                    guard try await admitted.run({ try await ImageInspector.inspect(url: helperURL, progress: { _ in }).sha256 }) == helperSHA else {
+                        throw ForensicsError.sourceChanged
+                    }
+                }
+                let cost = try await admitted.run { try FilesystemListingStringCost.measure(result) }
+                let updatedCase = try await admitted.runToCompletion {
+                    if forensicCase.manifest.schemaVersion == 2 {
+                        return try EngineResultStore.saveWithJobProvenance(result: result, evidenceID: evidenceID,
+                            in: caseURL, jobID: jobID, startedAt: startedAt, executableSHA256: helperSHA).forensicCase
+                    }
                     try EngineResultStore.save(result: result, evidenceID: evidenceID, in: caseURL)
-                }.value
+                    return forensicCase
+                }
                 cacheWasSaved = true
-                self.filesystemResults[evidence.id] = result
+                if self.currentCase?.manifest == forensicCase.manifest,
+                   self.currentCase?.bundleURL == updatedCase.bundleURL {
+                    self.currentCase = updatedCase
+                    self.caseIntegrity.configure(forensicCase: updatedCase)
+                }
+                guard self.retainFilesystemResult(result, evidenceID: evidence.id, cost: cost) else {
+                    throw EngineError.limitExceeded("The analysis was saved but exceeds the in-memory retention budget. Its disk artifact was preserved.")
+                }
                 self.selectedFileID = nil
                 self.rebuildFilesystemIndex()
                 self.refreshFilesystemRows()
@@ -289,6 +356,7 @@ extension WorkspaceStore {
                 self.errorMessage = error.localizedDescription
                 self.statusMessage = "Filesystem analysis failed. Reopen the case to check its saved results before retrying."
             }
+            if let permit { await permit.release() }
         }
     }
 
@@ -306,6 +374,7 @@ extension WorkspaceStore {
     }
 
     func chooseExtractionDestination() {
+        if canDecryptSelectedEFSFile { showEFSKeyInput(); return }
         guard canExtractFilesystemFile,
               let evidence = selectedEvidence,
               let file = selectedFilesystemFile,
@@ -394,10 +463,12 @@ extension WorkspaceStore {
     }
 
     func cancelCurrentJob() {
+        efsKeyInput?.cancel()
         filesystemDocumentPreview.cancel()
         filesystemBatchExport.cancel()
         filesystemBatchPanelTask?.cancel()
         optical.cancel()
+        apfs.cancel()
         recovery.cancel()
         assistant.cancel()
         contentPreview.cancel()
@@ -421,6 +492,7 @@ extension WorkspaceStore {
 
     private func cancelFilesystemLoad() {
         filesystemLoadTask?.cancel()
+        for task in filesystemLoadJobs.values { task.cancel() }
         filesystemLoadTask = nil
         filesystemLoadID = nil
         isLoadingFilesystem = false
@@ -468,20 +540,21 @@ extension WorkspaceStore {
         engineTask = Task { [weak self] in
             guard let self else { return }
             defer { self.finishEngineJob(jobID) }
+            var permit: ForensicWorkPermit?
             do {
-                try await self.verifySource(evidence, jobID: jobID)
+                self.engineOperationLabel = "Waiting for the application workflow slot…"
+                let admitted = try await self.workScheduler.acquire(.extraction)
+                permit = admitted
+                try await admitted.run { try await self.verifySource(evidence, jobID: jobID) }
                 self.engineOperationLabel = "Extracting \(file.name)…"
-                let receipt = try await self.engineClient.extract(
-                    imagePaths: sourcePaths,
-                    file: file,
-                    outputURL: destination,
-                    options: options,
-                    expectedSourceHashes: sourceHashes,
-                    progress: self.engineProgressCallback(jobID)
-                )
+                let client = self.engineClient, callback = self.engineProgressCallback(jobID)
+                let receipt = try await admitted.run {
+                    try await client.extract(imagePaths: sourcePaths, file: file, outputURL: destination,
+                        options: options, expectedSourceHashes: sourceHashes, progress: callback)
+                }
                 self.extractionReceipt = receipt
                 self.engineOperationLabel = "Verifying source after extraction…"
-                try await self.verifySource(evidence, jobID: jobID)
+                try await admitted.run { try await self.verifySource(evidence, jobID: jobID) }
                 try Task.checkCancellation()
                 self.extractionReceiptIsVerified = true
                 self.caseWork.recordExtraction(receipt: receipt, forensicCase: forensicCase,
@@ -497,6 +570,7 @@ extension WorkspaceStore {
                     ? "Extraction failed."
                     : "Post-extraction source verification failed. The output receipt remains unverified."
             }
+            if let permit { await permit.release() }
         }
     }
 

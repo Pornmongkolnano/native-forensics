@@ -61,6 +61,12 @@ public struct EngineVolume: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+public enum FilesystemEncryptionStatus: String, Codable, Sendable, Equatable {
+    /// An allocated NTFS unnamed DATA candidate. The extraction job still
+    /// validates its metadata, storage mapping and supplied recipient key.
+    case ntfsEFSEncrypted = "ntfs-efs-encrypted"
+}
+
 public struct FilesystemEntry: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public let path: String
@@ -80,8 +86,15 @@ public struct FilesystemEntry: Codable, Sendable, Identifiable, Equatable {
     public let modifiedNanoseconds: Int32
     public let accessedNanoseconds: Int32
     public let changedNanoseconds: Int32
+    public let timestampProvenance: FilesystemTimestampProvenance?
+    public let recoveryStatus: String?
+    public let recoveryWarnings: [String]?
+    public let encryptionStatus: FilesystemEncryptionStatus?
+    /// A present empty value explicitly identifies an unnamed DATA stream.
+    /// Historical entries without this field do not establish that fact.
+    public let attributeName: String?
 
-    public init(id: String, path: String, name: String, fsOffsetBytes: Int64, metaAddress: UInt64, attributeType: Int32? = nil, attributeID: Int32? = nil, size: Int64, isDirectory: Bool, isDeleted: Bool, createdEpoch: Int64? = nil, modifiedEpoch: Int64? = nil, accessedEpoch: Int64? = nil, changedEpoch: Int64? = nil, createdNanoseconds: Int32 = 0, modifiedNanoseconds: Int32 = 0, accessedNanoseconds: Int32 = 0, changedNanoseconds: Int32 = 0) {
+    public init(id: String, path: String, name: String, fsOffsetBytes: Int64, metaAddress: UInt64, attributeType: Int32? = nil, attributeID: Int32? = nil, size: Int64, isDirectory: Bool, isDeleted: Bool, createdEpoch: Int64? = nil, modifiedEpoch: Int64? = nil, accessedEpoch: Int64? = nil, changedEpoch: Int64? = nil, createdNanoseconds: Int32 = 0, modifiedNanoseconds: Int32 = 0, accessedNanoseconds: Int32 = 0, changedNanoseconds: Int32 = 0, timestampProvenance: FilesystemTimestampProvenance? = nil, recoveryStatus: String? = nil, recoveryWarnings: [String]? = nil, encryptionStatus: FilesystemEncryptionStatus? = nil, attributeName: String? = nil) {
         self.id = id; self.path = path; self.name = name
         self.fsOffsetBytes = fsOffsetBytes; self.metaAddress = metaAddress
         self.attributeType = attributeType; self.attributeID = attributeID
@@ -90,12 +103,16 @@ public struct FilesystemEntry: Codable, Sendable, Identifiable, Equatable {
         self.accessedEpoch = accessedEpoch; self.changedEpoch = changedEpoch
         self.createdNanoseconds = createdNanoseconds; self.modifiedNanoseconds = modifiedNanoseconds
         self.accessedNanoseconds = accessedNanoseconds; self.changedNanoseconds = changedNanoseconds
+        self.timestampProvenance = timestampProvenance; self.recoveryStatus = recoveryStatus; self.recoveryWarnings = recoveryWarnings
+        self.encryptionStatus = encryptionStatus; self.attributeName = attributeName
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, path, name, fsOffsetBytes, metaAddress, attributeType, attributeID, size, isDirectory, isDeleted
         case createdEpoch, modifiedEpoch, accessedEpoch, changedEpoch
         case createdNanoseconds, modifiedNanoseconds, accessedNanoseconds, changedNanoseconds
+        case timestampProvenance, recoveryStatus, recoveryWarnings
+        case encryptionStatus, attributeName
     }
 
     public init(from decoder: Decoder) throws {
@@ -118,6 +135,11 @@ public struct FilesystemEntry: Codable, Sendable, Identifiable, Equatable {
         modifiedNanoseconds = try values.decodeIfPresent(Int32.self, forKey: .modifiedNanoseconds) ?? 0
         accessedNanoseconds = try values.decodeIfPresent(Int32.self, forKey: .accessedNanoseconds) ?? 0
         changedNanoseconds = try values.decodeIfPresent(Int32.self, forKey: .changedNanoseconds) ?? 0
+        timestampProvenance = try values.decodeIfPresent(FilesystemTimestampProvenance.self, forKey: .timestampProvenance)
+        recoveryStatus = try values.decodeIfPresent(String.self, forKey: .recoveryStatus)
+        recoveryWarnings = try values.decodeIfPresent([String].self, forKey: .recoveryWarnings)
+        encryptionStatus = try values.decodeIfPresent(FilesystemEncryptionStatus.self, forKey: .encryptionStatus)
+        attributeName = try values.decodeIfPresent(String.self, forKey: .attributeName)
     }
 }
 
@@ -181,14 +203,45 @@ public struct EnumerationResult: Codable, Sendable, Equatable {
     }
 }
 
+public enum EFSRecipientRole: String, Codable, Sendable, Equatable {
+    case ddf, drf
+}
+
+/// Public derivation provenance contains no private key material or key-file
+/// identity. AES-CBC does not authenticate the historical plaintext.
+public struct ExtractionDecryptionReceipt: Codable, Sendable, Equatable {
+    public let profile: String
+    public let recipientRole: EFSRecipientRole
+    public let metadataSHA256: String
+    public let certificateSHA1: String
+    public let ciphertextSHA256: String
+    public let ciphertextBytes: Int64
+    public let unitBytes: Int
+    public let authenticatedPlaintext: Bool
+
+    public static let unauthenticatedPlaintextWarning = "EFS AES-CBC does not authenticate file content. This receipt identifies the bytes decrypted under the supplied matching key; it does not prove the original historical plaintext."
+
+    public init(profile: String, recipientRole: EFSRecipientRole, metadataSHA256: String, certificateSHA1: String, ciphertextSHA256: String, ciphertextBytes: Int64, unitBytes: Int, authenticatedPlaintext: Bool) {
+        self.profile = profile; self.recipientRole = recipientRole
+        self.metadataSHA256 = metadataSHA256; self.certificateSHA1 = certificateSHA1
+        self.ciphertextSHA256 = ciphertextSHA256; self.ciphertextBytes = ciphertextBytes
+        self.unitBytes = unitBytes; self.authenticatedPlaintext = authenticatedPlaintext
+    }
+}
+
 public struct ExtractionResult: Codable, Sendable, Equatable {
     public let outputPath: String
     public let byteCount: Int64
     public let sha256: String
+    public let contentStatus: String?
+    public let warnings: [String]?
+    public let decryption: ExtractionDecryptionReceipt?
     public var hashScope: String { "extracted-file-bytes" }
 
-    public init(outputPath: String, byteCount: Int64, sha256: String) {
+    public init(outputPath: String, byteCount: Int64, sha256: String, contentStatus: String? = nil, warnings: [String]? = nil, decryption: ExtractionDecryptionReceipt? = nil) {
         self.outputPath = outputPath; self.byteCount = byteCount; self.sha256 = sha256
+        self.contentStatus = contentStatus; self.warnings = warnings
+        self.decryption = decryption
     }
 }
 
@@ -251,6 +304,35 @@ enum EngineValidation {
               file.attributeID.map({ $0 >= 0 }) ?? true,
               [file.createdNanoseconds, file.modifiedNanoseconds, file.accessedNanoseconds, file.changedNanoseconds].allSatisfy({ (0..<1_000_000_000).contains($0) }) else {
             throw EngineError.protocolViolation("Invalid filesystem entry.")
+        }
+        guard file.recoveryStatus.map({ text($0, maximum: 128) }) ?? true,
+              file.recoveryWarnings.map({ $0.count <= 32 && $0.allSatisfy({ text($0, maximum: 4_096) }) }) ?? true,
+              file.attributeName.map({ text($0, allowEmpty: true) && file.attributeType == 128 && file.attributeID != nil }) ?? true else {
+            throw EngineError.protocolViolation("Invalid filesystem recovery provenance.")
+        }
+        if file.encryptionStatus != nil {
+            guard !file.isDeleted, !file.isDirectory, file.attributeType == 128,
+                  file.attributeID != nil, file.attributeName == "" else {
+                throw EngineError.protocolViolation("Invalid NTFS EFS candidate provenance.")
+            }
+        }
+        if let provenance = file.timestampProvenance {
+            try provenance.created?.validate(epoch: file.createdEpoch, nanoseconds: file.createdNanoseconds)
+            try provenance.modified?.validate(epoch: file.modifiedEpoch, nanoseconds: file.modifiedNanoseconds)
+            try provenance.accessed?.validate(epoch: file.accessedEpoch, nanoseconds: file.accessedNanoseconds)
+        }
+    }
+
+    static func decryption(_ receipt: ExtractionDecryptionReceipt, plaintextBytes: Int64) throws {
+        let units = plaintextBytes / 512 + (plaintextBytes % 512 == 0 ? 0 : 1)
+        guard plaintextBytes >= 0, units <= Int64.max / 512,
+              receipt.profile == "ntfs-efs-rsa-pkcs1-aes256-der",
+              validHash(receipt.metadataSHA256), validHash(receipt.ciphertextSHA256),
+              receipt.certificateSHA1.utf8.count == 40,
+              receipt.certificateSHA1.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+              receipt.ciphertextBytes == units * 512, receipt.unitBytes == 512,
+              receipt.authenticatedPlaintext == false else {
+            throw EngineError.protocolViolation("Invalid EFS decryption provenance.")
         }
     }
 

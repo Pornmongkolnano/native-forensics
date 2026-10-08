@@ -244,14 +244,23 @@ public struct ExtractionRecord: Codable, Equatable, Sendable, Identifiable {
     public let outputHash: AssistantScopedHash
     public let outputByteCount: Int64
     public let verificationDescription: String
+    /// Optional additive v1 fields. Missing historical values remain unknown;
+    /// reopening never infers interpretation from a hash or the filename.
+    public let contentStatus: String?
+    public let warnings: [String]?
+    public let decryption: ExtractionDecryptionReceipt?
+
+    static let recoveryContentWarning = "The receipt verifies current exported source bytes; it does not certify the deleted file's original historical content."
+    static let allocatedClusterWarning = "Mapped NTFS clusters are currently allocated and may contain later-file bytes."
 
     /// Call only after EngineClient's output verification/publication succeeds.
     /// The DTO itself cannot establish that the caller performed an extraction.
-    public static func make(binding: CaseWorkBinding, receipt: ExtractionResult, verifiedAt: Date = Date()) throws -> Self {
-        let record = Self(schemaVersion: 1, id: UUID(), createdAt: verifiedAt, binding: binding,
+    public static func make(binding: CaseWorkBinding, receipt: ExtractionResult, verifiedAt: Date = Date(), id: UUID = UUID()) throws -> Self {
+        let record = Self(schemaVersion: 1, id: id, createdAt: verifiedAt, binding: binding,
             outputHash: AssistantScopedHash(sha256: receipt.sha256, scope: receipt.hashScope),
             outputByteCount: receipt.byteCount,
-            verificationDescription: "Recorded extraction receipt; verification described at export time, not current source/output verification")
+            verificationDescription: "Recorded extraction receipt; verification described at export time, not current source/output verification",
+            contentStatus: receipt.contentStatus, warnings: receipt.warnings, decryption: receipt.decryption)
         try record.validate(); return record
     }
 
@@ -262,6 +271,35 @@ public struct ExtractionRecord: Codable, Equatable, Sendable, Identifiable {
               outputByteCount == binding.selectedEntry.size, outputByteCount >= 0,
               outputHash.scope == "extracted-file-bytes", EngineValidation.validHash(outputHash.sha256),
               verificationDescription == "Recorded extraction receipt; verification described at export time, not current source/output verification" else {
+            throw CaseWorkError.invalidRecord
+        }
+        // Receipt warnings are a closed, public interpretation contract. Raw
+        // helper diagnostics, user output paths and credentials are not history.
+        switch contentStatus {
+        case nil:
+            guard warnings == nil, decryption == nil else { throw CaseWorkError.invalidRecord }
+        case "logical-content":
+            guard !binding.selectedEntry.isDeleted,
+                  binding.selectedEntry.encryptionStatus != .ntfsEFSEncrypted,
+                  warnings == nil || warnings == [], decryption == nil else {
+                throw CaseWorkError.invalidRecord
+            }
+        case "recovery-candidate":
+            guard binding.selectedEntry.isDeleted, decryption == nil,
+                  warnings == [Self.recoveryContentWarning] ||
+                  warnings == [Self.recoveryContentWarning, Self.allocatedClusterWarning] else {
+                throw CaseWorkError.invalidRecord
+            }
+        case "decrypted-content":
+            guard !binding.selectedEntry.isDeleted,
+                  binding.selectedEntry.encryptionStatus == .ntfsEFSEncrypted,
+                  binding.selectedEntry.attributeType == 128,
+                  binding.selectedEntry.attributeID != nil, binding.selectedEntry.attributeName == "",
+                  warnings == [ExtractionDecryptionReceipt.unauthenticatedPlaintextWarning],
+                  let decryption else { throw CaseWorkError.invalidRecord }
+            do { try EngineValidation.decryption(decryption, plaintextBytes: outputByteCount) }
+            catch { throw CaseWorkError.invalidRecord }
+        default:
             throw CaseWorkError.invalidRecord
         }
     }

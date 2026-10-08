@@ -123,7 +123,7 @@ enum CasePanelService {
     static func timelineReportParentPanel() -> NSOpenPanel {
         let panel = NSOpenPanel()
         panel.title = "Export Timeline Reports"
-        panel.message = "Choose a parent folder outside evidence and case bundles. A new report folder will be created."
+        panel.message = "Choose a parent folder outside evidence and case bundles. A new folder will contain the current bounded timeline as JSON, Markdown and PDF, with a verified hash receipt."
         panel.prompt = "Choose Folder"
         panel.treatsFilePackagesAsDirectories = false
         panel.allowedContentTypes = [.folder]

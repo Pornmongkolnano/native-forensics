@@ -19,7 +19,7 @@ struct ContentView: View {
                     GeometryReader { _ in
                         Group {
                             if workspace.section == .caseDetails {
-                                CaseDetailsView(forensicCase: forensicCase)
+                                CaseDetailsView(forensicCase: forensicCase, workspace: workspace)
                             } else if workspace.section == .contentSearch {
                                 ContentIndexWorkspaceView(store: workspace.contentIndex, onOpenReference: workspace.openContentIndexReference)
                             } else if workspace.section == .comparison {
@@ -30,6 +30,8 @@ struct ContentView: View {
                                 CaseIntegrityView(store: workspace.caseIntegrity)
                             } else if workspace.section == .optical {
                                 OpticalWorkspaceView(workspace: workspace)
+                            } else if workspace.section == .apfs {
+                                APFSWorkspaceView(store: workspace.apfs)
                             } else if workspace.section == .recovery {
                                 RecoveryWorkspaceView(workspace: workspace)
                             } else if workspace.section == .filesystem {
@@ -53,6 +55,8 @@ struct ContentView: View {
                 Group {
                     if workspace.section == .optical {
                         OpticalInspectorView(workspace: workspace)
+                    } else if workspace.section == .apfs {
+                        APFSInspectorView(store: workspace.apfs)
                     } else if workspace.section == .recovery {
                         RecoveryInspectorView(workspace: workspace)
                     } else if workspace.section == .filesystem {
@@ -125,6 +129,14 @@ struct ContentView: View {
                 }
                 .help("Toggle evidence inspector (⌥⌘I)")
                 .disabled(workspace.currentCase == nil)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { workspace.efsKeyInput != nil },
+            set: { if !$0 { workspace.closeEFSKeyInput() } }
+        )) {
+            if let store = workspace.efsKeyInput {
+                EFSKeyInputSheet(store: store, onClose: workspace.closeEFSKeyInput)
             }
         }
         .sheet(isPresented: Binding(

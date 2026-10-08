@@ -132,8 +132,11 @@ public enum UDFResultStore {
     /// No original path from UDF metadata becomes an output filesystem path.
     public static func export(entryID: String, from result: UDFInspectionResult,
         in forensicCase: ForensicCase, to destination: URL) async throws -> UDFExportReceipt {
-        let worker = Task.detached(priority: .userInitiated) {
-            try exportSynchronously(entryID: entryID, from: result, in: forensicCase, to: destination)
+        let requestedPriority = ForensicWorkExecutionContext.requestedPriority
+        let worker = Task.detached(priority: (requestedPriority ?? .userInitiated).taskPriority) {
+            try ForensicWorkExecutionContext.$requestedPriority.withValue(requestedPriority) {
+                try exportSynchronously(entryID: entryID, from: result, in: forensicCase, to: destination)
+            }
         }
         return try await withTaskCancellationHandler {
             // Publication is the worker's commit boundary. Do not hide a

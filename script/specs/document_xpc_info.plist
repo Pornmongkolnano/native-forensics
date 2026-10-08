@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>NFDocumentDecoderXPC</string>
+  <key>CFBundleIdentifier</key><string>org.nativeforensics.NFDocumentDecoderXPC</string>
+  <key>CFBundleName</key><string>NFDocumentDecoderXPC</string>
+  <key>CFBundlePackageType</key><string>XPC!</string>
+  <key>CFBundleShortVersionString</key><string>0.7.0</string>
+  <key>CFBundleVersion</key><string>16</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>XPCService</key>
+  <dict>
+    <key>ServiceType</key><string>Application</string>
+  </dict>
+</dict>
+</plist>

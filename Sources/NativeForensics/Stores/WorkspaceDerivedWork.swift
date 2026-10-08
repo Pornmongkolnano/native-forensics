@@ -103,7 +103,7 @@ extension WorkspaceStore {
                 }
             }
             do {
-                let worker = Task.detached(priority: .userInitiated) {
+                let (result, cost) = try await self.workScheduler.run(.historyRead) { _ in
                     guard let result = try existing ?? EngineResultStore.load(evidenceID: evidenceID, in: forensicCase.bundleURL),
                           result.files.contains(where: { $0.id == fileID }),
                           result.sourcePaths.first == evidence.sourcePath,
@@ -111,14 +111,15 @@ extension WorkspaceStore {
                         throw ForensicsError.sourceChanged
                     }
                     try validate(evidence, result)
-                    return result
+                    return (result, try FilesystemListingStringCost.measure(result))
                 }
-                let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 try Task.checkCancellation()
                 guard self.derivedNavigationID == id, !self.isClosing,
                       self.currentCase?.manifest.id == forensicCase.manifest.id,
                       self.currentCase?.bundleURL == forensicCase.bundleURL else { return }
-                self.filesystemResults[evidenceID] = result
+                guard self.retainFilesystemResult(result, evidenceID: evidenceID, cost: cost) else {
+                    throw EngineError.limitExceeded("The recorded listing exceeds the in-memory retention budget. Its disk artifact was preserved.")
+                }
                 self.selectedEvidenceID = evidenceID
                 self.refreshFilesystemSelection()
                 self.filesystemCategory = .all; self.filesystemSearchText = ""

@@ -41,6 +41,14 @@ struct SidebarView: View {
                     .disabled(workspace.selectedEvidence == nil)
             }
 
+            Section("APFS") {
+                Label("APFS Files", systemImage: "externaldrive")
+                    .tag(WorkspaceNavigationSelection.apfs)
+                    .help("Read-only allocated files from the supported APFS image profiles, with separate container and volume credentials.")
+                    .selectionDisabled(workspace.isBusy || workspace.selectedEvidence == nil)
+                    .disabled(workspace.selectedEvidence == nil)
+            }
+
             Section("Recovery") {
                 Label("Recovered Files", systemImage: "arrow.uturn.backward.circle")
                     .tag(WorkspaceNavigationSelection.recovery)

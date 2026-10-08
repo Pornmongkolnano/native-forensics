@@ -40,6 +40,21 @@ public struct TimelineTimestamp: Codable, Sendable, Equatable {
                     precision: precision, timezoneAssumption: timezoneAssumption, interpretation: "exact")
     }
 
+    public static func filesystem(_ provenance: FilesystemCivilTimestamp, epoch: Int64?, nanos: Int32) throws -> Self {
+        try provenance.validate(epoch: epoch, nanoseconds: nanos)
+        guard (0...999_999_999).contains(nanos), epoch.map({ (0...maximumEpoch).contains($0) }) ?? true,
+              provenance.candidateEpochs.allSatisfy({ (0...maximumEpoch).contains($0) }) else {
+            throw TimelineError.invalidInput("Filesystem timestamp provenance exceeds supported UTC bounds.")
+        }
+        let raw = "civil=\(provenance.civil ?? "unavailable"), rawDate=\(provenance.rawDate), rawTime=\(provenance.rawTime), rawIncrement=\(provenance.rawIncrement.map(String.init) ?? "none"), rawUTCOffset=\(provenance.rawUTCOffset.map(String.init) ?? "none")"
+        let zone = provenance.utcOffsetMinutes.map { "recorded UTC offset minutes=\($0)" }
+            ?? provenance.timezone.map { "assumed IANA timezone=\($0)" }
+        return Self(rawValue: raw, epochSeconds: epoch, nanoseconds: nanos,
+            precision: "native resolution=\(provenance.precisionNanoseconds) nanoseconds", timezoneAssumption: zone,
+            interpretation: provenance.status.rawValue,
+            alternativeEpochSeconds: provenance.status == .ambiguousLocalTime ? provenance.candidateEpochs : [])
+    }
+
     /// Chromium timestamps count integer microseconds from 1601-01-01 UTC.
     /// The epoch conversion never passes through a floating-point `Date`.
     public static func chromium(microseconds: Int64) -> Self {

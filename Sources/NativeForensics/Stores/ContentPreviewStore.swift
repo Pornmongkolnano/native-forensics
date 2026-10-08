@@ -45,10 +45,12 @@ final class ContentPreviewStore {
     @ObservationIgnored private var generation: UUID?
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private let loadRequest: Load
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     @ObservationIgnored private var jobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private(set) var loadTask: Task<Void, Never>?
 
-    init(load: Load? = nil) {
+    init(load: Load? = nil, scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         loadRequest = load ?? { evidence, result, file, helper in
             try await ContentPreviewBuilder.load(evidence: evidence, result: result, file: file,
                 engine: EngineClient(helperURL: helper))
@@ -81,7 +83,7 @@ final class ContentPreviewStore {
         errorMessage = nil
         isLoading = true
         page = 0
-        phase = previous.isEmpty ? "Verifying sources and selected bytes locally…" : "Waiting for previous preview cleanup…"
+        phase = previous.isEmpty ? "Waiting for the application work slot to verify selected bytes…" : "Waiting for previous preview cleanup…"
         let task = Task { [weak self] in
             guard let self else { return }
             defer { self.finish(id) }
@@ -91,12 +93,9 @@ final class ContentPreviewStore {
             do {
                 try Task.checkCancellation()
                 guard self.generation == id, !self.isClosing else { return }
-                self.phase = "Verifying sources and selected bytes locally…"
-                let worker = Task.detached(priority: .userInitiated) {
-                    try Task.checkCancellation()
-                    return try await operation(selection.evidence, selection.result, selection.file, selection.helperURL)
+                let value = try await self.scheduler.run(.documentPreview) { _ in
+                    try await operation(selection.evidence, selection.result, selection.file, selection.helperURL)
                 }
-                let value = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 try Task.checkCancellation()
                 guard self.generation == id, !self.isClosing else { return }
                 guard value.receipt.evidenceID == selection.evidence.id, value.receipt.fileID == selection.file.id,
@@ -169,6 +168,7 @@ final class ContentPreviewStore {
     }
 
     private static func safeMessage(_ error: Error) -> String {
+        if let error = error as? ForensicSchedulingError { return error.localizedDescription }
         if let error = error as? VerifiedContentError { return error.localizedDescription }
         if let error = error as? AssistantContextError { return error.localizedDescription }
         if let error = error as? EngineError, error == .sourceChanged { return error.localizedDescription }

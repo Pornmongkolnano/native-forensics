@@ -15,6 +15,7 @@ final class FilesystemBatchExportStore {
     var hasActiveWork: Bool { !jobs.isEmpty }
 
     @ObservationIgnored private let exportRequest: Export
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     @ObservationIgnored private var generation: UUID?
     // hasActiveWork is rendered by parent views. Observe owner insertion and
     // final drain, including canceled owners retained for cleanup.
@@ -22,7 +23,8 @@ final class FilesystemBatchExportStore {
     @ObservationIgnored private(set) var exportTask: Task<Void, Never>?
     @ObservationIgnored private var isClosing = false
 
-    init(engineHelperURL: URL, export: Export? = nil) {
+    init(engineHelperURL: URL, export: Export? = nil, scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         exportRequest = export ?? { analysis, files, destination, caseURL, progress in
             try await FilesystemBatchExportService(engine: EngineClient(helperURL: engineHelperURL))
                 .export(analysis: analysis, files: files, to: destination, caseURL: caseURL, progress: progress)
@@ -47,7 +49,7 @@ final class FilesystemBatchExportStore {
         let id = UUID(), operation = exportRequest
         generation = id; errorMessage = nil; isExporting = true
         progress = nil
-        statusMessage = "Verifying sources and exporting \(files.count.formatted()) matching files…"
+        statusMessage = "Waiting for the application work slot to export \(files.count.formatted()) matching files…"
         let task = Task { [weak self] in
             guard let self else { return }
             defer { self.finish(id) }
@@ -59,10 +61,9 @@ final class FilesystemBatchExportStore {
                         self.statusMessage = "Exporting \(value.completedFiles.formatted()) / \(value.totalFiles.formatted()) files"
                     }
                 }
-                let worker = Task.detached(priority: .userInitiated) {
+                let value = try await self.scheduler.run(.batchExport) { _ in
                     try await operation(analysis, files, destination, caseURL, update)
                 }
-                let value = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 // A successful return is past the atomic directory publication
                 // boundary. Do not hide a committed export if cancel arrived
                 // just after its rename; show its receipt instead.

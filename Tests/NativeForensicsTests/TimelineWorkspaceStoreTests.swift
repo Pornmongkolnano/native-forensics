@@ -71,6 +71,55 @@ struct TimelineWorkspaceStoreTests {
         store.loadSelectedBrowserHistory(); try await settle(store)
         #expect(store.errorMessage != nil); #expect(store.report == original)
     }
+    @Test func syslogImportsKeepBrowserFactsAndReplaceEarlierLogWithBoundReferences() async throws {
+        let value = selection()
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), browserLoad: { caseID, evidence, result, file in
+            let binding = try TimelineSourceBinding.make(caseID: caseID, evidence: evidence, result: result, historical: false)
+            let hash = String(repeating: "b", count: 64)
+            let artifact = VerifiedArtifactFile(url: URL(fileURLWithPath: "/runtime-only"), fileID: file.id, evidencePath: file.path, byteCount: file.size, sha256: hash)
+            let event = TimelineEvent(id: String(repeating: "c", count: 64), kind: .browserVisit, timestamp: TimelineTimestamp.unix(seconds: 1_700_000_005),
+                fileID: file.id, evidencePath: file.path, title: "Recorded visit", detail: "Synthetic row", parser: "chromium-history.v1", recordID: "1", artifactSHA256: hash)
+            return BrowserTimelineResult(events: [event], receipts: [TimelineArtifactReceipt(file: artifact, role: "database")], binding: binding,
+                parserReceipt: TimelineParserReceipt(parser: "chromium-history", version: "1", parameters: ["fixture": "workspace lifecycle fake"], sourceSHA256: hash, eventCount: 1))
+        }, syslogLoad: { caseID, evidence, result, file, options in
+            let binding = try TimelineSourceBinding.make(caseID: caseID, evidence: evidence, result: result, historical: false)
+            let hash = String(repeating: "d", count: 64)
+            let artifact = VerifiedArtifactFile(url: URL(fileURLWithPath: "/runtime-only-log"), fileID: file.id, evidencePath: file.path, byteCount: file.size, sha256: hash)
+            let event = TimelineEvent(id: String(repeating: "e", count: 64), kind: .syslogRecord,
+                timestamp: TimelineTimestamp.rfc3339("2026-10-06T02:25:13Z"), fileID: file.id, evidencePath: file.path,
+                title: "Fake parser lifecycle receipt", detail: "Line", parser: "syslog-record.v1", recordID: "unit:1/line:1", artifactSHA256: hash,
+                sourceReference: TimelineTextSourceReference(derivedTextSHA256: hash, unit: 1, unitKind: "raw-utf8-document", line: 1, utf8Offset: 0, utf8Length: 4))
+            return SyslogTimelineResult(events: [event], receipts: [TimelineArtifactReceipt(file: artifact, role: "syslog")],
+                parserReceipt: TimelineParserReceipt(parser: "syslog-record", version: "1", parameters: ["fixture": "workspace lifecycle fake"], sourceSHA256: hash,
+                    derivedTextSHA256: hash, unitCount: 1, lineCount: 1, eventCount: 1), binding: binding, warnings: ["Fake loader checks store lifecycle, not source extraction."])
+        })
+        configure(store, value); store.loadSelectedBrowserHistory(); try await settle(store)
+        #expect(store.report?.events.count == 3)
+        store.selectedSyslogID = "file"; store.loadSelectedSyslog(); try await settle(store)
+        #expect(store.errorMessage == nil); #expect(store.report?.events.count == 4)
+        #expect(store.report?.events.filter { $0.kind == .browserVisit }.count == 1)
+        #expect(store.report?.events.filter { $0.kind == .syslogRecord }.count == 1)
+        #expect(store.report?.artifactReceipts.map(\.role) == ["database", "syslog"])
+        #expect(store.report?.parserReceipts?.map(\.parser) == ["filesystem-engine-epochs", "chromium-history", "syslog-record"])
+        store.loadSelectedSyslog(); try await settle(store)
+        #expect(store.report?.events.count == 4) // Same family replaces prior import, not duplicate append.
+    }
+    @Test func staleSyslogCompletionCannotReopenResetEvidence() async throws {
+        let value = selection(), gate = TimelineLoadGate()
+        let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), syslogLoad: { caseID, evidence, result, file, _ in
+            await gate.hold()
+            let binding = try TimelineSourceBinding.make(caseID: caseID, evidence: evidence, result: result, historical: false)
+            let hash = String(repeating: "d", count: 64)
+            let artifact = VerifiedArtifactFile(url: URL(fileURLWithPath: "/unused-log"), fileID: file.id, evidencePath: file.path, byteCount: file.size, sha256: hash)
+            return SyslogTimelineResult(events: [], receipts: [TimelineArtifactReceipt(file: artifact, role: "syslog")],
+                parserReceipt: TimelineParserReceipt(parser: "syslog-record", version: "1", parameters: [:], sourceSHA256: hash,
+                    derivedTextSHA256: hash, unitCount: 1, lineCount: 0, eventCount: 0), binding: binding, warnings: [])
+        })
+        configure(store, value); store.selectedSyslogID = "file"; store.loadSelectedSyslog(); try await gate.waitStarted()
+        store.reset(); await gate.release(); try await settle(store)
+        #expect(store.report == nil); #expect(store.rows.isEmpty); #expect(store.selectedSyslogID == nil)
+        #expect(!store.hasSource)
+    }
     @Test func filtersCannotReduceExportAndCasePathIsForbidden() async throws {
         let value = selection(), capture = TimelineExportCapture()
         let store = TimelineWorkspaceStore(engineHelperURL: URL(fileURLWithPath: "/unused"), export: { report, output, forbidden in

@@ -28,7 +28,35 @@ struct FilesystemTimelineTests {
         #expect(result.events.allSatisfy { $0.isDeleted })
         #expect(result.events.allSatisfy { $0.artifactSHA256 == nil })
         #expect(result.events.first?.timestamp.precision.contains("unavailable") == true)
+        #expect(result.binding.engineProvenance?.options == listing.options)
+        #expect(result.binding.engineProvenance?.patchDigest == listing.patchDigest)
+        #expect(result.binding.engineProvenance?.orderedInputs.first?.ordinal == 0)
+        #expect(result.binding.engineProvenance?.orderedInputs.first?.byteCount == evidence.byteCount)
+        #expect(result.binding.engineProvenance?.orderedInputs.first?.hashScope == "selected-file-bytes")
+        #expect(result.binding.hashScopes == TimelineSourceBinding.currentHashScopes)
         #expect(result.binding == (try FilesystemTimeline.make(caseID: caseID, evidence: evidence, result: listing, historical: false)).binding)
+    }
+    @Test func rawFilesystemGapOverlapAndInvalidCalendarRemainUnresolvedObservations() throws {
+        let (caseID, evidence, original) = fixture()
+        let overlap = FilesystemCivilTimestamp(rawDate: 23905, rawTime: 3008, civil: "2026-11-01T01:30:00", status: .ambiguousLocalTime,
+            timezone: "America/New_York", candidateEpochs: [1_793_511_000, 1_793_514_600], precisionNanoseconds: 2_000_000_000)
+        let gap = FilesystemCivilTimestamp(rawDate: 23656, rawTime: 5056, civil: "2026-03-08T02:30:00", status: .nonexistentLocalTime,
+            timezone: "America/New_York", precisionNanoseconds: 2_000_000_000)
+        let invalid = FilesystemCivilTimestamp(rawDate: 65535, rawTime: 65535, status: .invalidCalendar, precisionNanoseconds: 2_000_000_000)
+        let file = FilesystemEntry(id: "uncertain", path: "/uncertain.txt", name: "uncertain.txt", fsOffsetBytes: 0, metaAddress: 22,
+            size: 1, isDirectory: false, isDeleted: false, timestampProvenance: FilesystemTimestampProvenance(created: overlap, modified: gap, accessed: invalid))
+        let listing = EnumerationResult(engineVersion: original.engineVersion, patchDigest: original.patchDigest, sourcePaths: original.sourcePaths,
+            sourceFileHashes: original.sourceFileHashes, options: original.options, image: original.image, volumes: original.volumes, files: [file], warnings: [], status: .completed,
+            savedAt: original.savedAt)
+        let report = try FilesystemTimeline.make(caseID: caseID, evidence: evidence, result: listing, historical: false)
+        #expect(report.events.count == 3)
+        #expect(report.events.allSatisfy { $0.timestamp.epochSeconds == nil && $0.filesystemTimestamp != nil })
+        let retained = try #require(report.events.first { $0.kind == .filesystemCreated })
+        #expect(retained.timestamp.alternativeEpochSeconds == [1_793_511_000, 1_793_514_600])
+        #expect(retained.timestamp.rawValue.contains("2026-11-01T01:30:00"))
+        #expect(retained.timestamp.precision == "native resolution=2000000000 nanoseconds")
+        #expect(try TimelineFilter(includeUnresolved: false).apply(to: report.events).isEmpty)
+        try TimelineReportExporter.validate(report)
     }
     @Test func changedEntryChangesDigestAndHistoricalPartialWarnings() throws {
         let (caseID, evidence, listing) = fixture(status: .partial)
@@ -87,8 +115,14 @@ struct FilesystemTimelineTests {
         let receipt = try await TimelineReportExporter.export(report, to: destination, forbiddenURLs: [])
         let json = try Data(contentsOf: destination.appendingPathComponent("timeline.json"))
         let markdown = try Data(contentsOf: destination.appendingPathComponent("timeline.md"))
+        let pdf = try Data(contentsOf: destination.appendingPathComponent("timeline.pdf"))
         #expect(receipt.jsonSHA256 == TimelineCoding.hex(SHA256.hash(data: json)))
         #expect(receipt.markdownSHA256 == TimelineCoding.hex(SHA256.hash(data: markdown)))
+        #expect(receipt.pdfSHA256 == TimelineCoding.hex(SHA256.hash(data: pdf)))
+        #expect(pdf.starts(with: Data("%PDF-".utf8)))
+        let shareable = try Data(contentsOf: destination.appendingPathComponent("receipt.json"))
+        #expect(String(decoding: shareable, as: UTF8.self).contains(try #require(receipt.pdfSHA256)))
+        #expect(!String(decoding: shareable, as: UTF8.self).contains(parent.path))
         #expect(receipt.eventCount == 3)
         do { _ = try await TimelineReportExporter.export(report, to: destination, forbiddenURLs: []); Issue.record("Existing report was replaced") } catch { }
         #expect(try Data(contentsOf: destination.appendingPathComponent("timeline.json")) == json)

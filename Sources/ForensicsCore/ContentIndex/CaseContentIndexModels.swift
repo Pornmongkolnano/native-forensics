@@ -157,16 +157,19 @@ public struct ContentIndexDocument: Codable, Sendable, Equatable, Identifiable {
     public let derivedTextSHA256: String?
     public let textPages: [DocumentTextPage]
     public let textIsComplete: Bool
+    public let decoderProvenance: DocumentDecodeProvenance?
     public var id: String { evidenceID.uuidString.lowercased() + ":" + file.id }
 
     private enum CodingKeys: String, CodingKey {
-        case evidenceID, file, locatorSHA256, status, reason, contentSHA256, derivedTextSHA256, textPages, textIsComplete
+        case evidenceID, file, locatorSHA256, status, reason, contentSHA256, derivedTextSHA256, textPages, textIsComplete, decoderProvenance
     }
     init(evidenceID: UUID, file: FilesystemEntry, locatorSHA256: String, status: ContentIndexFileStatus, reason: String?,
-         contentSHA256: String?, derivedTextSHA256: String?, textPages: [DocumentTextPage], textIsComplete: Bool) {
+         contentSHA256: String?, derivedTextSHA256: String?, textPages: [DocumentTextPage], textIsComplete: Bool,
+         decoderProvenance: DocumentDecodeProvenance? = nil) {
         self.evidenceID = evidenceID; self.file = file; self.locatorSHA256 = locatorSHA256; self.status = status
         self.reason = reason; self.contentSHA256 = contentSHA256; self.derivedTextSHA256 = derivedTextSHA256
         self.textPages = textPages; self.textIsComplete = textIsComplete
+        self.decoderProvenance = decoderProvenance
     }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -178,6 +181,7 @@ public struct ContentIndexDocument: Codable, Sendable, Equatable, Identifiable {
         contentSHA256 = try values.decodeIfPresent(String.self, forKey: .contentSHA256)
         derivedTextSHA256 = try values.decodeIfPresent(String.self, forKey: .derivedTextSHA256)
         textIsComplete = try values.decode(Bool.self, forKey: .textIsComplete)
+        decoderProvenance = try values.decodeIfPresent(DocumentDecodeProvenance.self, forKey: .decoderProvenance)
         var pages = try values.nestedUnkeyedContainer(forKey: .textPages), decoded: [DocumentTextPage] = []
         var bytes = 0
         while !pages.isAtEnd {
@@ -201,11 +205,12 @@ public struct ContentIndexDocument: Codable, Sendable, Equatable, Identifiable {
 
     static func make(evidenceID: UUID, file: FilesystemEntry, status: ContentIndexFileStatus,
                      reason: String? = nil, contentSHA256: String? = nil,
-                     pages: [DocumentTextPage] = [], complete: Bool = false) throws -> Self {
+                     pages: [DocumentTextPage] = [], complete: Bool = false,
+                     decoderProvenance: DocumentDecodeProvenance? = nil) throws -> Self {
         Self(evidenceID: evidenceID, file: file, locatorSHA256: try locator(file), status: status,
             reason: reason, contentSHA256: contentSHA256,
             derivedTextSHA256: status == .indexed ? try CaseWorkCoding.digest(pages) : nil,
-            textPages: pages, textIsComplete: complete)
+            textPages: pages, textIsComplete: complete, decoderProvenance: decoderProvenance)
     }
 }
 
@@ -216,6 +221,7 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
     public let builtAt: Date
     public let decoderContract: String
     public let decoderBinarySHA256: String
+    public let decoderIdentity: DocumentDecoderIdentity?
     public let limits: ContentIndexLimits
     public let sources: [ContentIndexSource]
     public let documents: [ContentIndexDocument]
@@ -233,12 +239,14 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
     public var textByteCount: Int { documents.reduce(0) { $0 + $1.textPages.reduce(0) { $0 + $1.text.utf8.count } } }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, id, caseID, builtAt, decoderContract, decoderBinarySHA256, limits, sources, documents, omittedRegularFiles, skippedDirectories
+        case schemaVersion, id, caseID, builtAt, decoderContract, decoderBinarySHA256, decoderIdentity, limits, sources, documents, omittedRegularFiles, skippedDirectories
     }
     init(schemaVersion: Int, id: UUID, caseID: UUID, builtAt: Date, decoderContract: String, decoderBinarySHA256: String,
-         limits: ContentIndexLimits, sources: [ContentIndexSource], documents: [ContentIndexDocument], omittedRegularFiles: Int, skippedDirectories: Int) {
+         limits: ContentIndexLimits, sources: [ContentIndexSource], documents: [ContentIndexDocument], omittedRegularFiles: Int, skippedDirectories: Int,
+         decoderIdentity: DocumentDecoderIdentity? = nil) {
         self.schemaVersion = schemaVersion; self.id = id; self.caseID = caseID; self.builtAt = builtAt
         self.decoderContract = decoderContract; self.decoderBinarySHA256 = decoderBinarySHA256; self.limits = limits
+        self.decoderIdentity = decoderIdentity
         self.sources = sources; self.documents = documents; self.omittedRegularFiles = omittedRegularFiles; self.skippedDirectories = skippedDirectories
     }
     public init(from decoder: Decoder) throws {
@@ -249,6 +257,7 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
         builtAt = try values.decode(Date.self, forKey: .builtAt)
         decoderContract = try values.decode(String.self, forKey: .decoderContract)
         decoderBinarySHA256 = try values.decode(String.self, forKey: .decoderBinarySHA256)
+        decoderIdentity = try values.decodeIfPresent(DocumentDecoderIdentity.self, forKey: .decoderIdentity)
         limits = try values.decode(ContentIndexLimits.self, forKey: .limits); try limits.validate()
         var sourceValues = try values.nestedUnkeyedContainer(forKey: .sources), decodedSources: [ContentIndexSource] = []
         while !sourceValues.isAtEnd {
@@ -273,12 +282,20 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
     public func validate() throws {
         try limits.validate()
         guard schemaVersion == 1, builtAt.timeIntervalSince1970.isFinite,
-              decoderContract == "NFDocumentDecoder.document-analysis.v1", EngineValidation.validHash(decoderBinarySHA256),
+              EngineValidation.validHash(decoderBinarySHA256),
               sources.count <= ContentIndexLimits.maximumSources, documents.count <= limits.maximumFiles,
               omittedRegularFiles >= 0, omittedRegularFiles <= ContentIndexLimits.maximumListingEntries, skippedDirectories >= 0,
               skippedDirectories <= ContentIndexLimits.maximumListingEntries, Set(sources.map(\.evidenceID)).count == sources.count,
               Set(documents.map(\.id)).count == documents.count, textByteCount <= limits.maximumTextBytes else {
             throw ContentIndexError.invalidSnapshot
+        }
+        if let decoderIdentity {
+            do { try decoderIdentity.validateMetadata() }
+            catch { throw ContentIndexError.invalidSnapshot }
+            guard decoderContract == decoderIdentity.decoderIdentifier + "@" + decoderIdentity.decoderVersion,
+                  decoderBinarySHA256 == decoderIdentity.decoderExecutableSHA256 else { throw ContentIndexError.invalidSnapshot }
+        } else {
+            guard decoderContract == "NFDocumentDecoder.document-analysis.v1" else { throw ContentIndexError.invalidSnapshot }
         }
         for source in sources {
             guard EngineValidation.validHash(source.selectedContainerSHA256), source.selectedContainerByteCount >= 0,
@@ -301,9 +318,10 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
                   (document.reason?.utf8.count ?? 0) <= 256,
                   document.textPages.count <= DocumentLimits.maximumPages else { throw ContentIndexError.invalidSnapshot }
             if document.status == .indexed {
+                let derivedTextHash = try CaseWorkCoding.digest(document.textPages)
                 guard document.file.size <= limits.maximumFileBytes,
                       document.contentSHA256.map(EngineValidation.validHash) == true,
-                      document.derivedTextSHA256 == (try CaseWorkCoding.digest(document.textPages)),
+                      document.derivedTextSHA256 == derivedTextHash,
                       !document.textPages.isEmpty,
                       document.textPages.reduce(0, { $0 + $1.text.utf8.count }) <= DocumentLimits.maximumTextBytes,
                       document.textPages.map(\.pageNumber) == document.textPages.map(\.pageNumber).sorted(),
@@ -311,9 +329,21 @@ public struct CaseContentIndexSnapshot: Codable, Sendable, Equatable, Identifiab
                       document.textPages.allSatisfy({ $0.pageNumber > 0 && $0.pageNumber <= 1_000_000 && ($0.referenceLabel?.utf8.count ?? 0) <= 4_096 }),
                       !document.textIsComplete || !document.textPages.contains(where: { $0.isTruncated }),
                       document.reason == (document.textIsComplete ? nil : "PARTIAL_DECODER_COVERAGE") else { throw ContentIndexError.invalidSnapshot }
+                if let provenance = document.decoderProvenance {
+                    do { try provenance.validateMetadata() }
+                    catch { throw ContentIndexError.invalidSnapshot }
+                    guard provenance.decoderExecutableSHA256 == decoderBinarySHA256,
+                          provenance.derivedTextSHA256 == derivedTextHash else { throw ContentIndexError.invalidSnapshot }
+                }
+                if let decoderIdentity {
+                    guard let provenance = document.decoderProvenance,
+                          decoderIdentity.matches(provenance) else { throw ContentIndexError.invalidSnapshot }
+                } else {
+                    guard document.decoderProvenance == nil else { throw ContentIndexError.invalidSnapshot }
+                }
             } else {
                 guard document.textPages.isEmpty, document.contentSHA256 == nil, document.derivedTextSHA256 == nil,
-                      !document.textIsComplete else { throw ContentIndexError.invalidSnapshot }
+                      document.decoderProvenance == nil, !document.textIsComplete else { throw ContentIndexError.invalidSnapshot }
                 let reasons: [String]
                 switch document.status {
                 case .skipped: reasons = ["FILE_BYTE_LIMIT", "UNSUPPORTED_CONTENT", "NO_TEXT_LAYER_OR_BODY"]
@@ -342,6 +372,18 @@ public struct ContentIndexReference: Sendable, Equatable {
     public let utf16Length: Int
     public let referenceLabel: String?
     public let referenceKind: DocumentTextReferenceKind?
+    public let decoderProvenanceSHA256: String?
+
+    init(snapshotID: UUID, evidenceID: UUID, listingSHA256: String, file: FilesystemEntry, locatorSHA256: String,
+         orderedContainerSHA256: [String], contentSHA256: String, derivedTextSHA256: String, decoderBinarySHA256: String,
+         pageNumber: Int, utf16Offset: Int, utf16Length: Int, referenceLabel: String?, referenceKind: DocumentTextReferenceKind?,
+         decoderProvenanceSHA256: String? = nil) {
+        self.snapshotID = snapshotID; self.evidenceID = evidenceID; self.listingSHA256 = listingSHA256; self.file = file
+        self.locatorSHA256 = locatorSHA256; self.orderedContainerSHA256 = orderedContainerSHA256
+        self.contentSHA256 = contentSHA256; self.derivedTextSHA256 = derivedTextSHA256; self.decoderBinarySHA256 = decoderBinarySHA256
+        self.pageNumber = pageNumber; self.utf16Offset = utf16Offset; self.utf16Length = utf16Length
+        self.referenceLabel = referenceLabel; self.referenceKind = referenceKind; self.decoderProvenanceSHA256 = decoderProvenanceSHA256
+    }
 }
 
 public struct CaseContentSearchHit: Sendable, Equatable, Identifiable {

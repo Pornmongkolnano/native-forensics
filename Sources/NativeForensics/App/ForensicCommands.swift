@@ -61,6 +61,9 @@ struct ForensicCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(workspace?.canExtractFilesystemFile != true)
 
+            Button("Decrypt Selected EFS File…") { workspace?.showEFSKeyInput() }
+                .disabled(workspace?.canDecryptSelectedEFSFile != true)
+
             Button("Export Matching Files…") { workspace?.exportMatchingFilesystemFiles() }
                 .keyboardShortcut("e", modifiers: [.command, .option, .shift])
                 .disabled(workspace?.canExtractAllMatched != true)

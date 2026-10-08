@@ -93,13 +93,17 @@ public struct CaseManifest: Codable, Sendable, Equatable {
     public let name: String
     public let createdAt: Date
     public let evidence: [EvidenceRecord]
+    /// Present only after an explicit schema 1 → 2 migration.
+    public let provenance: CaseManifestProvenance?
 
-    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), evidence: [EvidenceRecord] = [], schemaVersion: Int = 1) {
+    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), evidence: [EvidenceRecord] = [],
+                schemaVersion: Int = 1, provenance: CaseManifestProvenance? = nil) {
         self.schemaVersion = schemaVersion
         self.id = id
         self.name = name
         self.createdAt = createdAt
         self.evidence = evidence
+        self.provenance = provenance
     }
 }
 

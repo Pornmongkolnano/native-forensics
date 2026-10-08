@@ -1,7 +1,9 @@
 import CryptoKit
+import CoreGraphics
 import Darwin
 import Foundation
 import ForensicsCore
+import PDFKit
 
 /// Development-only synthetic integration probe. A fake answer validates record
 /// persistence and citation handling; no provider process or network is called.
@@ -63,7 +65,8 @@ struct MilestoneWorkflowProbe {
         stages["enumerateSaveReopenSeconds"] = seconds(started.duration(to: clock.now))
         print("Enumeration reopened: \(listing.files.count) entries; complete UTC listing.")
         try write(listing, to: output.appendingPathComponent("filesystem-listing.json"))
-        let payloads = ["/ALPHA.TXT": Data(alpha.utf8), "/BETA.TXT": Data(beta.utf8)]
+        let syslogPayload = try Data(contentsOf: source.deletingLastPathComponent().appendingPathComponent("payloads/_SYSTEM.LOG"))
+        let payloads = ["/ALPHA.TXT": Data(alpha.utf8), "/BETA.TXT": Data(beta.utf8), "/SYSTEM.LOG": syslogPayload]
         let textFiles = try ["/ALPHA.TXT", "/BETA.TXT"].map { try file($0, in: listing) }
         for entry in textFiles {
             guard entry.createdEpoch == 1_704_164_646, entry.modifiedEpoch == 1_704_251_048,
@@ -84,14 +87,14 @@ struct MilestoneWorkflowProbe {
                   oracle.files[path] == ByteReceipt(byteCount: receipt.byteCount, sha256: receipt.sha256) else { throw ProbeError.oracle }
             verifiedFiles[path] = ByteReceipt(byteCount: receipt.byteCount, sha256: receipt.sha256)
         }
-        stages["fourVerifiedPayloadExportsSeconds"] = seconds(started.duration(to: clock.now))
+        stages["verifiedPayloadExportsSeconds"] = seconds(started.duration(to: clock.now))
         let manifestBytesBeforeDerived = try Data(contentsOf: forensicCase.bundleURL.appendingPathComponent("manifest.json"))
 
         started = clock.now
         let index = try await CaseContentIndexService(engineHelperURL: engineURL, documentHelperURL: decoderURL)
             .rebuild(caseID: forensicCase.manifest.id, inputs: [.init(evidence: evidence, result: listing)])
         print("Derived index: \(index.indexedCount) indexed; \(index.skippedCount) skipped; \(index.failedCount) failed; partial=\(index.isPartial).")
-        guard index.indexedCount == 2, index.failedCount == 0 else { throw ProbeError.contentIndex }
+        guard index.indexedCount == payloads.count, index.failedCount == 0 else { throw ProbeError.contentIndex }
         for (path, bytes) in payloads {
             guard let document = index.documents.first(where: { $0.file.path == path }),
                   document.contentSHA256 == hash(bytes), document.textPages.count == 1,
@@ -175,17 +178,50 @@ struct MilestoneWorkflowProbe {
             expectedChronological: expectedBrowserRows, artifactRoles: roles, matches: browserMatches),
             to: output.appendingPathComponent("browser-oracle-comparison.json"))
         guard browserMatches else { throw ProbeError.timestamp }
+        let syslogFile = try file(oracle.syslog.evidencePath, in: listing)
+        let syslogService = FilesystemSyslogTimelineService(engine: engine)
+        let syslog = try await syslogService.parse(caseID: forensicCase.manifest.id, evidence: evidence, result: listing,
+            file: syslogFile, options: oracle.syslog.options)
+        let syslogRows = try syslog.events.map { event -> SyslogObservation in
+            guard let pointer = event.sourceReference, event.kind == .syslogRecord,
+                  event.artifactSHA256 == oracle.syslog.sha256 else { throw ProbeError.timestamp }
+            return SyslogObservation(recordID: event.recordID, rawValue: event.timestamp.rawValue, epochSeconds: event.timestamp.epochSeconds,
+                nanoseconds: event.timestamp.nanoseconds, precision: event.timestamp.precision, timezoneAssumption: event.timestamp.timezoneAssumption,
+                interpretation: event.timestamp.interpretation, alternativeEpochSeconds: event.timestamp.alternativeEpochSeconds, sourceReference: pointer)
+        }.sorted { $0.sourceReference.line < $1.sourceReference.line }
+        let syslogMatches = syslogRows == oracle.syslog.events && syslog.receipts.first?.sha256 == oracle.syslog.sha256
+            && syslog.receipts.first?.byteCount == oracle.syslog.byteCount && syslog.parserReceipt.lineCount == oracle.syslog.lineCount
+            && syslog.parserReceipt.parameters["invalidTimestampLines"] == String(oracle.syslog.invalidTimestampLines)
+            && syslog.parserReceipt.parameters["unrecognizedNonemptyLines"] == String(oracle.syslog.unrecognizedNonemptyLines)
+        try write(SyslogComparison(actual: syslogRows, expected: oracle.syslog.events, matches: syslogMatches,
+            parserReceipt: syslog.parserReceipt, artifactReceipts: syslog.receipts), to: output.appendingPathComponent("syslog-oracle-comparison.json"))
+        guard syslogMatches, syslog.binding.snapshotSHA256 == filesystemTimeline.binding.snapshotSHA256,
+              hash(syslogPayload) == oracle.syslog.sha256 else { throw ProbeError.timestamp }
+        // Negative policies run through the same freshly verified filesystem
+        // extraction service, rather than bypassing it with fabricated events.
+        for options in [SyslogParserOptions(), SyslogParserOptions(year: 2026, timezone: "America/New_York", localTimePolicy: .rejectAmbiguousOrNonexistent)] {
+            do {
+                _ = try await syslogService.parse(caseID: forensicCase.manifest.id, evidence: evidence, result: listing, file: syslogFile, options: options)
+                throw ProbeError.timestamp
+            } catch let error as TimelineError {
+                guard case .invalidInput = error else { throw error }
+            }
+        }
         let timeline = TimelineReport(binding: filesystemTimeline.binding,
-            events: FilesystemTimeline.sort(filesystemTimeline.events + browser.events), artifactReceipts: browser.receipts,
-            warnings: filesystemTimeline.warnings + ["Browser artifact bytes were freshly extracted and verified; filesystem metadata remains a recorded snapshot."],
-            coverage: filesystemTimeline.coverage + " Chromium synthetic database and committed WAL: \(browser.events.count) deterministic events.",
-            examinerNotes: "Synthetic integration fixture only. No coursework evidence or provider output.")
+            events: FilesystemTimeline.sort(filesystemTimeline.events + browser.events + syslog.events), artifactReceipts: browser.receipts + syslog.receipts,
+            warnings: filesystemTimeline.warnings + syslog.warnings + ["Browser/syslog artifact bytes were freshly extracted and verified; filesystem metadata remains a recorded snapshot."],
+            coverage: filesystemTimeline.coverage + " Chromium synthetic database and committed WAL: \(browser.events.count) deterministic events. Allocated syslog: \(syslog.events.count) observations; \(oracle.syslog.lineCount) source lines.",
+            examinerNotes: "Synthetic integration fixture only. No coursework evidence or provider output.",
+            parserReceipts: (filesystemTimeline.parserReceipts ?? []) + (browser.parserReceipt.map { [$0] } ?? []) + [syslog.parserReceipt])
         let timelineReceipt = try await TimelineReportExporter.export(timeline, to: output.appendingPathComponent("timeline-export"), forbiddenURLs: [source, forensicCase.bundleURL])
         guard timelineReceipt.eventCount == timeline.events.count,
               hash(try Data(contentsOf: output.appendingPathComponent("timeline-export/timeline.json"))) == timelineReceipt.jsonSHA256,
-              hash(try Data(contentsOf: output.appendingPathComponent("timeline-export/timeline.md"))) == timelineReceipt.markdownSHA256 else { throw ProbeError.oracle }
-        stages["filesystemBrowserTimelineExportSeconds"] = seconds(started.duration(to: clock.now))
-        print("Timeline: \(browser.events.count) browser/WAL events; \(timeline.events.count) combined events exported.")
+              hash(try Data(contentsOf: output.appendingPathComponent("timeline-export/timeline.md"))) == timelineReceipt.markdownSHA256,
+              hash(try Data(contentsOf: output.appendingPathComponent("timeline-export/timeline.pdf"))) == timelineReceipt.pdfSHA256 else { throw ProbeError.oracle }
+        let pdfBytes = try Data(contentsOf: output.appendingPathComponent("timeline-export/timeline.pdf"))
+        let pdfPages = try verifyPDF(pdfBytes, report: timeline)
+        stages["filesystemBrowserSyslogTimelineExportSeconds"] = seconds(started.duration(to: clock.now))
+        print("Timeline: \(browser.events.count) browser/WAL events; \(syslog.events.count) source-bound syslog observations; \(timeline.events.count) combined events exported, static PDF \(pdfPages) pages.")
         started = clock.now
         let historicalAudit = try await CaseIntegrityAuditor.audit(forensicCase: reopenedCase)
         guard !historicalAudit.hasFailures, !historicalAudit.sourceRehashed, historicalAudit.verifiedSourceCount == 0 else { throw ProbeError.integrity }
@@ -206,6 +242,9 @@ struct MilestoneWorkflowProbe {
             contentIndexSkippedCount: index.skippedCount, contentIndexCoverageIsPartial: index.isPartial,
             multiEvidenceReopened: true, redactedSecretAbsent: !prompt.contains(secret),
             referenceStates: record.references.map { $0.state.rawValue }, browserEvents: browserOracle,
+            syslogEvents: syslogRows, syslogLineCount: oracle.syslog.lineCount,
+            syslogInvalidTimestampLines: oracle.syslog.invalidTimestampLines, syslogUnrecognizedNonemptyLines: oracle.syslog.unrecognizedNonemptyLines,
+            timelineEventCount: timeline.events.count, timelinePDFPageCount: pdfPages, timelinePDFStaticReadbackPassed: true,
             historicalIntegrityHasFailures: historicalAudit.hasFailures, historicalIntegrityIsPartial: historicalAudit.isPartial,
             freshIntegrityHasFailures: freshAudit.hasFailures, freshIntegrityIsPartial: freshAudit.isPartial,
             freshVerifiedSourceCount: freshAudit.verifiedSourceCount, manifestUnchanged: true,
@@ -213,7 +252,7 @@ struct MilestoneWorkflowProbe {
         try write(receipt, to: output.appendingPathComponent("workflow-receipt.json"))
         try Data("Synthetic workflow completed. Run script/milestone_fixture_oracle.py --verify OUTPUT --fixture FIXTURE for independent Python comparison. No AI provider executed.\n".utf8)
             .write(to: output.appendingPathComponent("completed.txt"), options: .withoutOverwriting)
-        print("Synthetic workflow completed: \(index.indexedCount) indexed text files, \(browser.events.count) browser events, \(timeline.events.count) combined timeline events; source unchanged. No provider executed.")
+        print("Synthetic workflow completed: \(index.indexedCount) indexed text files, \(browser.events.count) browser events, \(syslog.events.count) syslog observations, \(timeline.events.count) combined timeline events; source unchanged. No provider executed.")
     }
 
     private static func benchmark(index: CaseContentIndexSnapshot, payloads: [String: Data], oracle: Oracle) throws -> SearchBenchmark {
@@ -235,7 +274,7 @@ struct MilestoneWorkflowProbe {
                 checksum += outcome.hits.count + baseline.count
             }
         }
-        return SearchBenchmark(scope: "Warm literal content search only; two UTF-8 files, 285 payload bytes, five queries. Direct fixture scan is a correctness control, not Autopsy or full-app performance.",
+        return SearchBenchmark(scope: "Warm literal content search only; \(payloads.count) UTF-8 files, \(payloads.values.reduce(0) { $0 + $1.count }) payload bytes, five queries. Direct fixture scan is a correctness control, not Autopsy or full-app performance.",
             samplesPerMethod: derivedSamples.count, checksum: checksum,
             derivedSearch: distribution(derivedSamples), directLiteralControl: distribution(literalSamples))
     }
@@ -250,6 +289,49 @@ struct MilestoneWorkflowProbe {
             }
             return results
         }
+    }
+
+    private static func verifyPDF(_ bytes: Data, report: TimelineReport) throws -> Int {
+        guard bytes.starts(with: Data("%PDF-".utf8)), let document = PDFDocument(data: bytes), document.pageCount > 0,
+              let text = document.string, let provider = CGDataProvider(data: bytes as CFData),
+              let native = CGPDFDocument(provider), let catalog = native.catalog else { throw ProbeError.oracle }
+        var object: CGPDFObjectRef?
+        for name in ["OpenAction", "AA", "Names"] {
+            guard !CGPDFDictionaryGetObject(catalog, name, &object) else { throw ProbeError.oracle }
+        }
+        for number in 1...native.numberOfPages {
+            guard let page = native.page(at: number), let dictionary = page.dictionary,
+                  !CGPDFDictionaryGetObject(dictionary, "Annots", &object), !CGPDFDictionaryGetObject(dictionary, "AA", &object),
+                  document.page(at: number - 1)?.annotations.isEmpty == true else { throw ProbeError.oracle }
+        }
+        let body = text.replacingOccurrences(of: "NativeForensics timeline\n", with: "")
+            .replacingOccurrences(of: "Recorded evidence report - page [0-9]+\\n", with: "", options: .regularExpression)
+        func joined(_ value: String) -> String { value.filter { !$0.isWhitespace } }
+        let normalized = joined(body)
+        for (index, event) in report.events.enumerated() {
+            guard let start = normalized.range(of: event.id) else { throw ProbeError.oracle }
+            let end: String.Index
+            if index + 1 < report.events.count {
+                guard let next = normalized.range(of: report.events[index + 1].id, range: start.upperBound..<normalized.endIndex) else { throw ProbeError.oracle }
+                end = next.lowerBound
+            } else { end = normalized.endIndex }
+            let block = String(normalized[start.upperBound..<end])
+            for value in [event.evidencePath, event.fileID, event.recordID, event.parser, event.timestamp.rawValue,
+                          event.timestamp.precision, event.timestamp.interpretation, event.title, event.detail,
+                          event.timestamp.epochSeconds.map(String.init) ?? "unresolved", String(event.timestamp.nanoseconds)] {
+                guard block.contains(joined(value)) else { throw ProbeError.oracle }
+            }
+            if let reference = event.sourceReference {
+                for value in [reference.derivedTextSHA256, "Source text line: \(reference.line)", "Source UTF-8 byte offset: \(reference.utf8Offset)",
+                              "Source UTF-8 byte length: \(reference.utf8Length)"] {
+                    guard block.contains(joined(value)) else { throw ProbeError.oracle }
+                }
+            }
+            for epoch in event.timestamp.alternativeEpochSeconds { guard block.contains(String(epoch)) else { throw ProbeError.oracle } }
+        }
+        guard normalized.contains(joined(report.examinerNotes)), normalized.contains("AIinterpretation(unverified)"),
+              normalized.contains("NoAIinterpretationwasincluded."), normalized.contains(report.binding.snapshotSHA256) else { throw ProbeError.oracle }
+        return document.pageCount
     }
     private static func distribution(_ samples: [Double]) -> Distribution {
         let sorted = samples.sorted()
@@ -297,9 +379,23 @@ struct MilestoneWorkflowProbe {
         let rawParserOrder: [BrowserEvent]; let actualChronological: [BrowserEvent]
         let expectedChronological: [BrowserEvent]; let artifactRoles: [String]; let matches: Bool
     }
+    private struct SyslogObservation: Codable, Equatable {
+        let recordID: String; let rawValue: String; let epochSeconds: Int64?; let nanoseconds: Int32
+        let precision: String; let timezoneAssumption: String?; let interpretation: String; let alternativeEpochSeconds: [Int64]
+        let sourceReference: TimelineTextSourceReference
+    }
+    private struct SyslogOracle: Decodable {
+        let evidencePath: String; let byteCount: Int64; let sha256: String; let options: SyslogParserOptions
+        let lineCount: Int; let invalidTimestampLines: Int; let unrecognizedNonemptyLines: Int; let events: [SyslogObservation]
+    }
+    private struct SyslogComparison: Encodable {
+        let actual: [SyslogObservation]; let expected: [SyslogObservation]; let matches: Bool
+        let parserReceipt: TimelineParserReceipt; let artifactReceipts: [TimelineArtifactReceipt]
+    }
     private struct Oracle: Decodable {
         let schemaVersion: Int; let syntheticOnly: Bool; let imageSHA256: String; let imageByteCount: Int64
         let files: [String: ByteReceipt]; let queries: [String: [SearchHit]]; let browserEvents: [BrowserEvent]
+        let syslog: SyslogOracle
     }
     private struct Distribution: Encodable { let p50Seconds: Double; let p95Seconds: Double; let minimumSeconds: Double; let maximumSeconds: Double }
     private struct SearchBenchmark: Encodable {
@@ -311,6 +407,8 @@ struct MilestoneWorkflowProbe {
         let verifiedFiles: [String: ByteReceipt]; let searchHits: [String: [SearchHit]]
         let contentIndexReopened: Bool; let contentIndexIndexedCount: Int; let contentIndexSkippedCount: Int; let contentIndexCoverageIsPartial: Bool
         let multiEvidenceReopened: Bool; let redactedSecretAbsent: Bool; let referenceStates: [String]; let browserEvents: [BrowserEvent]
+        let syslogEvents: [SyslogObservation]; let syslogLineCount: Int; let syslogInvalidTimestampLines: Int; let syslogUnrecognizedNonemptyLines: Int
+        let timelineEventCount: Int; let timelinePDFPageCount: Int; let timelinePDFStaticReadbackPassed: Bool
         let historicalIntegrityHasFailures: Bool; let historicalIntegrityIsPartial: Bool
         let freshIntegrityHasFailures: Bool; let freshIntegrityIsPartial: Bool; let freshVerifiedSourceCount: Int; let manifestUnchanged: Bool
         let stagesSeconds: [String: Double]; let contentSearchBenchmark: SearchBenchmark

@@ -25,9 +25,12 @@ final class CaseIntegrityWorkspaceStore {
     @ObservationIgnored private let auditRequest: Audit
     @ObservationIgnored private let chooseDestination: ChooseDestination
     @ObservationIgnored private let exportRequest: Export
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     @ObservationIgnored private(set) var activeTask: Task<Void, Never>?
 
-    init(audit: Audit? = nil, chooseDestination: ChooseDestination? = nil, export: Export? = nil) {
+    init(audit: Audit? = nil, chooseDestination: ChooseDestination? = nil, export: Export? = nil,
+         scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         auditRequest = audit ?? { forensicCase, options, progress in
             try await CaseIntegrityAuditor.audit(forensicCase: forensicCase, options: options, progress: progress)
         }
@@ -67,10 +70,12 @@ final class CaseIntegrityWorkspaceStore {
                 if self.generation == token { self.isAuditing = false; self.progress = nil }
             }
             do {
-                let result = try await request(forensicCase, options) { [weak self] progress in
-                    Task { @MainActor in
-                        guard let self, self.generation == token, !self.isClosing, self.jobs[owner] != nil else { return }
-                        self.progress = progress
+                let result = try await self.scheduler.run(.integrityAudit) { [weak self] _ in
+                    try await request(forensicCase, options) { [weak self] progress in
+                        Task { @MainActor in
+                            guard let self, self.generation == token, !self.isClosing, self.jobs[owner] != nil else { return }
+                            self.progress = progress
+                        }
                     }
                 }
                 try Task.checkCancellation()
@@ -108,7 +113,9 @@ final class CaseIntegrityWorkspaceStore {
                 guard let destination = await chooser(format) else { return }
                 try Task.checkCancellation()
                 guard self.generation == token, !self.isClosing else { return }
-                let output = try await request(report, forensicCase, format, destination, privatePaths)
+                let output = try await self.scheduler.run(.integrityAudit) { _ in
+                    try await request(report, forensicCase, format, destination, privatePaths)
+                }
                 // A completed atomic export remains on disk after late cancel.
                 guard self.generation == token, !self.isClosing else { return }
                 self.reportURL = output

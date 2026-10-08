@@ -60,9 +60,12 @@ public enum UDFLogicalFilesExporter {
         expectedEvidence: EvidenceRecord? = nil) async throws -> UDFLogicalFilesExport {
         guard timeoutSeconds.isFinite, timeoutSeconds > 0, timeoutSeconds <= 600 else { throw UDFError.invalidOptions }
         let deadline = ProcessInfo.processInfo.systemUptime + timeoutSeconds
-        let worker = Task.detached(priority: .userInitiated) {
-            try await performExport(sourceURL: sourceURL, to: destination, progress: progress,
-                beforePublication: beforePublication, deadline: deadline, expectedEvidence: expectedEvidence)
+        let requestedPriority = ForensicWorkExecutionContext.requestedPriority
+        let worker = Task.detached(priority: (requestedPriority ?? .userInitiated).taskPriority) {
+            try await ForensicWorkExecutionContext.$requestedPriority.withValue(requestedPriority) {
+                try await performExport(sourceURL: sourceURL, to: destination, progress: progress,
+                    beforePublication: beforePublication, deadline: deadline, expectedEvidence: expectedEvidence)
+            }
         }
         let timeout = Task.detached {
             do {

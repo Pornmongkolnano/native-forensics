@@ -19,22 +19,26 @@ cd "$ROOT_DIR"
 python3 ./script/build_native_engine.py
 mkdir -p .build
 INPUT_SNAPSHOT="$(mktemp "$ROOT_DIR/.build/nativeforensics-inputs.XXXXXXXX")"
-trap 'rm -f "$INPUT_SNAPSHOT"' EXIT
+report_build_path_candidates() {
+  local build_exit_status=$?
+  if [[ -n "${INPUT_SNAPSHOT:-}" ]]; then
+    printf '%s\n' "Input snapshot path candidate for manual review (no automatic cleanup): $INPUT_SNAPSHOT" >&2 || true
+  fi
+  if [[ -n "${STAGED_APP:-}" ]]; then
+    printf '%s\n' "Build stage path candidate for manual review (no automatic cleanup): ${STAGED_APP%/*}" >&2 || true
+  fi
+  return "$build_exit_status"
+}
+trap report_build_path_candidates EXIT
 python3 ./script/source_provenance.py --snapshot "$INPUT_SNAPSHOT" --build-configuration "$BUILD_CONFIGURATION"
 swift build -c "$BUILD_CONFIGURATION" --product "$APP_NAME"
 swift build -c "$BUILD_CONFIGURATION" --product NFDocumentDecoder
+swift build -c "$BUILD_CONFIGURATION" --product NFDocumentDecoderXPC
+swift build -c "$BUILD_CONFIGURATION" --product NFDocumentDecoderWorker
 BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
 BUILD_RECEIPT="$(python3 ./script/source_provenance.py --seal-build "$INPUT_SNAPSHOT" --binary-directory "$BUILD_DIR")"
-rm -f "$INPUT_SNAPSHOT"
-INPUT_SNAPSHOT=""
 # Fully stage/sign/verify before asking the running app to drain its work.
 STAGED_APP="$(python3 ./script/package_app.py --stage "$BUILD_DIR/$APP_NAME" --build-receipt "$BUILD_RECEIPT")"
-cleanup_stage() {
-  if [[ -n "${STAGED_APP:-}" && -d "$(dirname "$STAGED_APP")" ]]; then
-    rm -rf "$(dirname "$STAGED_APP")"
-  fi
-}
-trap cleanup_stage EXIT
 
 # Stop only this checkout's app, never another copy or Autopsy.
 python3 - "$APP_BINARY" "$APP_NAME" <<'PY'

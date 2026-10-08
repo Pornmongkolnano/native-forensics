@@ -119,6 +119,145 @@ struct WorkspaceReadinessTests {
         #expect(EngineAvailability.issue(for: symlink) != nil)
     }
 
+    @Test("Inspecting an already recorded source preserves the case and releases its workflow slot")
+    func duplicateInspectionPreservesCaseAndReleasesSlot() async throws {
+        let fixture = try await recordedFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let scheduler = ForensicWorkScheduler()
+        let workspace = WorkspaceStore(scheduler: scheduler)
+        do {
+            workspace.openCase(at: fixture.forensicCase.bundleURL)
+            let cacheLoad = try #require(workspace.filesystemLoadTask)
+            try await waitForInspectionOwnerToDrain(workspace, scheduler: scheduler)
+            await cacheLoad.value
+            try #require(workspace.canInspectImage)
+            let originalCase = try #require(workspace.currentCase)
+            let manifestURL = originalCase.bundleURL.appendingPathComponent("manifest.json")
+            let originalManifestBytes = try Data(contentsOf: manifestURL)
+            let originalSourceBytes = try Data(contentsOf: fixture.source)
+            let originalSelection = try #require(workspace.selectedEvidenceID)
+            workspace.section = .caseDetails
+            workspace.showInspector = false
+            let originalSection = workspace.section
+            let originalShowInspector = workspace.showInspector
+
+            workspace.inspectImage(at: fixture.source)
+            try #require(workspace.isInspecting)
+            try await waitForInspectionOwnerToDrain(workspace, scheduler: scheduler)
+
+            #expect(workspace.errorMessage == "This source path is already recorded in the case.")
+            #expect(workspace.statusMessage == "Source already recorded. No new evidence record was added.")
+            #expect(workspace.currentCase?.bundleURL == originalCase.bundleURL)
+            #expect(workspace.currentCase?.manifest == originalCase.manifest)
+            #expect(workspace.currentCase?.manifest.evidence.count == 1)
+            #expect(workspace.selectedEvidenceID == originalSelection)
+            #expect(workspace.section == originalSection)
+            #expect(workspace.showInspector == originalShowInspector)
+            #expect(workspace.selectedFilesystemResult == nil)
+            #expect(workspace.filesystemResults.isEmpty)
+            #expect(workspace.filesystemRows.isEmpty)
+            #expect(workspace.selectedFileID == nil)
+            #expect(try Data(contentsOf: manifestURL) == originalManifestBytes)
+            #expect(try CaseStore.open(at: originalCase.bundleURL).manifest == originalCase.manifest)
+            #expect(try Data(contentsOf: fixture.source) == originalSourceBytes)
+            #expect(workspace.progress == nil)
+            #expect(workspace.inspectionFilename == nil)
+            #expect(!workspace.isInspecting)
+            #expect(!workspace.hasActiveWork)
+            #expect(workspace.canInspectImage)
+            let idleState = await scheduler.state()
+            #expect(idleState.active == nil)
+            #expect(idleState.queuedKinds.isEmpty)
+            #expect(!idleState.isClosed)
+            let reusable = try await scheduler.acquireImmediately(.imageInspection)
+            #expect(reusable.admission.kind == .imageInspection)
+            let released = await reusable.release()
+            #expect(released)
+            let reusableState = await scheduler.state()
+            #expect(reusableState.active == nil)
+            #expect(reusableState.queuedKinds.isEmpty)
+            await workspace.shutdown()
+        } catch {
+            // Failure cleanup must not substitute cancellation for a successful
+            // inspection drain or make a timed-out request pass its assertions.
+            await workspace.shutdown()
+            throw error
+        }
+    }
+
+    @Test("A stale manifest keeps reopen guidance even when the attempted source path is already recorded")
+    func staleDuplicatePathPreservesNewerManifestAndReleasesSlot() async throws {
+        let fixture = try await recordedFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let scheduler = ForensicWorkScheduler()
+        let workspace = WorkspaceStore(scheduler: scheduler)
+        do {
+            workspace.openCase(at: fixture.forensicCase.bundleURL)
+            let cacheLoad = try #require(workspace.filesystemLoadTask)
+            try await waitForInspectionOwnerToDrain(workspace, scheduler: scheduler)
+            await cacheLoad.value
+            try #require(workspace.canInspectImage)
+            let originalCase = try #require(workspace.currentCase)
+            let originalSelection = try #require(workspace.selectedEvidenceID)
+            let originalSourceBytes = try Data(contentsOf: fixture.source)
+            workspace.section = .caseDetails
+            workspace.showInspector = false
+            let originalSection = workspace.section
+            let originalShowInspector = workspace.showInspector
+
+            // Publish a real second record outside this workspace. Its captured
+            // one-record manifest deliberately remains stale for the retry.
+            let secondSource = fixture.root.appendingPathComponent("second-source.raw")
+            let secondSourceBytes = Data(repeating: 0x45, count: 4096)
+            try secondSourceBytes.write(to: secondSource)
+            let secondImage = try await ImageInspector.inspect(url: secondSource) { _ in }
+            let newerCase = try CaseStore.adding(image: secondImage, to: originalCase)
+            try #require(newerCase.manifest.evidence.count == 2)
+            try #require(newerCase.manifest != originalCase.manifest)
+            let manifestURL = newerCase.bundleURL.appendingPathComponent("manifest.json")
+            let newerManifestBytes = try Data(contentsOf: manifestURL)
+            try #require(workspace.currentCase?.manifest == originalCase.manifest)
+
+            workspace.inspectImage(at: fixture.source)
+            try #require(workspace.isInspecting)
+            try await waitForInspectionOwnerToDrain(workspace, scheduler: scheduler)
+
+            #expect(workspace.errorMessage == "The case changed since it was opened. Reopen it before adding evidence.")
+            #expect(workspace.statusMessage == "Inspection failed. Reopen the case to confirm its saved evidence records before retrying.")
+            #expect(workspace.currentCase?.bundleURL == originalCase.bundleURL)
+            #expect(workspace.currentCase?.manifest == originalCase.manifest)
+            #expect(workspace.currentCase?.manifest.evidence.count == 1)
+            #expect(workspace.selectedEvidenceID == originalSelection)
+            #expect(workspace.section == originalSection)
+            #expect(workspace.showInspector == originalShowInspector)
+            #expect(try Data(contentsOf: manifestURL) == newerManifestBytes)
+            #expect(try CaseStore.open(at: newerCase.bundleURL).manifest == newerCase.manifest)
+            #expect(try CaseStore.open(at: newerCase.bundleURL).manifest.evidence.count == 2)
+            #expect(try Data(contentsOf: fixture.source) == originalSourceBytes)
+            #expect(try Data(contentsOf: secondSource) == secondSourceBytes)
+            #expect(workspace.progress == nil)
+            #expect(workspace.inspectionFilename == nil)
+            #expect(!workspace.isInspecting)
+            #expect(!workspace.hasActiveWork)
+            #expect(workspace.canInspectImage)
+            let idleState = await scheduler.state()
+            #expect(idleState.active == nil)
+            #expect(idleState.queuedKinds.isEmpty)
+            #expect(!idleState.isClosed)
+            let reusable = try await scheduler.acquireImmediately(.imageInspection)
+            #expect(reusable.admission.kind == .imageInspection)
+            let released = await reusable.release()
+            #expect(released)
+            let reusableState = await scheduler.state()
+            #expect(reusableState.active == nil)
+            #expect(reusableState.queuedKinds.isEmpty)
+            await workspace.shutdown()
+        } catch {
+            await workspace.shutdown()
+            throw error
+        }
+    }
+
     @Test("Closing before inspection starts drains cancellation without publishing an evidence record")
     func inspectionShutdownBeforeCommit() async throws {
         let root = try temporaryRoot()
@@ -273,6 +412,28 @@ struct WorkspaceReadinessTests {
         while lifecycle.count != 0 && ContinuousClock.now < retirementDeadline { await Task.yield() }
         #expect(lifecycle.count == 0)
         #expect(!lifecycle.hasActiveWork)
+    }
+
+    private enum InspectionDrainError: Error {
+        case timedOut
+    }
+
+    @MainActor
+    private func waitForInspectionOwnerToDrain(
+        _ workspace: WorkspaceStore, scheduler: ForensicWorkScheduler
+    ) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while true {
+            try Task.checkCancellation()
+            let state = await scheduler.state()
+            if !workspace.isInspecting, !workspace.hasActiveWork,
+               state.active == nil, state.queuedKinds.isEmpty { return }
+            guard ContinuousClock.now < deadline else {
+                Issue.record("The inspection owner or isolated workflow slot did not drain within five seconds.")
+                throw InspectionDrainError.timedOut
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     private func temporaryRoot() throws -> URL {

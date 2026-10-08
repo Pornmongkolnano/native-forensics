@@ -103,6 +103,7 @@ enum WorkspaceNavigationSelection: Hashable {
     case caseDetails
     case recovery
     case optical
+    case apfs
     case contentSearch
     case comparison
     case timeline

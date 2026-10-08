@@ -9,6 +9,24 @@ struct DecodedLocalText {
 /// Display interpretation only. Original bytes and their digest remain the
 /// evidence; inferred legacy encoding is always reported rather than asserted.
 enum BoundedTextDecoder {
+    /// A direct-text fast path only: classify the complete source before
+    /// retaining a prefix. Non-ASCII or disallowed bytes must use the original
+    /// decoder so a bad tail can still change encoding or reject the document.
+    static func decodePrintableASCIIPrefix(_ bytes: Data, maximumBytes: Int) -> (value: String, truncated: Bool)? {
+        guard maximumBytes >= 0 else { return nil }
+        return bytes.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> (value: String, truncated: Bool)? in
+            let bomBytes = buffer.count >= 3 && buffer[0] == 0xef && buffer[1] == 0xbb && buffer[2] == 0xbf ? 3 : 0
+            let body = buffer.dropFirst(bomBytes)
+            guard body.allSatisfy({ byte in
+                byte == 9 || byte == 10 || byte == 13 || (0x20...0x7e).contains(byte)
+            }) else { return nil }
+            let retained = body.prefix(maximumBytes)
+            // Every qualified byte is a complete UTF-8 scalar. String decoding
+            // cannot replace bytes, normalize newlines, or split a scalar here.
+            return (String(decoding: retained, as: UTF8.self), body.count > maximumBytes)
+        }
+    }
+
     static func decode(_ bytes: Data, allowLegacyEncoding: Bool,
                        prefixMayBeTruncated: Bool = false) -> DecodedLocalText? {
         let utf8Bytes = bytes.starts(with: [0xef, 0xbb, 0xbf]) ? Data(bytes.dropFirst(3)) : bytes

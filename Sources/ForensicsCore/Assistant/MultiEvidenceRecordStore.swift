@@ -127,11 +127,7 @@ public enum MultiEvidenceRecordStore {
         if let parentID = record.parentRecordID {
             parent = try read(id: parentID, directory: directory)
             guard let parent, parent.requestSHA256 == record.parentRequestSHA256,
-                  parent.context.files.map(\.binding) == record.context.files.map(\.binding),
-                  parent.context.files.map(\.contentSHA256) == record.context.files.map(\.contentSHA256),
-                  parent.context.files.map(\.selectedRanges) == record.context.files.map(\.selectedRanges),
-                  parent.context.files.map(\.redactedRanges) == record.context.files.map(\.redactedRanges),
-                  parent.context.files.map({ $0.segments.map(\.disclosedSHA256) }) == record.context.files.map({ $0.segments.map(\.disclosedSHA256) }) else { throw MultiEvidenceError.parentMismatch }
+                  parent.context.hasSameDisclosure(as: record.context) else { throw MultiEvidenceError.parentMismatch }
             try bind(parent, manifest: manifest)
         }
         if record.retention == .full {

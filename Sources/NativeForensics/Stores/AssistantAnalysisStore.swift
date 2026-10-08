@@ -53,11 +53,14 @@ final class AssistantAnalysisStore {
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private let analyzeRequest: Analyze
     @ObservationIgnored private let saveRecord: Save
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     @ObservationIgnored private var completedAnalysis: CompletedAnalysis?
     @ObservationIgnored var onAnalysisSaved: (@MainActor (UUID) -> Void)?
     @ObservationIgnored private(set) var jobTask: Task<Void, Never>?
 
-    init(executableURL: URL? = nil, save: Save? = nil, analyze: Analyze? = nil) {
+    init(executableURL: URL? = nil, save: Save? = nil, analyze: Analyze? = nil,
+         scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         cliPath = executableURL?.path ?? CodexCLIAvailability.configuredPath
         saveRecord = save ?? { record, caseURL in
             try CaseWorkStore.saveAnalysis(record, in: caseURL)
@@ -93,14 +96,11 @@ final class AssistantAnalysisStore {
             guard let self else { return }
             defer { self.finish(jobID) }
             do {
-                let worker = Task.detached(priority: .userInitiated) {
+                let prepared = try await self.scheduler.run(.documentPreview) { _ in
                     try await AssistantContextBuilder.build(evidence: selection.evidence, result: selection.result,
                         file: selection.file, includeText: wantsText,
                         engine: EngineClient(helperURL: selection.helperURL))
                 }
-                let prepared = try await withTaskCancellationHandler {
-                    try await worker.value
-                } onCancel: { worker.cancel() }
                 try Task.checkCancellation()
                 guard self.generation == jobID, !self.isClosing else { return }
                 self.context = prepared

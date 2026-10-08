@@ -2,12 +2,13 @@ import CryptoKit
 import Darwin
 import Foundation
 import ForensicsCore
+import NFDocumentDecoding
 
 /// The decoder sees a memory snapshot, not a pathname that a framework could
 /// reopen or resolve differently. The descriptor remains open for a final check.
-final class VerifiedDocument {
+final class VerifiedDocumentFile {
     let input: DocumentInput
-    let data: Data
+    let snapshot: VerifiedDocument
     let sha256: String
     private let descriptor: Int32
     private let initial: stat
@@ -65,7 +66,7 @@ final class VerifiedDocument {
             self.input = input
             self.descriptor = fd
             self.initial = before
-            self.data = bytes
+            self.snapshot = try VerifiedDocument(data: bytes, expectedSHA256: digest, expectedByteCount: input.expectedByteCount)
             self.sha256 = digest
         } catch {
             Darwin.close(fd)

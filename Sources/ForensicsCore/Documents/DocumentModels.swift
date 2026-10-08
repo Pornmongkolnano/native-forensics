@@ -80,21 +80,41 @@ public struct DocumentAnalysis: Codable, Sendable, Equatable {
     public let rawMetadata: [DocumentRawMetadata]
     public let warnings: [String]
     public let failureCode: String?
+    /// Absent on historical schema 1; required for current client schema 2.
+    public let provenance: DocumentDecodeProvenance?
 
-    public init(contentKind: DocumentContentKind, mimeType: String, status: DocumentValidationStatus,
+    public init(schemaVersion: Int = 1, contentKind: DocumentContentKind, mimeType: String, status: DocumentValidationStatus,
                 sourceSHA256: String, sourceByteCount: Int64, title: String? = nil,
                 pixelWidth: Int? = nil, pixelHeight: Int? = nil, pageCount: Int? = nil,
                 officeFormat: DocumentOfficeFormat? = nil, contentUnitCount: Int? = nil,
                 structuralValidation: DocumentStructureValidation? = nil,
                 textPages: [DocumentTextPage] = [], thumbnailPNG: Data? = nil,
-                rawMetadata: [DocumentRawMetadata] = [], warnings: [String] = [], failureCode: String? = nil) {
-        self.schemaVersion = 1; self.contentKind = contentKind; self.mimeType = mimeType
+                rawMetadata: [DocumentRawMetadata] = [], warnings: [String] = [], failureCode: String? = nil,
+                provenance: DocumentDecodeProvenance? = nil) {
+        self.schemaVersion = schemaVersion; self.contentKind = contentKind; self.mimeType = mimeType
         self.status = status; self.sourceSHA256 = sourceSHA256; self.sourceByteCount = sourceByteCount
         self.title = title; self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight
         self.pageCount = pageCount; self.textPages = textPages; self.thumbnailPNG = thumbnailPNG
         self.officeFormat = officeFormat; self.contentUnitCount = contentUnitCount
         self.structuralValidation = structuralValidation
         self.rawMetadata = rawMetadata; self.warnings = warnings; self.failureCode = failureCode
+        self.provenance = provenance
+    }
+
+    func attachingProvenance(executableSHA256: String, codeSigningCDHash: String?,
+                             isolation: DocumentDecodeIsolation, timeout: TimeInterval,
+                             brokerExecutableSHA256: String? = nil, brokerCodeSigningCDHash: String? = nil) throws -> DocumentAnalysis {
+        let receipt = try DocumentDecodeProvenance(executableSHA256: executableSHA256,
+            codeSigningCDHash: codeSigningCDHash, isolation: isolation, timeout: timeout, pages: textPages,
+            brokerExecutableSHA256: brokerExecutableSHA256, brokerCodeSigningCDHash: brokerCodeSigningCDHash)
+        let result = DocumentAnalysis(schemaVersion: 2, contentKind: contentKind, mimeType: mimeType, status: status,
+            sourceSHA256: sourceSHA256, sourceByteCount: sourceByteCount, title: title,
+            pixelWidth: pixelWidth, pixelHeight: pixelHeight, pageCount: pageCount,
+            officeFormat: officeFormat, contentUnitCount: contentUnitCount, structuralValidation: structuralValidation,
+            textPages: textPages, thumbnailPNG: thumbnailPNG, rawMetadata: rawMetadata, warnings: warnings,
+            failureCode: failureCode, provenance: receipt)
+        try receipt.validate(pages: textPages)
+        return result
     }
 
     public var textIsComplete: Bool {
@@ -119,18 +139,19 @@ public enum DocumentLimits {
 }
 
 public enum DocumentAnalysisError: Error, LocalizedError, Sendable, Equatable {
-    case invalidInput, integrityMismatch, sourceChanged, unavailable, sandboxUnavailable, launchFailed, timeout, outputLimit, invalidResponse
+    case invalidInput, integrityMismatch, sourceChanged, unavailable, sandboxUnavailable, launchFailed, timeout, outputLimit, invalidResponse, cleanupFailed
     public var errorDescription: String? {
         switch self {
         case .invalidInput: "Document inspection requires a regular recovered file within the 128 MiB size limit and its size/hash receipt."
         case .integrityMismatch: "The recovered file does not match its size/hash receipt."
         case .sourceChanged: "The recovered file changed during document inspection."
         case .unavailable: "The isolated document decoder is unavailable."
-        case .sandboxUnavailable: "The required read-only/no-network document sandbox is unavailable on this macOS version. Inspection has been stopped; the decoder will not run without it."
+        case .sandboxUnavailable: "The required isolated document sandbox or service identity could not be verified. Inspection stopped without an unrestricted fallback."
         case .launchFailed: "The isolated document decoder could not start."
         case .timeout: "Document inspection reached its time limit."
         case .outputLimit: "Document inspection exceeded the bounded response limit."
         case .invalidResponse: "The document decoder did not return a valid, bounded result."
+        case .cleanupFailed: "The isolated document job could not be confirmed stopped. Further XPC inspection is disabled for this app session."
         }
     }
 }

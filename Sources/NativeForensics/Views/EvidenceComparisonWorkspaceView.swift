@@ -15,7 +15,7 @@ struct EvidenceComparisonWorkspaceView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!workspace.canOpenComparison)
             }
-            Text("Choose two regular files from the selected data source. Content is verified locally, then you select excerpts and review the exact request before sending.")
+            Text("Choose two regular files from the selected data source. UTF-8 inputs support 1 MiB; PDFs support 128 MiB after verified decoding. Names do not establish format. Select excerpts and review the exact request before sending.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 24) {
                 choice("File A", file: selection.firstFile)
@@ -42,7 +42,7 @@ struct EvidenceComparisonWorkspaceView: View {
             }
             .frame(minHeight: 192)
             HStack {
-                Text("\(selection.rows.count) shown · \(selection.matchCount) matching files · maximum 1 MiB per file")
+                Text("\(selection.rows.count) shown · \(selection.matchCount) candidates · UTF-8 ≤1 MiB / decoded PDF ≤128 MiB")
                 Spacer()
                 if workspace.selectedFilesystemResult == nil { Text("Analyze a filesystem first.") }
             }

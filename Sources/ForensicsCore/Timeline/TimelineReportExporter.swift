@@ -9,6 +9,9 @@ public struct TimelineExportReceipt: Codable, Sendable, Equatable {
     public let eventCount: Int
     public let jsonSHA256: String
     public let markdownSHA256: String
+    public let pdfSHA256: String?
+    public let componentVersions: [String: String]?
+    public let outputParameters: [String: String]?
     public let artifactReceipts: [TimelineArtifactReceipt]
 }
 
@@ -16,8 +19,11 @@ public enum TimelineReportExporter {
     /// Publishes all reports together into a NEW directory. Existing outputs,
     /// evidence paths and case bundles are never replaced.
     public static func export(_ report: TimelineReport, to destination: URL, forbiddenURLs: [URL]) async throws -> TimelineExportReceipt {
-        let worker = Task.detached(priority: .userInitiated) {
-            try synchronous(report, destination: destination, forbiddenURLs: forbiddenURLs)
+        let requested = ForensicWorkExecutionContext.requestedPriority
+        let worker = Task.detached(priority: ForensicWorkExecutionContext.requestedTaskPriority) {
+            try ForensicWorkExecutionContext.$requestedPriority.withValue(requested) {
+                try synchronous(report, destination: destination, forbiddenURLs: forbiddenURLs)
+            }
         }
         return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
     }
@@ -27,47 +33,74 @@ public enum TimelineReportExporter {
         let json = try TimelineCoding.encode(report)
         guard json.count <= TimelineLimits.maximumReportBytes else { throw TimelineError.limitExceeded("Timeline JSON exceeds 64 MiB.") }
         let markdown = try markdown(report)
+        let pdf = try TimelinePDFRenderer.render(report)
         try Task.checkCancellation()
         let output = try TimelineReportTransaction(destination: destination, forbiddenURLs: forbiddenURLs)
         defer { output.cleanup() }
         let receipt = TimelineExportReceipt(schemaVersion: 1, destinationPath: destination.standardizedFileURL.path,
             snapshotSHA256: report.binding.snapshotSHA256, eventCount: report.events.count,
-            jsonSHA256: TimelineCoding.hex(SHA256.hash(data: json)), markdownSHA256: TimelineCoding.hex(SHA256.hash(data: markdown)), artifactReceipts: report.artifactReceipts)
+            jsonSHA256: TimelineCoding.hex(SHA256.hash(data: json)), markdownSHA256: TimelineCoding.hex(SHA256.hash(data: markdown)),
+            pdfSHA256: TimelineCoding.hex(SHA256.hash(data: pdf)), componentVersions: ["timelineReport": report.parserVersion, "PDFRenderer": TimelinePDFRenderer.version],
+            outputParameters: ["maximumReportBytes": String(TimelineLimits.maximumReportBytes), "maximumPDFPages": String(TimelinePDFRenderer.maximumPages),
+                "filterPolicy": "complete report; presentation filters do not reduce exported events", "publication": "exclusive new directory; independently rehashed written bytes"], artifactReceipts: report.artifactReceipts)
         try output.write(json, name: "timeline.json")
         try output.write(markdown, name: "timeline.md")
+        try output.write(pdf, name: "timeline.pdf")
         // Runtime destination paths are not placed into the shareable report receipt.
         struct ShareableReceipt: Encodable {
             let schemaVersion = 1
             let snapshotSHA256: String; let eventCount: Int
             let jsonSHA256: String; let markdownSHA256: String
+            let pdfSHA256: String?
+            let componentVersions: [String: String]?
+            let outputParameters: [String: String]?
             let artifactReceipts: [TimelineArtifactReceipt]
         }
         try output.write(TimelineCoding.encode(ShareableReceipt(snapshotSHA256: receipt.snapshotSHA256, eventCount: receipt.eventCount,
-            jsonSHA256: receipt.jsonSHA256, markdownSHA256: receipt.markdownSHA256, artifactReceipts: receipt.artifactReceipts)), name: "receipt.json")
+            jsonSHA256: receipt.jsonSHA256, markdownSHA256: receipt.markdownSHA256, pdfSHA256: receipt.pdfSHA256,
+            componentVersions: receipt.componentVersions, outputParameters: receipt.outputParameters,
+            artifactReceipts: receipt.artifactReceipts)), name: "receipt.json")
         try Task.checkCancellation(); try output.publish()
         return receipt
     }
 
     public static func validate(_ report: TimelineReport) throws {
         try report.binding.validate()
-        guard report.schemaVersion == 1, report.parserVersion == "timeline.v1",
-              report.events.count <= TimelineLimits.maximumFilesystemEvents + TimelineLimits.maximumBrowserEvents,
+        guard report.schemaVersion == 1, ["timeline.v1", "timeline.v2"].contains(report.parserVersion),
+              report.events.count <= TimelineLimits.maximumFilesystemEvents + TimelineLimits.maximumBrowserEvents + TimelineLimits.maximumSyslogEvents,
               Set(report.events.map(\.id)).count == report.events.count,
               report.warnings.count <= 128, report.warnings.allSatisfy({ EngineValidation.text($0, maximum: 4096) }),
               EngineValidation.text(report.coverage, maximum: 4096),
               report.examinerNotes.utf8.count <= TimelineLimits.maximumNotesBytes,
               (report.aiInterpretation?.utf8.count ?? 0) <= TimelineLimits.maximumNotesBytes,
-              report.artifactReceipts.count <= 3,
+              report.artifactReceipts.count <= 4,
               Set(report.artifactReceipts.map(\.role)).count == report.artifactReceipts.count else {
             throw TimelineError.invalidInput("Invalid timeline report, duplicate events or oversized notes.")
         }
         var estimated = 4096 + report.examinerNotes.utf8.count * 6 + (report.aiInterpretation?.utf8.count ?? 0) * 6
         for file in report.artifactReceipts {
-            guard ["database", "wal", "shm"].contains(file.role), file.byteCount >= 0, file.byteCount <= 64 * 1_048_576,
+            guard ["database", "wal", "shm", "syslog"].contains(file.role), file.byteCount >= 0, file.byteCount <= 64 * 1_048_576,
+                  file.hashScope == nil || file.hashScope == "extracted-file-bytes",
                   EngineValidation.validHash(file.sha256), EngineValidation.text(file.fileID, maximum: 1024),
                   EngineValidation.text(file.evidencePath), file.evidencePath.hasPrefix("/") else { throw TimelineError.invalidInput("Invalid artifact receipt.") }
+            if file.role == "syslog", file.byteCount > TimelineLimits.maximumSyslogBytes { throw TimelineError.invalidInput("Syslog receipt exceeds its byte bound.") }
         }
         let hashes = Set(report.artifactReceipts.map(\.sha256))
+        if let receipts = report.parserReceipts {
+            guard receipts.count <= 8 else { throw TimelineError.invalidInput("Too many timeline parser receipts.") }
+            for receipt in receipts {
+                guard EngineValidation.text(receipt.parser, maximum: 128), EngineValidation.text(receipt.version, maximum: 128),
+                      receipt.parameters.count <= 32,
+                      receipt.parameters.allSatisfy({ EngineValidation.text($0.key, maximum: 128) && EngineValidation.text($0.value, maximum: 4096, allowEmpty: true) }),
+                      receipt.sourceSHA256.map({ hashes.contains($0) }) ?? true,
+                      receipt.derivedTextSHA256.map(EngineValidation.validHash) ?? true,
+                      receipt.sourceHashScope == nil || (receipt.sourceHashScope == "extracted-file-bytes" && receipt.sourceSHA256 != nil),
+                      receipt.derivedTextHashScope == nil || (receipt.derivedTextHashScope == "derived-utf8-text-bytes" && receipt.derivedTextSHA256 != nil),
+                      (receipt.unitCount.map { (1...200).contains($0) } ?? true),
+                      (receipt.lineCount.map { (0...1_048_576).contains($0) } ?? true),
+                      receipt.eventCount >= 0, receipt.eventCount <= report.events.count else { throw TimelineError.invalidInput("Invalid parser parameters or text provenance.") }
+            }
+        }
         for event in report.events {
             try Task.checkCancellation()
             guard EngineValidation.validHash(event.id), EngineValidation.text(event.fileID, maximum: 1024),
@@ -82,8 +115,27 @@ public enum TimelineReportExporter {
                   EngineValidation.text(event.timestamp.interpretation, maximum: 128),
                   (event.timestamp.timezoneAssumption?.utf8.count ?? 0) <= 1024,
                   event.timestamp.alternativeEpochSeconds.count <= 2,
+                  event.timestamp.alternativeEpochSeconds.allSatisfy({ (0...253_402_300_799).contains($0) }),
                   event.timestamp.epochSeconds.map({ (0...253_402_300_799).contains($0) }) ?? true else {
                 throw TimelineError.invalidInput("Invalid timeline event or timestamp provenance.")
+            }
+            if let pointer = event.sourceReference {
+                let artifact = report.artifactReceipts.first { $0.role == "syslog" && $0.fileID == event.fileID && $0.evidencePath == event.evidencePath && $0.sha256 == event.artifactSHA256 }
+                guard event.kind == .syslogRecord, event.artifactSHA256 != nil,
+                      EngineValidation.validHash(pointer.derivedTextSHA256), pointer.unit == 1,
+                      pointer.unitKind == "raw-utf8-document", pointer.line > 0, pointer.line <= 1_048_576,
+                      pointer.utf8Offset >= 0, pointer.utf8Length >= 0, pointer.utf8Length <= TimelineLimits.maximumSyslogLineBytes,
+                      pointer.utf8Offset <= TimelineLimits.maximumSyslogBytes - pointer.utf8Length,
+                      artifact.map({ Int64(pointer.utf8Offset + pointer.utf8Length) <= $0.byteCount }) == true,
+                      report.parserReceipts?.contains(where: { $0.derivedTextSHA256 == pointer.derivedTextSHA256 && $0.sourceSHA256 == event.artifactSHA256
+                          && $0.parser == "syslog-record" && $0.unitCount == 1 && ($0.lineCount.map { pointer.line <= $0 } ?? false) }) == true else {
+                    throw TimelineError.invalidInput("Invalid syslog text source pointer.")
+                }
+            } else if event.kind == .syslogRecord { throw TimelineError.invalidInput("Syslog event has no source line reference.") }
+            if let native = event.filesystemTimestamp {
+                guard [.filesystemCreated, .filesystemModified, .filesystemAccessed].contains(event.kind) else { throw TimelineError.invalidInput("Civil filesystem timestamp is attached to a non-filesystem event.") }
+                let expected = try TimelineTimestamp.filesystem(native, epoch: event.timestamp.epochSeconds, nanos: event.timestamp.nanoseconds)
+                guard expected == event.timestamp else { throw TimelineError.invalidInput("Filesystem timestamp interpretation contradicts its raw fields.") }
             }
             let addition = (event.title.utf8.count + event.detail.utf8.count + event.evidencePath.utf8.count + event.fileID.utf8.count + event.timestamp.rawValue.utf8.count) * 6 + 2048
             guard addition <= TimelineLimits.maximumReportBytes - estimated else { throw TimelineError.limitExceeded("Timeline report exceeds the 64 MiB output budget.") }
@@ -101,19 +153,44 @@ public enum TimelineReportExporter {
         }
         func cell(_ text: String) -> String {
             text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "|", with: "\\|")
+                .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
+                .replacingOccurrences(of: "`", with: "\\`")
                 .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
                 .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
         }
         try add("# NativeForensics timeline\n\n## Provenance and coverage\n\nCase: \(report.binding.caseID.uuidString)\n\nEvidence: \(report.binding.evidenceID.uuidString)\n\nRecorded snapshot SHA-256: \(report.binding.snapshotSHA256)\n\nEngine: \(cell(report.binding.engineVersion)); selected timezone: \(cell(report.binding.engineTimezone)); status: \(report.binding.listingStatus.rawValue); historical: \(report.binding.historical).\n\n\(cell(report.coverage))\n\nContainer hashes describe selected file bytes in recorded input order:\n\n")
         for (index, hash) in report.binding.orderedContainerSHA256.enumerated() { try add("- \(index): \(hash)\n") }
+        if let scopes = report.binding.hashScopes {
+            for key in scopes.keys.sorted() { try add("- Hash scope \(cell(key)): \(cell(scopes[key]!))\n") }
+        } else { try add("\nHistorical binding: an explicit encoded hash-scope map was not retained.\n") }
+        if let engine = report.binding.engineProvenance {
+            try add("\nEngine protocol schema: \(engine.schemaVersion); patch digest/version label: \(cell(engine.patchDigest))\n\n")
+            try add("Engine options (complete): \(cell(String(decoding: try TimelineCoding.encode(engine.options), as: UTF8.self)))\n\n")
+            try add("Image parameters: \(cell(String(decoding: try TimelineCoding.encode(engine.image), as: UTF8.self)))\n\n")
+            for input in engine.orderedInputs { try add("- Ordered input \(input.ordinal); \(input.byteCount.map(String.init) ?? "byte count unavailable in historical listing") bytes; scope=\(cell(input.hashScope)); SHA-256=\(input.sha256)\n") }
+            for volume in engine.volumes { try add("- Volume: \(cell(String(decoding: try TimelineCoding.encode(volume), as: UTF8.self)))\n") }
+        } else { try add("\nHistorical v1 report: complete engine options, patch identity, image/volume parameters and source sizes were not retained. The snapshot digest cannot reconstruct those fields.\n") }
         if let logical = report.binding.logicalImageSHA256 { try add("\nLogical-image bytes SHA-256: \(logical)\n") }
-        for file in report.artifactReceipts { try add("\nArtifact \(file.role): \(cell(file.evidencePath)); \(file.byteCount) extracted bytes; SHA-256 \(file.sha256).\n") }
+        for file in report.artifactReceipts { try add("\nArtifact \(file.role): \(cell(file.evidencePath)); \(file.byteCount) extracted bytes; SHA-256 \(file.sha256); encoded hash scope=\(file.hashScope ?? "unavailable in historical receipt").\n") }
+        try add("\nParser versions and selected parameters:\n\n")
+        for parser in report.parserReceipts ?? [] {
+            try add("- \(cell(parser.parser)) v\(cell(parser.version)); events=\(parser.eventCount); source extracted-content SHA-256=\(parser.sourceSHA256 ?? "none") (\(parser.sourceHashScope ?? "unavailable encoded scope")); derived-text SHA-256=\(parser.derivedTextSHA256 ?? "none") (\(parser.derivedTextHashScope ?? "unavailable encoded scope")); units=\(parser.unitCount.map(String.init) ?? "none"); lines=\(parser.lineCount.map(String.init) ?? "none")\n")
+            for key in parser.parameters.keys.sorted() { try add("  - \(cell(key)): \(cell(parser.parameters[key]!))\n") }
+        }
+        if report.parserReceipts == nil { try add("Historical v1 report: parser parameters were not retained.\n") }
         try add("\n## Limits and assumptions\n\n")
         for warning in report.warnings { try add("- \(cell(warning))\n") }
-        try add("\n## Deterministic parser observations\n\nUTC epoch seconds/nanoseconds are normalized values; raw timestamp and assumptions remain explicit. Unresolved local times have no normalized instant.\n\n| Epoch seconds | Nanoseconds | Kind | Entry state | Evidence path | Record | Raw timestamp | Precision | Assumption / interpretation | Observation |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+        try add("\n## Deterministic parser observations\n\nUTC epoch seconds/nanoseconds are normalized values; raw timestamp and assumptions remain explicit. Unresolved local times have no normalized instant.\n\n| Event ID / parser | Epoch seconds | Nanoseconds | Alternatives | Kind | Entry state | Evidence path / file ID | Record / source pointer | Artifact SHA-256 | Raw timestamp | Precision | Assumption / interpretation | Observation |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
         for event in report.events {
             try Task.checkCancellation()
-            try add("| \(event.timestamp.epochSeconds.map(String.init) ?? "unresolved") | \(event.timestamp.nanoseconds) | \(event.kind.rawValue) | \(event.isDeleted ? "deleted entry; deletion time unknown" : "allocated / recorded") | \(cell(event.evidencePath)) | \(cell(event.recordID)) | \(cell(event.timestamp.rawValue)) | \(cell(event.timestamp.precision)) | \(cell(event.timestamp.timezoneAssumption ?? "none")) / \(cell(event.timestamp.interpretation)) | \(cell(event.title + " — " + event.detail)) |\n")
+            let pointer = try event.sourceReference.map { cell(String(decoding: try TimelineCoding.encode($0), as: UTF8.self)) } ?? "none"
+            try add("| \(event.id) / \(cell(event.parser)) | \(event.timestamp.epochSeconds.map(String.init) ?? "unresolved") | \(event.timestamp.nanoseconds) | \(event.timestamp.alternativeEpochSeconds.map(String.init).joined(separator: ", ")) | \(event.kind.rawValue) | \(event.isDeleted ? "deleted entry; deletion time unknown" : "allocated / recorded") | \(cell(event.evidencePath)) / \(cell(event.fileID)) | \(cell(event.recordID)) / \(pointer) | \(event.artifactSHA256 ?? "none") | \(cell(event.timestamp.rawValue)) | \(cell(event.timestamp.precision)) | \(cell(event.timestamp.timezoneAssumption ?? "none")) / \(cell(event.timestamp.interpretation)) | \(cell(event.title + " — " + event.detail)) |\n")
+        }
+        if report.events.contains(where: { $0.filesystemTimestamp != nil }) {
+            try add("\n## Raw filesystem timestamp fields\n\n")
+            for event in report.events {
+                if let native = event.filesystemTimestamp { try add("- Event \(event.id): \(cell(String(decoding: try TimelineCoding.encode(native), as: UTF8.self)))\n") }
+            }
         }
         try add("\n## AI interpretation (unverified)\n\n")
         try add(cell(report.aiInterpretation ?? "No AI interpretation was included.") + "\n")
@@ -195,7 +272,7 @@ private final class TimelineReportTransaction {
     }
     func publish() throws {
         try validate()
-        guard files.count == 3, expectedHashes.count == 3 else { throw TimelineError.publication("Timeline report is incomplete.") }
+        guard files.count == 4, expectedHashes.count == 4 else { throw TimelineError.publication("Timeline report is incomplete.") }
         for (name, identity) in files {
             let descriptor = try FileAccess.openReadOnly(name, in: root)
             defer { Darwin.close(descriptor) }
@@ -222,7 +299,7 @@ private final class TimelineReportTransaction {
             guard let entry = Darwin.readdir(listing) else { readError = errno; break }
             let name = withUnsafePointer(to: &entry.pointee.d_name) { pointer in pointer.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { String(cString: $0) } }
             if name != ".", name != ".." {
-                guard files[name] != nil, names.count < 3 else { unexpected = true; break }
+                guard files[name] != nil, names.count < 4 else { unexpected = true; break }
                 names.insert(name)
             }
         }

@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -17,10 +18,11 @@ public enum CaseStore {
     public static func create(name: String, in parent: URL) throws -> ForensicCase {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         try validateName(cleanName)
+        let parentDescriptor = try EvidenceViewFiles.openDirectory(parent)
+        defer { Darwin.close(parentDescriptor) }
         let directory = try FileAccess.localURL(parent)
         try validateDirectory(directory)
-        let parentDescriptor = try openCaseDirectory(directory)
-        defer { Darwin.close(parentDescriptor) }
+        try validateDirectoryReference(directory, descriptor: parentDescriptor)
         let destination = directory.appendingPathComponent(cleanName).appendingPathExtension(bundleExtension)
         let stagingName = ".nativecase-\(UUID().uuidString).tmp"
         guard Darwin.mkdirat(parentDescriptor, stagingName, mode_t(0o700)) == 0 else {
@@ -141,12 +143,13 @@ public enum CaseStore {
             id: current.id,
             name: current.name,
             createdAt: current.createdAt,
-            evidence: current.evidence + [evidence]
+            evidence: current.evidence + [evidence], schemaVersion: current.schemaVersion,
+            provenance: current.provenance
         ))
         // Serialization can take time for a large case. Recheck immediately
         // before publication as well as after acquiring the transaction lock.
         let data = try encode(updated)
-        try replaceManifest(data, directory: directory) {
+        try replaceManifest(data, directory: directory, caseID: updated.id) {
             guard (try? FileAccess.identity(at: source)) == original else { throw ForensicsError.sourceChanged }
             try validateDirectoryReference(bundle, descriptor: directory)
             guard (try? FileAccess.identity(at: lockName, in: directory)) == lockIdentity else {
@@ -158,6 +161,237 @@ public enum CaseStore {
         }
         return ForensicCase(bundleURL: bundle, manifest: updated)
     }
+
+    /// Explicit, opt-in schema migration. The exact original manifest is staged,
+    /// synchronized and retained before the new schema is atomically published.
+    /// Existing case-work sidecars and evidence are neither rewritten nor opened.
+    public static func migrateToSchema2(_ forensicCase: ForensicCase) throws -> ForensicCase {
+        try migrateToSchema2(forensicCase, persistenceCheckpoint: { _, _ in })
+    }
+
+    static func migrateToSchema2ForTesting(_ forensicCase: ForensicCase,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void) throws -> ForensicCase {
+        try migrateToSchema2(forensicCase, persistenceCheckpoint: persistenceCheckpoint)
+    }
+
+    static func migrateToSchema2ForTestingBackup(_ forensicCase: ForensicCase,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void) throws -> ForensicCase {
+        try migrateToSchema2(forensicCase, persistenceCheckpoint: { _, _ in }, backupCheckpoint: persistenceCheckpoint)
+    }
+
+    private static func migrateToSchema2(_ forensicCase: ForensicCase,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void,
+        backupCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in }) throws -> ForensicCase {
+        try transaction(forensicCase) { current, original, root, validate in
+            guard current.schemaVersion == 1, current.provenance == nil else { throw CaseProvenanceError.invalid }
+            let receipt = CaseMigrationReceipt(id: UUID(), procedureVersion: "case-manifest.v1-to-v2.1",
+                sourceSchemaVersion: 1, targetSchemaVersion: 2, performedAt: Date(),
+                originalManifestSHA256: digest(original), originalManifestByteCount: original.count)
+            if Darwin.mkdirat(root, "migrations", mode_t(0o700)) != 0 && errno != EEXIST {
+                throw FileAccess.posixError("Cannot create case migration directory")
+            }
+            let directory = Darwin.openat(root, "migrations", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard directory >= 0 else { throw ForensicsError.invalidCase("The migration directory is unsafe.") }
+            defer { Darwin.close(directory) }
+            guard directoryReferenceMatches("migrations", in: root, descriptor: directory) else { throw ForensicsError.staleCase }
+            try publishMigrationBackup(original, named: receipt.backupFilename, in: directory,
+                persistenceCheckpoint: backupCheckpoint) {
+                try validate()
+                guard directoryReferenceMatches("migrations", in: root, descriptor: directory) else { throw ForensicsError.staleCase }
+            }
+            guard Darwin.fsync(root) == 0 else {
+                throw FileAccess.posixError("Cannot flush the original manifest backup")
+            }
+            let updated = try canonicalManifest(CaseManifest(id: current.id, name: current.name,
+                createdAt: current.createdAt, evidence: current.evidence, schemaVersion: 2,
+                provenance: .init(migration: receipt)))
+            try replaceManifest(try encode(updated), directory: root, caseID: current.id,
+                persistenceCheckpoint: persistenceCheckpoint) {
+                try validate()
+                guard directoryReferenceMatches("migrations", in: root, descriptor: directory),
+                      try readBytes(receipt.backupFilename, in: directory, maximum: maximumManifestBytes) == original else {
+                    throw ForensicsError.staleCase
+                }
+            }
+            return updated
+        }
+    }
+
+    /// Rolls back only if no evidence or job provenance would be discarded.
+    /// The original bytes, including formatting, are restored exactly. Immutable
+    /// work sidecars and the historical migration backup remain available.
+    public static func rollbackSchema2Migration(_ forensicCase: ForensicCase) throws -> ForensicCase {
+        try transaction(forensicCase) { current, _, root, validate in
+            guard let provenance = current.provenance, current.schemaVersion == 2 else { throw CaseProvenanceError.migrationRequired }
+            let original = try migrationBackup(for: current, bundle: forensicCase.bundleURL, root: root)
+            let old = try decoder().decode(CaseManifest.self, from: original)
+            guard provenance.jobs.isEmpty, old.id == current.id, old.name == current.name,
+                  old.createdAt == current.createdAt, old.evidence == current.evidence else {
+                throw CaseProvenanceError.rollbackWouldDiscardChanges
+            }
+            try replaceManifest(original, directory: root, caseID: current.id, validateBeforePublish: validate)
+            return old
+        }
+    }
+
+    /// Adds an immutable job identity to schema 2 without replacing an existing
+    /// UUID. Call after the referenced artifact has committed and use its exact
+    /// byte digest; a failure here does not erase that already published artifact.
+    public static func recording(job: CaseJobProvenance, in forensicCase: ForensicCase) throws -> ForensicCase {
+        try job.validate()
+        return try transaction(forensicCase) { current, _, root, validate in
+            guard current.schemaVersion == 2, let provenance = current.provenance else { throw CaseProvenanceError.migrationRequired }
+            guard !provenance.jobs.contains(where: { $0.id == job.id }) else { throw CaseWorkError.alreadyExists }
+            let updated = try canonicalManifest(CaseManifest(id: current.id, name: current.name, createdAt: current.createdAt,
+                evidence: current.evidence, schemaVersion: 2,
+                provenance: .init(migration: provenance.migration, jobs: provenance.jobs + [job])))
+            try replaceManifest(try encode(updated), directory: root, caseID: current.id, validateBeforePublish: validate)
+            return updated
+        }
+    }
+
+    /// Internal counterpart for a storage coordinator that already owns the
+    /// descriptor-anchored case writer lock. It does not acquire a second flock.
+    /// The coordinator must keep the held root/lock alive through the commit.
+    static func recordingWhileLocked(job: CaseJobProvenance, in forensicCase: ForensicCase,
+        root: Int32, persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in },
+        validateBeforeCommit: () throws -> Void) throws -> ForensicCase {
+        try job.validate()
+        try validateDirectoryReference(forensicCase.bundleURL, descriptor: root)
+        let (current, identity) = try readManifest(in: forensicCase.bundleURL, directory: root)
+        guard current == forensicCase.manifest else { throw ForensicsError.staleCase }
+        guard current.schemaVersion == 2, let provenance = current.provenance else { throw CaseProvenanceError.migrationRequired }
+        guard !provenance.jobs.contains(where: { $0.id == job.id }) else { throw CaseWorkError.alreadyExists }
+        let updated = try canonicalManifest(CaseManifest(id: current.id, name: current.name, createdAt: current.createdAt,
+            evidence: current.evidence, schemaVersion: 2,
+            provenance: .init(migration: provenance.migration, jobs: provenance.jobs + [job])))
+        try replaceManifest(try encode(updated), directory: root, caseID: current.id,
+            persistenceCheckpoint: persistenceCheckpoint) {
+            try validateBeforeCommit()
+            try validateDirectoryReference(forensicCase.bundleURL, descriptor: root)
+            guard (try? FileAccess.identity(at: manifestName, in: root)) == identity else { throw ForensicsError.staleCase }
+        }
+        do { try validateDirectoryReference(forensicCase.bundleURL, descriptor: root) }
+        catch { throw CaseManifestPublicationError.publishedButDurabilityUnconfirmed(caseID: current.id) }
+        return ForensicCase(bundleURL: forensicCase.bundleURL, manifest: updated)
+    }
+
+    private static func transaction(_ forensicCase: ForensicCase,
+        body: (CaseManifest, Data, Int32, () throws -> Void) throws -> CaseManifest) throws -> ForensicCase {
+        let bundle = try caseURL(forensicCase.bundleURL)
+        let root = try openCaseDirectory(bundle); defer { Darwin.close(root) }
+        let lock = Darwin.openat(root, lockName, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard lock >= 0 else { throw ForensicsError.invalidCase("The case lock is missing or unsafe.") }
+        defer { Darwin.close(lock) }
+        var lockMetadata = stat()
+        let lockIdentity = try FileAccess.identity(of: lock)
+        guard Darwin.fstat(lock, &lockMetadata) == 0, lockMetadata.st_nlink == 1 else { throw ForensicsError.staleCase }
+        while systemFlock(lock, LOCK_EX | LOCK_NB) != 0 {
+            if errno == EINTR { continue }
+            guard errno == EWOULDBLOCK else { throw FileAccess.posixError("Cannot lock case migration") }
+            try Task.checkCancellation(); usleep(10_000)
+        }
+        defer { _ = systemFlock(lock, LOCK_UN) }
+        let (current, manifestIdentity) = try readManifest(in: bundle, directory: root)
+        guard current == forensicCase.manifest else { throw ForensicsError.staleCase }
+        let original = try readBytes(manifestName, in: root, maximum: maximumManifestBytes)
+        let validate = {
+            try validateDirectoryReference(bundle, descriptor: root)
+            guard (try? FileAccess.identity(at: lockName, in: root)) == lockIdentity,
+                  (try? FileAccess.identity(at: manifestName, in: root)) == manifestIdentity else { throw ForensicsError.staleCase }
+        }
+        try validate()
+        let updated = try body(current, original, root, validate)
+        do { try validateDirectoryReference(bundle, descriptor: root) }
+        catch { throw CaseManifestPublicationError.publishedButDurabilityUnconfirmed(caseID: updated.id) }
+        return ForensicCase(bundleURL: bundle, manifest: updated)
+    }
+
+    /// The original manifest is an immutable artifact too: do not expose a
+    /// recognized final JSON name until every byte has been written and flushed.
+    private static func publishMigrationBackup(_ bytes: Data, named name: String, in directory: Int32,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void,
+        validate: () throws -> Void) throws {
+        let staging = ".migration-\(UUID().uuidString.lowercased()).tmp"
+        let descriptor = Darwin.openat(directory, staging, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard descriptor >= 0 else { throw FileAccess.posixError("Cannot stage migration backup") }
+        defer {
+            if referenceMatches(staging, in: directory, descriptor: descriptor, kind: S_IFREG) { _ = Darwin.unlinkat(directory, staging, 0) }
+            Darwin.close(descriptor)
+        }
+        try persistenceCheckpoint(.beforeWrite, 0)
+        try bytes.withUnsafeBytes { buffer in
+            var written = 0
+            while written < buffer.count {
+                try Task.checkCancellation()
+                let amount = Darwin.write(descriptor, buffer.baseAddress?.advanced(by: written), min(65_536, buffer.count - written))
+                if amount < 0 && errno == EINTR { continue }
+                guard amount > 0 else { throw FileAccess.posixError("Cannot write migration backup") }
+                written += amount
+                try persistenceCheckpoint(.afterWriteChunk, written)
+            }
+        }
+        try persistenceCheckpoint(.beforeFileFlush, bytes.count)
+        while Darwin.fsync(descriptor) != 0 {
+            if errno == EINTR { continue }
+            throw FileAccess.posixError("Cannot flush migration backup")
+        }
+        try persistenceCheckpoint(.afterFileFlush, bytes.count)
+        try Task.checkCancellation(); try validate()
+        try persistenceCheckpoint(.beforeRename, bytes.count)
+        try validate()
+        guard referenceMatches(staging, in: directory, descriptor: descriptor, kind: S_IFREG) else { throw ForensicsError.staleCase }
+        guard Darwin.renameatx_np(directory, staging, directory, name, UInt32(RENAME_EXCL)) == 0 else {
+            throw FileAccess.posixError("Cannot publish immutable migration backup")
+        }
+        try persistenceCheckpoint(.afterRename, bytes.count)
+        try persistenceCheckpoint(.beforeDirectoryFlush, bytes.count)
+        while Darwin.fsync(directory) != 0 {
+            if errno == EINTR { continue }
+            throw FileAccess.posixError("Cannot flush migration backup directory")
+        }
+        try persistenceCheckpoint(.afterDirectoryFlush, bytes.count)
+        guard referenceMatches(name, in: directory, descriptor: descriptor, kind: S_IFREG),
+              try readBytes(name, in: directory, maximum: maximumManifestBytes) == bytes else { throw ForensicsError.staleCase }
+        try validate()
+    }
+
+    private static func migrationBackup(for manifest: CaseManifest, bundle: URL, root: Int32) throws -> Data {
+        guard let receipt = manifest.provenance?.migration else { throw CaseProvenanceError.invalid }
+        let directory = Darwin.openat(root, "migrations", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard directory >= 0 else { throw ForensicsError.invalidCase("The original migration backup is inaccessible.") }
+        defer { Darwin.close(directory) }
+        let bytes = try readBytes(receipt.backupFilename, in: directory, maximum: maximumManifestBytes)
+        guard bytes.count == receipt.originalManifestByteCount, digest(bytes) == receipt.originalManifestSHA256,
+              directoryReferenceMatches("migrations", in: root, descriptor: directory) else { throw CaseProvenanceError.invalid }
+        let original = try decoder().decode(CaseManifest.self, from: bytes)
+        try validateManifest(original, bundle: bundle)
+        guard original.schemaVersion == 1, original.id == manifest.id, original.name == manifest.name,
+              original.createdAt == manifest.createdAt, manifest.evidence.starts(with: original.evidence) else { throw CaseProvenanceError.invalid }
+        return bytes
+    }
+
+    private static func readBytes(_ name: String, in directory: Int32, maximum: Int) throws -> Data {
+        let descriptor = try FileAccess.openReadOnly(name, in: directory); defer { Darwin.close(descriptor) }
+        let before = try FileAccess.identity(of: descriptor); var metadata = stat()
+        guard before.size >= 0, before.size <= maximum, Darwin.fstat(descriptor, &metadata) == 0,
+              metadata.st_nlink == 1 else { throw CaseProvenanceError.invalid }
+        var bytes = Data(); bytes.reserveCapacity(Int(before.size))
+        var buffer = [UInt8](repeating: 0, count: 65_536)
+        while Int64(bytes.count) < before.size {
+            try Task.checkCancellation()
+            let requested = Int(min(Int64(buffer.count), before.size - Int64(bytes.count)))
+            let count = try buffer.withUnsafeMutableBytes {
+                try FileAccess.read(descriptor, into: $0, count: requested)
+            }
+            guard count > 0 else { throw ForensicsError.staleCase }
+            bytes.append(contentsOf: buffer.prefix(count))
+        }
+        guard try FileAccess.identity(of: descriptor) == before,
+              (try? FileAccess.identity(at: name, in: directory)) == before else { throw ForensicsError.staleCase }
+        return bytes
+    }
+    private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
     private static func validateName(_ name: String) throws {
         guard !name.isEmpty, name.count <= 100, name.utf8.count <= 240, name != ".", name != "..",
@@ -181,7 +415,10 @@ public enum CaseStore {
               metadata.st_mode & S_IFMT == S_IFDIR else {
             throw ForensicsError.invalidCase("A case must be a directory, not a file or symbolic link.")
         }
+        let supplied = try EvidenceViewFiles.openDirectory(url.standardizedFileURL)
+        defer { Darwin.close(supplied) }
         let canonical = try FileAccess.localURL(url)
+        try validateDirectoryReference(canonical, descriptor: supplied)
         guard canonical.pathExtension == bundleExtension else {
             throw ForensicsError.invalidCase("Choose a .\(bundleExtension) bundle.")
         }
@@ -193,9 +430,12 @@ public enum CaseStore {
     }
 
     private static func validateManifest(_ manifest: CaseManifest, bundle: URL? = nil) throws {
-        guard manifest.schemaVersion == 1 else {
+        guard [1, 2].contains(manifest.schemaVersion) else {
             throw ForensicsError.invalidCase("This case schema version is unsupported; the original manifest was preserved.")
         }
+        guard manifest.createdAt.timeIntervalSince1970.isFinite,
+              (manifest.schemaVersion == 1) == (manifest.provenance == nil) else { throw CaseProvenanceError.invalid }
+        if let provenance = manifest.provenance { try provenance.validate(evidence: manifest.evidence) }
         try validateName(manifest.name)
         var identifiers = Set<UUID>()
         var paths = Set<String>()
@@ -265,6 +505,7 @@ public enum CaseStore {
         do { manifest = try decoder().decode(CaseManifest.self, from: data) }
         catch { throw ForensicsError.invalidCase("manifest.json is not a supported case manifest.") }
         try validateManifest(manifest, bundle: bundle)
+        if manifest.schemaVersion == 2 { _ = try migrationBackup(for: manifest, bundle: bundle, root: directory) }
         return (manifest, before)
     }
 
@@ -275,20 +516,29 @@ public enum CaseStore {
         try writeAndSync(data, descriptor: descriptor)
     }
 
-    private static func writeAndSync(_ data: Data, descriptor: Int32) throws {
+    private static func writeAndSync(_ data: Data, descriptor: Int32,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in }) throws {
         try data.withUnsafeBytes { buffer in
             var written = 0
             while written < buffer.count {
-                let count = Darwin.write(descriptor, buffer.baseAddress?.advanced(by: written), buffer.count - written)
+                try Task.checkCancellation()
+                let count = Darwin.write(descriptor, buffer.baseAddress?.advanced(by: written), min(65_536, buffer.count - written))
                 if count < 0 && errno == EINTR { continue }
                 guard count > 0 else { throw FileAccess.posixError("Cannot write case file") }
                 written += count
+                try persistenceCheckpoint(.afterWriteChunk, written)
             }
         }
-        guard Darwin.fsync(descriptor) == 0 else { throw FileAccess.posixError("Cannot flush case file") }
+        try persistenceCheckpoint(.beforeFileFlush, data.count)
+        while Darwin.fsync(descriptor) != 0 {
+            if errno == EINTR { continue }
+            throw FileAccess.posixError("Cannot flush case file")
+        }
     }
 
-    private static func replaceManifest(_ data: Data, directory: Int32, validateBeforePublish: () throws -> Void) throws {
+    private static func replaceManifest(_ data: Data, directory: Int32, caseID: UUID,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in },
+        validateBeforePublish: () throws -> Void) throws {
         let temporary = ".manifest-\(UUID().uuidString).tmp"
         let descriptor = Darwin.openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
         guard descriptor >= 0 else { throw FileAccess.posixError("Cannot create case file") }
@@ -298,34 +548,47 @@ public enum CaseStore {
             }
             Darwin.close(descriptor)
         }
-        try writeAndSync(data, descriptor: descriptor)
+        try persistenceCheckpoint(.beforeWrite, 0)
+        try writeAndSync(data, descriptor: descriptor, persistenceCheckpoint: persistenceCheckpoint)
+        try persistenceCheckpoint(.afterFileFlush, data.count)
         try validateBeforePublish()
         guard referenceMatches(temporary, in: directory, descriptor: descriptor, kind: S_IFREG) else {
             throw ForensicsError.invalidCase("The staged case manifest changed before publication.")
         }
+        try persistenceCheckpoint(.beforeRename, data.count)
+        try validateBeforePublish()
+        guard referenceMatches(temporary, in: directory, descriptor: descriptor, kind: S_IFREG) else {
+            throw ForensicsError.staleCase
+        }
         guard Darwin.renameat(directory, temporary, directory, manifestName) == 0 else {
             throw FileAccess.posixError("Cannot save case manifest")
         }
-        guard Darwin.fsync(directory) == 0 else { throw FileAccess.posixError("Cannot flush case directory") }
+        do {
+            try persistenceCheckpoint(.afterRename, data.count)
+            try persistenceCheckpoint(.beforeDirectoryFlush, data.count)
+            guard Darwin.fsync(directory) == 0 else { throw FileAccess.posixError("Cannot flush case directory") }
+            try persistenceCheckpoint(.afterDirectoryFlush, data.count)
+            try validateBeforePublishAfterCommit(directory: directory, data: data)
+        } catch { throw CaseManifestPublicationError.publishedButDurabilityUnconfirmed(caseID: caseID) }
+    }
+
+    private static func validateBeforePublishAfterCommit(directory: Int32, data: Data) throws {
+        let actual = try readBytes(manifestName, in: directory, maximum: maximumManifestBytes)
+        guard actual == data else { throw ForensicsError.staleCase }
     }
 
     private static func openCaseDirectory(_ bundle: URL) throws -> Int32 {
-        let descriptor = Darwin.open(bundle.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw ForensicsError.invalidCase("The case directory is inaccessible or has changed.") }
+        let descriptor: Int32
+        do { descriptor = try EvidenceViewFiles.openDirectory(bundle) }
+        catch { throw ForensicsError.invalidCase("The case directory or an ancestor is inaccessible, linked or has changed.") }
         do { try validateDirectoryReference(bundle, descriptor: descriptor) }
         catch { Darwin.close(descriptor); throw error }
         return descriptor
     }
 
     private static func validateDirectoryReference(_ url: URL, descriptor: Int32) throws {
-        var opened = stat()
-        var current = stat()
-        guard Darwin.fstat(descriptor, &opened) == 0,
-              Darwin.lstat(url.path, &current) == 0,
-              current.st_mode & S_IFMT == S_IFDIR,
-              opened.st_dev == current.st_dev, opened.st_ino == current.st_ino else {
-            throw ForensicsError.invalidCase("The case directory changed during the operation; reopen the case.")
-        }
+        do { try EvidenceViewFiles.validateDirectory(url, descriptor: descriptor) }
+        catch { throw ForensicsError.invalidCase("The case directory or an ancestor changed during the operation; reopen the case.") }
     }
 
     private static func directoryReferenceMatches(_ name: String, in parent: Int32, descriptor: Int32) -> Bool {

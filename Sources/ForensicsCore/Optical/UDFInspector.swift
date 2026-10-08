@@ -9,7 +9,9 @@ public enum UDFInspector {
         guard forensicCase.manifest.evidence.contains(evidence) else {
             throw UDFError.invalidResult("The evidence receipt is not part of this case.")
         }
-        let worker = Task.detached(priority: .userInitiated) {
+        let requestedPriority = ForensicWorkExecutionContext.requestedPriority
+        let worker = Task.detached(priority: (requestedPriority ?? .userInitiated).taskPriority) {
+            try ForensicWorkExecutionContext.$requestedPriority.withValue(requestedPriority) {
             let source = try UDFPinnedSource(evidence: evidence, maximumSourceBytes: options.maximumSourceBytes)
             let deadline = ProcessInfo.processInfo.systemUptime + options.timeoutSeconds
             let hashProgress: @Sendable (Int64) throws -> Void = { amount in
@@ -24,6 +26,7 @@ public enum UDFInspector {
                 try Task.checkCancellation()
                 try source.verifyHash(progress: hashProgress)
             })
+            }
         }
         return try await withTaskCancellationHandler {
             // save's latest-pointer rename is the commit boundary. A late

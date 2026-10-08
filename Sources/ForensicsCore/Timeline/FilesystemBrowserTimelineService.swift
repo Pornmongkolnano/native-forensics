@@ -5,8 +5,10 @@ public struct BrowserTimelineResult: Sendable {
     public let events: [TimelineEvent]
     public let receipts: [TimelineArtifactReceipt]
     public let binding: TimelineSourceBinding
-    public init(events: [TimelineEvent], receipts: [TimelineArtifactReceipt], binding: TimelineSourceBinding) {
+    public let parserReceipt: TimelineParserReceipt?
+    public init(events: [TimelineEvent], receipts: [TimelineArtifactReceipt], binding: TimelineSourceBinding, parserReceipt: TimelineParserReceipt? = nil) {
         self.events = events; self.receipts = receipts; self.binding = binding
+        self.parserReceipt = parserReceipt
     }
 }
 
@@ -68,11 +70,19 @@ public struct FilesystemBrowserTimelineService: Sendable {
         return BrowserTimelineResult(events: events,
             receipts: [TimelineArtifactReceipt(file: main, role: "database")]
                 + (input.wal.map { [TimelineArtifactReceipt(file: $0, role: "wal")] } ?? [])
-                + (input.shm.map { [TimelineArtifactReceipt(file: $0, role: "shm")] } ?? []), binding: binding)
+                + (input.shm.map { [TimelineArtifactReceipt(file: $0, role: "shm")] } ?? []), binding: binding,
+            parserReceipt: TimelineParserReceipt(parser: "chromium-history", version: "1", parameters: [
+                "maximumDatabaseBytes": String(ChromiumHistoryParser.maximumDatabaseBytes), "maximumSidecarBytes": String(ChromiumHistoryParser.maximumSidecarBytes),
+                "maximumEvents": String(TimelineLimits.maximumBrowserEvents), "elapsedBudgetSeconds": "10",
+                "WALPolicy": "checksum/salt validation; materialize only through last complete commit; uncommitted tail excluded",
+                "SHMPolicy": "explicit receipt-bound coherence check; not authoritative commit data",
+                "expectedWAL": String(input.expectedWAL), "expectedSHM": String(input.expectedSHM),
+                "timestampEpoch": "integer microseconds since 1601-01-01 UTC", "recordScope": "allocated visits/urls and downloads tables; deleted/free pages excluded"],
+                sourceSHA256: main.sha256, eventCount: events.count))
     }
 }
 
-private final class TimelineExtractScratch {
+final class TimelineExtractScratch {
     let rootURL: URL
     private let parentURL: URL
     private let name = ".native-timeline-extract-\(UUID().uuidString.lowercased())"

@@ -1,8 +1,8 @@
 import AppKit
 import Darwin
+import ForensicsCore
 import SwiftUI
 
-@main
 struct NativeForensicsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.current = self
+        WorkEnergyMonitor.shared.start()
         NSApp.setActivationPolicy(.regular)
         if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: iconURL) {
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lifecycle.prepareForTermination()
         CasePanelService.cancelActivePanels()
         requestedTerminationTask = Task { [weak self] in
+            await ForensicWorkScheduler.shared.close()
             await lifecycle.shutdownAll()
             // Allow SwiftUI's dismissed sheet transition to finish before the
             // AppKit request; never force-kill an in-flight publication.
@@ -74,11 +76,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CasePanelService.cancelActivePanels()
         guard lifecycle.hasActiveWork else { return .terminateNow }
         terminationTask = Task {
+            await ForensicWorkScheduler.shared.close()
             await lifecycle.shutdownAll()
             sender.reply(toApplicationShouldTerminate: true)
             terminationTask = nil
         }
         return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        _ = UIInteractionTiming.shared.writeRequestedReport()
+        WorkEnergyMonitor.shared.stop()
     }
 }
 

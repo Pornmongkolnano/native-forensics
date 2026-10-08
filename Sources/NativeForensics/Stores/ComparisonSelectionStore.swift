@@ -85,7 +85,9 @@ final class ComparisonSelectionStore {
                     var visible: [FilesystemEntry] = [], count = 0
                     for (offset, file) in try index.rows(matching: query).enumerated() {
                         if offset.isMultiple(of: 128) { try Task.checkCancellation() }
-                        guard !file.isDirectory, (0...1_048_576).contains(file.size) else { continue }
+                        // Filename is not format proof. Larger candidates must
+                        // subsequently decode as a verified PDF before disclosure.
+                        guard !file.isDirectory, (0...DocumentLimits.maximumInputBytes).contains(file.size) else { continue }
                         count += 1
                         if visible.count < 100 { visible.append(file) }
                     }

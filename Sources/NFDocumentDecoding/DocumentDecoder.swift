@@ -4,8 +4,8 @@ import ForensicsCore
 import ImageIO
 import PDFKit
 
-enum DocumentDecoder {
-    static func decode(_ source: VerifiedDocument) -> DocumentAnalysis {
+public enum DocumentDecoder {
+    public static func decode(_ source: VerifiedDocument) -> DocumentAnalysis {
         let format = DetectedDocumentFormat.detect(source.data)
         if format == .unknown, source.data.starts(with: Data("%PDF-".utf8)) {
             return failed(source, kind: .pdf, mime: "application/pdf", code: "MALFORMED_PDF")
@@ -30,7 +30,7 @@ enum DocumentDecoder {
     private static func image(_ source: VerifiedDocument, mimeType: String, expectedType: String) -> DocumentAnalysis {
         var pngUnusedIDATBytes = 0
         if expectedType == "public.png" {
-            switch PNGStructureValidator.validate(source.data) {
+            switch DocumentPNGStructureValidator.validate(source.data) {
             case .malformed: return failed(source, kind: .image, mime: mimeType, code: "MALFORMED_IMAGE")
             case .imagePixelLimit: return failed(source, kind: .image, mime: mimeType, code: "IMAGE_PIXEL_LIMIT")
             case .complete(let unused): pngUnusedIDATBytes = unused
@@ -81,7 +81,7 @@ enum DocumentDecoder {
             warnings.append("Raw image dates are file-supplied values. Dates without an explicit offset have no assumed time zone.")
         }
         return DocumentAnalysis(contentKind: .image, mimeType: mimeType, status: .decoded,
-                                sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                 pixelWidth: Int(width), pixelHeight: Int(height), thumbnailPNG: thumbnail,
                                 rawMetadata: metadata.items, warnings: warnings)
     }
@@ -121,7 +121,7 @@ enum DocumentDecoder {
         let thumbnail = pdfThumbnail(source.data)
         if thumbnail == nil { warnings.append("The first PDF page could not produce a bounded thumbnail.") }
         return DocumentAnalysis(contentKind: .pdf, mimeType: "application/pdf", status: .decoded,
-                                sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                 title: metadata.first(where: { $0.name == "PDF.Title" })?.value,
                                 pageCount: pageCount, textPages: pages, thumbnailPNG: thumbnail,
                                 rawMetadata: metadata, warnings: warnings)
@@ -212,7 +212,7 @@ enum DocumentDecoder {
         catch ZIPReaderError.limitExceeded { return failed(source, kind: .archive, mime: "application/zip", code: "ZIP_INSPECTION_LIMIT") }
         catch ZIPReaderError.unsupported {
             return DocumentAnalysis(contentKind: .archive, mimeType: "application/zip", status: .unsupported,
-                                    sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                    sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                     structuralValidation: .signatureOnly,
                                     warnings: ["This ZIP container uses unsupported encryption, compression, splitting, or ZIP64 features. Its structure and contents were not fully validated."])
         }
@@ -221,13 +221,13 @@ enum DocumentDecoder {
             if let office = try OfficeOpenXMLReader.read(archive) {
                 guard office.contentUnitCount > 0 else {
                     return DocumentAnalysis(contentKind: .office, mimeType: office.mimeType, status: .unsupported,
-                                            sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                            sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                             title: office.title, officeFormat: office.format, structuralValidation: .validated,
                                             rawMetadata: office.rawMetadata,
                                             warnings: office.warnings + ["The Office package contains no document text units to inspect."])
                 }
                 return DocumentAnalysis(contentKind: .office, mimeType: office.mimeType, status: .decoded,
-                                        sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                        sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                         title: office.title, officeFormat: office.format,
                                         contentUnitCount: office.contentUnitCount, structuralValidation: .validated,
                                         textPages: office.units, rawMetadata: office.rawMetadata,
@@ -236,7 +236,7 @@ enum DocumentDecoder {
             return archiveText(source, archive: archive)
         } catch OOXMLReaderError.unsupported {
             return DocumentAnalysis(contentKind: .office, mimeType: "application/zip", status: .unsupported,
-                                    sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                    sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                     structuralValidation: .validated,
                                     warnings: ["ZIP structure and CRC values were validated. This Office package uses document encodings or content features that this decoder does not support; no document text was decoded."])
         } catch OOXMLReaderError.limitExceeded {
@@ -289,7 +289,7 @@ enum DocumentDecoder {
         if pages.isEmpty { warnings.append("No supported printable text member was available within the preview limits.") }
         return DocumentAnalysis(contentKind: .archive, mimeType: "application/zip",
                                 status: pages.isEmpty ? .unsupported : .decoded,
-                                sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                 contentUnitCount: members.isEmpty ? nil : members.count,
                                 structuralValidation: .validated, textPages: pages,
                                 rawMetadata: [DocumentRawMetadata(name: "ZIP.EntryCount", value: String(archive.entries.count)),
@@ -302,7 +302,7 @@ enum DocumentDecoder {
         let recognition = LegacyOfficeRecognizer.inspect(source.data)
         return DocumentAnalysis(contentKind: .office, mimeType: recognition.mimeType,
                                 status: recognition.isStructurallyValid ? .unsupported : .failed,
-                                sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                 officeFormat: recognition.format,
                                 structuralValidation: recognition.isStructurallyValid ? .validated : .signatureOnly,
                                 warnings: recognition.warnings,
@@ -317,14 +317,22 @@ enum DocumentDecoder {
     }
 
     private static func textOrUnknown(_ source: VerifiedDocument) -> DocumentAnalysis {
-        guard let decoded = BoundedTextDecoder.decode(source.data, allowLegacyEncoding: true) else {
-            return unsupported(source, kind: .unknown, mime: "application/octet-stream", warning: "No supported readable document signature was detected. The filename extension was not used as proof of content type.")
+        let decoded: DecodedLocalText
+        let text: (value: String, truncated: Bool)
+        if let ascii = BoundedTextDecoder.decodePrintableASCIIPrefix(source.data, maximumBytes: DocumentLimits.maximumTextBytes) {
+            decoded = DecodedLocalText(value: ascii.value, encoding: "UTF-8", encodingWasInferred: false)
+            text = ascii
+        } else {
+            guard let original = BoundedTextDecoder.decode(source.data, allowLegacyEncoding: true) else {
+                return unsupported(source, kind: .unknown, mime: "application/octet-stream", warning: "No supported readable document signature was detected. The filename extension was not used as proof of content type.")
+            }
+            decoded = original
+            text = limitedUTF8(original.value, maximumBytes: DocumentLimits.maximumTextBytes)
         }
-        let text = limitedUTF8(decoded.value, maximumBytes: DocumentLimits.maximumTextBytes)
         var warnings = text.truncated ? ["Text reached the 1 MiB inspection limit."] : []
         if decoded.encodingWasInferred { warnings.append("Windows-1252 display encoding was inferred. Original source bytes and hash remain unchanged.") }
         return DocumentAnalysis(contentKind: .text, mimeType: "text/plain; charset=" + decoded.encoding.lowercased(), status: .decoded,
-                                sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount,
+                                sourceSHA256: source.sha256, sourceByteCount: source.byteCount,
                                 textPages: [DocumentTextPage(pageNumber: 1, text: text.value, isTruncated: text.truncated,
                                                              referenceLabel: "Text document", referenceKind: .document)],
                                 rawMetadata: [DocumentRawMetadata(name: "Text.Encoding", value: decoded.encoding + (decoded.encodingWasInferred ? " (inferred)" : ""))],
@@ -333,12 +341,12 @@ enum DocumentDecoder {
 
     private static func unsupported(_ source: VerifiedDocument, kind: DocumentContentKind, mime: String, warning: String) -> DocumentAnalysis {
         DocumentAnalysis(contentKind: kind, mimeType: mime, status: .unsupported,
-                         sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount, warnings: [warning])
+                         sourceSHA256: source.sha256, sourceByteCount: source.byteCount, warnings: [warning])
     }
 
     private static func failed(_ source: VerifiedDocument, kind: DocumentContentKind, mime: String, code: String) -> DocumentAnalysis {
         DocumentAnalysis(contentKind: kind, mimeType: mime, status: .failed,
-                         sourceSHA256: source.sha256, sourceByteCount: source.input.expectedByteCount, failureCode: code)
+                         sourceSHA256: source.sha256, sourceByteCount: source.byteCount, failureCode: code)
     }
 
     private static func encodePNG(_ image: CGImage) -> Data? {

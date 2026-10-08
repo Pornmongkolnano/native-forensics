@@ -12,10 +12,20 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 
-SCHEMA = 1
+SCHEMA = 3
 BUILD_PATH_POLICY = "configuration-specific-staged-debug-map-policy-v1"
 PRIVATE_PATH_MARKERS = (b"/Users/", b"/private/var/folders/", b"/var/folders/")
 PRODUCT_DIRECTORIES = {
+    "NativeForensics": ("Sources/NativeForensics", "Sources/ForensicsCore", "Sources/NFDecoderIPC", "Sources/CSQLite3"),
+    "NFDocumentDecoder": ("Sources/NFDocumentDecoder", "Sources/NFDocumentDecoding", "Sources/ForensicsCore", "Sources/NFDecoderIPC", "Sources/CSQLite3"),
+    "NFDocumentDecoderXPC": ("Sources/NFDocumentDecoderXPC", "Sources/NFDocumentDecoding", "Sources/ForensicsCore", "Sources/NFDecoderIPC", "Sources/CSQLite3"),
+    "NFDocumentDecoderWorker": ("Sources/NFDocumentDecoderWorker", "Sources/NFDocumentDecoding", "Sources/ForensicsCore", "Sources/NFDecoderIPC", "Sources/CSQLite3"),
+}
+V2_PRODUCT_DIRECTORIES = {name: value for name, value in PRODUCT_DIRECTORIES.items() if name != "NFDocumentDecoderWorker"}
+# The schema-2 service parsed in-process. Schema 3 brokers only bounded IPC;
+# the new worker independently binds the native parsing target's complete graph.
+PRODUCT_DIRECTORIES["NFDocumentDecoderXPC"] = ("Sources/NFDocumentDecoderXPC", "Sources/ForensicsCore", "Sources/NFDecoderIPC", "Sources/CSQLite3")
+LEGACY_PRODUCT_DIRECTORIES = {
     "NativeForensics": ("Sources/NativeForensics", "Sources/ForensicsCore", "Sources/CSQLite3"),
     "NFDocumentDecoder": ("Sources/NFDocumentDecoder", "Sources/ForensicsCore", "Sources/CSQLite3"),
 }
@@ -23,6 +33,12 @@ RECIPES = {"Package.swift", "script/package_app.py", "script/validate_app_bundle
            "script/source_provenance.py", "script/build_and_run.sh"}
 SQLITE_INPUTS = {"Sources/CSQLite3/shim.h", "Sources/CSQLite3/module.modulemap"}
 APP_ASSETS = {"Assets/AppIcon/AppIcon.icns", "Assets/AppIcon/AppIcon.png", "Assets/AppIcon/README.md"}
+XPC_INFO_INPUT = "script/specs/document_xpc_info.plist"
+XPC_ENTITLEMENTS_INPUT = "script/specs/document_xpc_entitlements.plist"
+WORKER_ENTITLEMENTS_INPUT = "script/specs/document_worker_entitlements.plist"
+V2_XPC_INPUTS = {XPC_INFO_INPUT, XPC_ENTITLEMENTS_INPUT}
+XPC_INPUTS = V2_XPC_INPUTS | {WORKER_ENTITLEMENTS_INPUT}
+IPC_INPUTS = {"Sources/NFDecoderIPC/NFDecoderIPC.m", "Sources/NFDecoderIPC/include/NFDecoderIPC.h"}
 SOURCE_EXTENSIONS = {".swift", ".h", ".c", ".m", ".mm", ".cpp", ".modulemap"}
 SAFE_PATH = re.compile(r"[A-Za-z0-9._/-]+\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -48,16 +64,27 @@ def safe_relative(name: str) -> bool:
     return not path.is_absolute() and ".." not in path.parts and path.as_posix() == name
 
 
-def required_inputs(product: str) -> set[str]:
-    if product not in PRODUCT_DIRECTORIES:
+def product_directories(product: str, schema: int = SCHEMA) -> tuple[str, ...]:
+    products = (PRODUCT_DIRECTORIES if schema == SCHEMA else V2_PRODUCT_DIRECTORIES if schema == 2
+                else LEGACY_PRODUCT_DIRECTORIES if schema == 1 else {})
+    if product not in products:
         raise ValueError("Unknown source-provenance product.")
-    return RECIPES | SQLITE_INPUTS | (APP_ASSETS if product == "NativeForensics" else set())
+    return products[product]
 
 
-def source_graph(root: Path, product: str) -> dict[str, str]:
+def required_inputs(product: str, schema: int = SCHEMA) -> set[str]:
+    product_directories(product, schema)
+    return (RECIPES | SQLITE_INPUTS | (APP_ASSETS if product == "NativeForensics" else set())
+            | (IPC_INPUTS if schema >= 2 else set())
+            | ((XPC_INPUTS if schema == SCHEMA else V2_XPC_INPUTS) if schema >= 2
+               and product in {"NativeForensics", "NFDocumentDecoderXPC"} else set())
+            | ({WORKER_ENTITLEMENTS_INPUT} if product == "NFDocumentDecoderWorker" else set()))
+
+
+def source_graph(root: Path, product: str, schema: int = SCHEMA) -> dict[str, str]:
     root = root.resolve(strict=True)
-    paths = set(required_inputs(product))
-    for name in PRODUCT_DIRECTORIES[product]:
+    paths = set(required_inputs(product, schema))
+    for name in product_directories(product, schema):
         directory = root / name
         if directory.is_symlink() or not directory.is_dir():
             raise ValueError("A required source graph directory is missing or linked.")
@@ -75,7 +102,7 @@ def source_graph(root: Path, product: str) -> dict[str, str]:
         files[name] = file_sha256(path)
     # Reject additions/removals during enumeration; a caller also rechecks this
     # complete graph after staging. Missing required inputs never become optional.
-    validate_source_receipt({"sourceGraphSchemaVersion": SCHEMA, "product": product,
+    validate_source_receipt({"sourceGraphSchemaVersion": schema, "product": product,
         "sourceSha256": files, "sourceGraphSha256": graph_digest(product, files)}, product)
     return files
 
@@ -87,24 +114,26 @@ def make_source_receipt(root: Path, product: str) -> dict:
 
 
 def validate_source_receipt(receipt: dict, product: str, root: Path | None = None) -> dict[str, str]:
-    if (not isinstance(receipt, dict) or receipt.get("sourceGraphSchemaVersion") != SCHEMA
+    if (not isinstance(receipt, dict) or receipt.get("sourceGraphSchemaVersion") not in {1, 2, SCHEMA}
             or receipt.get("product") != product):
         raise ValueError("Invalid or unsupported complete source graph receipt.")
+    schema = receipt["sourceGraphSchemaVersion"]
     files = receipt.get("sourceSha256")
-    if not isinstance(files, dict) or not required_inputs(product).issubset(files):
+    if not isinstance(files, dict) or not required_inputs(product, schema).issubset(files):
         raise ValueError("The complete source graph is missing required inputs.")
-    prefixes = tuple(value + "/" for value in PRODUCT_DIRECTORIES[product])
-    required = required_inputs(product)
+    prefixes = tuple(value + "/" for value in product_directories(product, schema))
+    required = required_inputs(product, schema)
     for name, digest in files.items():
         if (not safe_relative(name) or not isinstance(digest, str) or not HASH.fullmatch(digest)
                 or (name not in required and not (name.startswith(prefixes) and PurePosixPath(name).suffix in SOURCE_EXTENSIONS))):
             raise ValueError("The complete source graph has an invalid input or digest.")
-    for directory in PRODUCT_DIRECTORIES[product][:2]:
-        if not any(name.startswith(directory + "/") and name.endswith(".swift") for name in files):
-            raise ValueError("The complete source graph is missing a target's Swift inputs.")
+    for directory in product_directories(product, schema):
+        extensions = {".h", ".modulemap"} if directory.endswith("/CSQLite3") else {".m"} if directory.endswith("/NFDecoderIPC") else {".swift"}
+        if not any(name.startswith(directory + "/") and PurePosixPath(name).suffix in extensions for name in files):
+            raise ValueError("The complete source graph is missing a target's source inputs.")
     if receipt.get("sourceGraphSha256") != graph_digest(product, files):
         raise ValueError("The complete source graph digest differs from its inventory.")
-    if root is not None and source_graph(root, product) != files:
+    if root is not None and source_graph(root, product, schema) != files:
         raise ValueError("Corresponding complete source graph changed, is missing, or has extra inputs.")
     return files
 

@@ -7,6 +7,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case filesystem
     case recovery
     case optical
+    case apfs
     case contentSearch
     case comparison
     case timeline
@@ -20,6 +21,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .filesystem: "File Views"
         case .recovery: "Recovered Files"
         case .optical: "Optical History"
+        case .apfs: "APFS Files"
         case .contentSearch: "Content Search"
         case .comparison: "Compare Evidence"
         case .timeline: "Timeline"
@@ -33,6 +35,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .filesystem: "list.bullet.rectangle"
         case .recovery: "arrow.uturn.backward.circle"
         case .optical: "opticaldisc"
+        case .apfs: "externaldrive"
         case .contentSearch: "doc.text.magnifyingglass"
         case .comparison: "doc.on.doc"
         case .timeline: "clock"
@@ -51,6 +54,7 @@ struct EvidenceRow: Identifiable {
 @MainActor
 @Observable
 final class WorkspaceStore {
+    typealias RowSearch = @Sendable (FilesystemSearchIndex, String, FilesystemCategory) throws -> [FilesystemEntry]
     var currentCase: ForensicCase?
     var section: WorkspaceSection? = .evidence
     var selectedEvidenceID: UUID? {
@@ -64,6 +68,8 @@ final class WorkspaceStore {
             refreshFilesystemSelection()
             recovery.configure(evidence: selectedEvidence, in: currentCase)
             optical.configure(evidence: selectedEvidence, in: currentCase)
+            if section == .apfs { apfs.configure(evidence: selectedEvidence, in: currentCase) }
+            else { apfs.reset() }
         }
     }
     var searchText = ""
@@ -77,6 +83,10 @@ final class WorkspaceStore {
     var errorMessage: String?
 
     var filesystemResults: [UUID: EnumerationResult] = [:]
+    @ObservationIgnored var filesystemListingRetention = FilesystemListingRetention()
+    @ObservationIgnored var filesystemListingGenerations: [UUID: UUID] = [:]
+    var efsKeyInput: EFSKeyInputStore?
+    @ObservationIgnored var efsClosingTask: Task<Void, Never>?
     var filesystemRows: [FilesystemEntry] = []
     var filesystemFilesByID: [String: FilesystemEntry] = [:]
     var selectedFileID: String? {
@@ -91,7 +101,9 @@ final class WorkspaceStore {
         }
     }
     var filesystemSearchText = "" {
-        didSet { if oldValue != filesystemSearchText { refreshFilesystemRows() } }
+        didSet {
+            if oldValue != filesystemSearchText { filesystemSearchBindingTrialID = refreshFilesystemRows() }
+        }
     }
     var filesystemCategory: FilesystemCategory = .all {
         didSet { if oldValue != filesystemCategory { refreshFilesystemRows() } }
@@ -122,12 +134,17 @@ final class WorkspaceStore {
     @ObservationIgnored var engineTask: Task<Void, Never>?
     @ObservationIgnored var engineJobID: UUID?
     @ObservationIgnored var filesystemLoadTask: Task<Void, Never>?
+    @ObservationIgnored var filesystemLoadJobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var filesystemLoadID: UUID?
     @ObservationIgnored var filesystemSelectionID: UUID?
     @ObservationIgnored var filesystemSelectionCaseID: UUID?
     @ObservationIgnored var filesystemSearchIndex = FilesystemSearchIndex(files: [])
     @ObservationIgnored var filesystemSearchTask: Task<Void, Never>?
+    @ObservationIgnored var filesystemSearchJobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var filesystemSearchID: UUID?
+    @ObservationIgnored var filesystemSearchCancellationOutcomes: [UUID: UIInteractionOutcome] = [:]
+    @ObservationIgnored private var filesystemSearchBindingTrialID: UInt64?
+    @ObservationIgnored let filesystemUITiming: UIInteractionTiming
 
     @ObservationIgnored var filesystemBatchPanelTask: Task<Void, Never>?
     @ObservationIgnored var derivedNavigationTask: Task<Void, Never>?
@@ -135,31 +152,65 @@ final class WorkspaceStore {
     @ObservationIgnored private var inspectionTask: Task<Void, Never>?
     @ObservationIgnored private var inspectionID: UUID?
     @ObservationIgnored let engineHelperURL: URL
-    let assistant = AssistantAnalysisStore()
-    let contentPreview = ContentPreviewStore()
+    @ObservationIgnored let workScheduler: ForensicWorkScheduler
+    @ObservationIgnored let filesystemRowSearch: RowSearch
+    let assistant: AssistantAnalysisStore
+    let contentPreview: ContentPreviewStore
     let caseWork = CaseWorkWorkspaceStore()
     let recovery: RecoveryWorkspaceStore
     let optical: OpticalWorkspaceStore
     let filesystemDocumentPreview: FilesystemDocumentPreviewStore
     let filesystemBatchExport: FilesystemBatchExportStore
     let comparisonSelection = ComparisonSelectionStore()
-    let comparisonAssistant = MultiEvidenceAnalysisStore()
+    let comparisonAssistant: MultiEvidenceAnalysisStore
     let contentIndex: ContentIndexWorkspaceStore
     let timeline: TimelineWorkspaceStore
-    let caseIntegrity = CaseIntegrityWorkspaceStore()
+    let caseIntegrity: CaseIntegrityWorkspaceStore
+    let apfs: APFSWorkspaceStore
 
     init(helperURL: URL? = nil, recovery: RecoveryWorkspaceStore? = nil, optical: OpticalWorkspaceStore? = nil,
-         filesystemBatchExport: FilesystemBatchExportStore? = nil) {
-        self.optical = optical ?? OpticalWorkspaceStore()
-        self.recovery = recovery ?? RecoveryWorkspaceStore()
+         filesystemBatchExport: FilesystemBatchExportStore? = nil, apfs: APFSWorkspaceStore? = nil,
+         scheduler: ForensicWorkScheduler = .shared, rowSearch: RowSearch? = nil,
+         uiTiming: UIInteractionTiming = .shared) {
+        workScheduler = scheduler
+        filesystemUITiming = uiTiming
+        filesystemRowSearch = rowSearch ?? { try FilesystemCategory.rows(in: $0, matching: $1, category: $2) }
+        assistant = AssistantAnalysisStore(scheduler: scheduler)
+        contentPreview = ContentPreviewStore(scheduler: scheduler)
+        caseIntegrity = CaseIntegrityWorkspaceStore(scheduler: scheduler)
+        comparisonAssistant = MultiEvidenceAnalysisStore(scheduler: scheduler)
+        self.apfs = apfs ?? APFSWorkspaceStore(scheduler: scheduler)
+        self.optical = optical ?? OpticalWorkspaceStore(scheduler: scheduler)
+        self.recovery = recovery ?? RecoveryWorkspaceStore(scheduler: scheduler)
         let resolvedHelperURL = helperURL ?? Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/NFTSKEngine")
         engineHelperURL = resolvedHelperURL
-        contentIndex = ContentIndexWorkspaceStore(engineHelperURL: resolvedHelperURL)
-        timeline = TimelineWorkspaceStore(engineHelperURL: resolvedHelperURL)
-        filesystemDocumentPreview = FilesystemDocumentPreviewStore(engineHelperURL: resolvedHelperURL)
-        self.filesystemBatchExport = filesystemBatchExport ?? FilesystemBatchExportStore(engineHelperURL: resolvedHelperURL)
+        contentIndex = ContentIndexWorkspaceStore(engineHelperURL: resolvedHelperURL, scheduler: scheduler)
+        timeline = TimelineWorkspaceStore(engineHelperURL: resolvedHelperURL, scheduler: scheduler)
+        filesystemDocumentPreview = FilesystemDocumentPreviewStore(engineHelperURL: resolvedHelperURL, scheduler: scheduler)
+        self.filesystemBatchExport = filesystemBatchExport ?? FilesystemBatchExportStore(engineHelperURL: resolvedHelperURL, scheduler: scheduler)
         assistant.onAnalysisSaved = { [weak self] _ in self?.caseWork.refresh() }
+        self.apfs.caseDidUpdate = { [weak self] expected, updated in
+            guard let self, !self.isClosing, self.currentCase?.manifest.id == updated.manifest.id,
+                  self.currentCase?.bundleURL == updated.bundleURL,
+                  self.currentCase?.manifest == expected.manifest,
+                  self.selectedEvidenceID == self.apfs.selectedEvidenceID else { return false }
+            self.currentCase = updated
+            self.caseIntegrity.configure(forensicCase: updated)
+            self.refreshDerivedWorkspaces()
+            return true
+        }
+    }
+
+    /// The controlled editor gets the trial produced by this exact changed value.
+    /// A generic refresh, no-op or later AX/programmatic setter cannot borrow it.
+    func setFilesystemSearchTextFromEditor(_ text: String) -> FilesystemSearchBindingReceipt {
+        guard text != filesystemSearchText else {
+            return FilesystemSearchBindingReceipt(changed: false, trialID: nil)
+        }
+        filesystemSearchBindingTrialID = nil
+        filesystemSearchText = text
+        return FilesystemSearchBindingReceipt(changed: true, trialID: filesystemSearchBindingTrialID)
     }
 
     var isBusy: Bool {
@@ -172,14 +223,19 @@ final class WorkspaceStore {
             || comparisonAssistant.isPresented || comparisonAssistant.hasActiveWork
             || contentIndex.isWorking || timeline.isWorking || caseIntegrity.isWorking
             || derivedNavigationTask != nil
+            || apfs.hasActiveWork
+            || efsKeyInput != nil || efsClosingTask != nil
     }
     var hasActiveWork: Bool {
         inspectionTask != nil || engineTask != nil || filesystemLoadTask != nil || filesystemSearchTask != nil
+            || !filesystemLoadJobs.isEmpty || !filesystemSearchJobs.isEmpty
             || assistant.hasActiveWork || contentPreview.hasActiveWork || caseWork.hasActiveWork || recovery.hasActiveWork || optical.hasActiveWork || filesystemDocumentPreview.hasActiveWork || filesystemBatchExport.hasActiveWork
             || filesystemBatchPanelTask != nil
             || comparisonSelection.hasActiveWork || comparisonAssistant.hasActiveWork
             || contentIndex.hasActiveWork || timeline.hasActiveWork || caseIntegrity.hasActiveWork
             || derivedNavigationTask != nil
+            || apfs.hasActiveWork
+            || efsKeyInput?.hasActiveWork == true || efsClosingTask != nil
     }
     var canInspectImage: Bool { currentCase != nil && !isBusy && caseWork.canChangeSelection && recovery.canChangeSelection }
 
@@ -257,24 +313,31 @@ final class WorkspaceStore {
         inspectionFilename = url.lastPathComponent
         progress = nil
         isInspecting = true
-        statusMessage = "Reading selected file bytes…"
+        statusMessage = "Waiting for the application workflow slot…"
         inspectionTask = Task { [weak self] in
             guard let self else { return }
             var recordWasSaved = false
+            var permit: ForensicWorkPermit?
             do {
-                let image = try await ImageInspector.inspect(url: url) { [weak self] update in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.inspectionID == jobID, self.isInspecting else { return }
-                        self.progress = update
+                let admitted = try await self.workScheduler.acquire(.imageInspection)
+                permit = admitted
+                try Task.checkCancellation()
+                self.statusMessage = "Reading selected file bytes…"
+                let image = try await admitted.run { [weak self] in
+                    try await ImageInspector.inspect(url: url) { [weak self] update in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.inspectionID == jobID, self.isInspecting else { return }
+                            self.progress = update
+                        }
                     }
                 }
                 try Task.checkCancellation()
                 // Waiting for the case lock and publishing the manifest must not
                 // block the UI actor. Once started, this atomic commit is drained
                 // during close/quit even if cancellation arrives meanwhile.
-                let updated = try await Task.detached(priority: .utility) {
+                let updated = try await admitted.runToCompletion {
                     try CaseStore.adding(image: image, to: forensicCase)
-                }.value
+                }
                 recordWasSaved = true
                 self.currentCase = updated
                 self.section = .evidence
@@ -286,10 +349,14 @@ final class WorkspaceStore {
                 self.statusMessage = recordWasSaved
                     ? "The evidence record was saved before cancellation completed."
                     : "Inspection cancelled. No evidence record was added."
+            } catch let error as ForensicsError where error == .duplicateEvidence {
+                self.present(error)
+                self.statusMessage = "Source already recorded. No new evidence record was added."
             } catch {
                 self.present(error)
                 self.statusMessage = "Inspection failed. Reopen the case to confirm its saved evidence records before retrying."
             }
+            if let permit { await permit.release() }
             guard self.inspectionID == jobID else { return }
             self.isInspecting = false
             self.inspectionFilename = nil
@@ -309,6 +376,7 @@ final class WorkspaceStore {
     /// another operation while the window/app is closing.
     func prepareForClosing() {
         isClosing = true
+        closeEFSKeyInput()
         assistant.prepareForTermination()
         comparisonAssistant.prepareForTermination()
         derivedNavigationTask?.cancel()
@@ -326,6 +394,7 @@ final class WorkspaceStore {
         _ = contentIndex.beginShutdown()
         _ = timeline.beginShutdown()
         _ = caseIntegrity.beginShutdown()
+        _ = apfs.beginShutdown()
     }
 
     /// Awaiting the owning tasks also drains their detached workers and native
@@ -336,7 +405,9 @@ final class WorkspaceStore {
                        assistant.beginShutdown(), contentPreview.beginShutdown(), caseWork.beginShutdown(), recovery.beginShutdown(), optical.beginShutdown(),
                        filesystemDocumentPreview.beginShutdown(), filesystemBatchExport.beginShutdown(), filesystemBatchPanelTask,
                        comparisonSelection.beginShutdown(), comparisonAssistant.beginShutdown(), contentIndex.beginShutdown(),
-                       timeline.beginShutdown(), caseIntegrity.beginShutdown(), derivedNavigationTask].compactMap { $0 }
+                       timeline.beginShutdown(), caseIntegrity.beginShutdown(), apfs.beginShutdown(), derivedNavigationTask].compactMap { $0 }
+            + Array(filesystemLoadJobs.values) + Array(filesystemSearchJobs.values)
+            + [efsClosingTask].compactMap { $0 }
         cancelCurrentJob()
         return pending
     }
@@ -355,6 +426,7 @@ final class WorkspaceStore {
         filesystemDocumentPreview.reset()
         filesystemBatchExport.reset()
         optical.reset()
+        apfs.reset(reopen: true)
         recovery.reset()
         contentPreview.reset()
         _ = caseWork.reset()
@@ -363,6 +435,8 @@ final class WorkspaceStore {
         filesystemSelectionID = nil
         filesystemSelectionCaseID = nil
         filesystemResults = [:]
+        filesystemListingRetention.removeAll()
+        filesystemListingGenerations = [:]
         filesystemRows = []
         filesystemFilesByID = [:]
         selectedFileID = nil

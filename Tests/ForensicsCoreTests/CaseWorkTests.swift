@@ -541,6 +541,231 @@ struct CaseWorkTests {
             #expect(try Data(contentsOf: target) == marker)
         }
     }
+    @Test("Faults at each immutable publication boundary preserve old bytes and report committed uncertainty",
+          arguments: CasePersistenceCheckpoint.allCases)
+    func persistenceBoundaries(_ checkpoint: CasePersistenceCheckpoint) async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let old = try fixture.analysis()
+        try CaseWorkStore.saveAnalysis(old, in: fixture.caseURL)
+        let oldBytes = try Data(contentsOf: fixture.recordURL(old.id, .analysis))
+        let manifestBytes = try Data(contentsOf: fixture.manifestURL)
+        let sourceBytes = try Data(contentsOf: fixture.source)
+        let record = try fixture.analysis(prompt: String(repeating: "owned synthetic payload ", count: 8_000))
+        var observedWrite = 0
+        let failure = Result {
+            try CaseWorkStore.saveAnalysisForTesting(record, in: fixture.caseURL) { boundary, written in
+                if boundary == .afterWriteChunk { observedWrite = written }
+                if boundary == checkpoint { throw POSIXError(.ENOSPC) }
+            }
+        }
+        let committed = [.afterRename, .beforeDirectoryFlush, .afterDirectoryFlush].contains(checkpoint)
+        if case .success = failure { Issue.record("The injected persistence fault was not observed") }
+        if committed {
+            if case .failure(let error) = failure {
+                #expect(error as? CasePublicationError == .publishedButDurabilityUnconfirmed(recordID: record.id))
+            }
+            #expect(try CaseWorkStore.loadAnalysis(id: record.id, in: fixture.caseURL) == record)
+            #expect(throws: CaseWorkError.alreadyExists) { try CaseWorkStore.saveAnalysis(record, in: fixture.caseURL) }
+        } else {
+            #expect(try CaseWorkStore.loadAnalysis(id: record.id, in: fixture.caseURL) == nil)
+        }
+        if checkpoint == .afterWriteChunk { #expect(observedWrite == 65_536) }
+        #expect(try Data(contentsOf: fixture.recordURL(old.id, .analysis)) == oldBytes)
+        #expect(try Data(contentsOf: fixture.manifestURL) == manifestBytes)
+        #expect(try Data(contentsOf: fixture.source) == sourceBytes)
+        #expect(try fixture.recordNames(.analysis).allSatisfy { !$0.hasSuffix(".tmp") })
+    }
+
+    @Test("Explicit migration preserves exact old manifest and work bytes; rollback is exact and offline")
+    func explicitManifestMigration() async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let record = try fixture.analysis()
+        try CaseWorkStore.saveAnalysis(record, in: fixture.caseURL)
+        // Original noncanonical formatting is intentionally retained in backup.
+        let originalObject = try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.manifestURL))
+        let originalBytes = try JSONSerialization.data(withJSONObject: originalObject, options: [.prettyPrinted])
+        try originalBytes.write(to: fixture.manifestURL)
+        let original = try CaseStore.open(at: fixture.caseURL)
+        let recordBytes = try Data(contentsOf: fixture.recordURL(record.id, .analysis))
+        let sourceBytes = try Data(contentsOf: fixture.source)
+        let migrated = try CaseStore.migrateToSchema2(original)
+        #expect(migrated.manifest.schemaVersion == 2)
+        let migration = try #require(migrated.manifest.provenance?.migration)
+        #expect(migration.originalManifestSHA256 == CaseWorkFixture.hash(originalBytes))
+        #expect(try Data(contentsOf: fixture.caseURL.appendingPathComponent("migrations").appendingPathComponent(migration.backupFilename)) == originalBytes)
+        #expect(try CaseWorkStore.loadAnalysis(id: record.id, in: fixture.caseURL) == record)
+        #expect(try Data(contentsOf: fixture.recordURL(record.id, .analysis)) == recordBytes)
+        #expect(try Data(contentsOf: fixture.source) == sourceBytes)
+        let audit = try await CaseIntegrityAuditor.audit(forensicCase: migrated)
+        #expect(!audit.hasFailures)
+        #expect(audit.checks.contains { $0.code == "migration.backup.valid" && $0.status == .pass })
+        // A migration and rollback never need online evidence bytes.
+        try FileManager.default.removeItem(at: fixture.source)
+        let restored = try CaseStore.rollbackSchema2Migration(migrated)
+        #expect(restored.manifest == original.manifest)
+        #expect(try Data(contentsOf: fixture.manifestURL) == originalBytes)
+        #expect(try CaseWorkStore.loadAnalysis(id: record.id, in: fixture.caseURL) == record)
+    }
+
+    @Test("Manifest migration faults distinguish unpublished staging from committed uncertainty",
+          arguments: [CasePersistenceCheckpoint.beforeWrite, .afterFileFlush, .beforeRename, .afterRename, .beforeDirectoryFlush])
+    func migrationFaults(_ checkpoint: CasePersistenceCheckpoint) async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let originalBytes = try Data(contentsOf: fixture.manifestURL)
+        let outcome = Result {
+            try CaseStore.migrateToSchema2ForTesting(fixture.forensicCase) { boundary, _ in
+                if boundary == checkpoint { throw POSIXError(.EIO) }
+            }
+        }
+        if case .success = outcome { Issue.record("The injected migration failure was not observed") }
+        let current = try CaseStore.open(at: fixture.caseURL)
+        let committed = [.afterRename, .beforeDirectoryFlush].contains(checkpoint)
+        if committed {
+            #expect(current.manifest.schemaVersion == 2)
+            if case .failure(let error) = outcome {
+                #expect(error as? CaseManifestPublicationError == .publishedButDurabilityUnconfirmed(caseID: fixture.forensicCase.manifest.id))
+            }
+            _ = try CaseStore.rollbackSchema2Migration(current)
+        } else { #expect(current.manifest.schemaVersion == 1) }
+        #expect(try Data(contentsOf: fixture.manifestURL) == originalBytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.caseURL.path).allSatisfy { !$0.hasSuffix(".tmp") })
+    }
+
+    @Test("Reconstructible job options and ordered source hashes persist exactly; stale and duplicate jobs refuse")
+    func jobProvenanceRoundtrip() async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let job = try CaseJobProvenance.enumeration(evidence: fixture.evidence, result: fixture.result,
+            startedAt: fixture.result.savedAt.addingTimeInterval(-1.125), executableSHA256: String(repeating: "a", count: 64))
+        #expect(throws: CaseProvenanceError.migrationRequired) { try CaseStore.recording(job: job, in: fixture.forensicCase) }
+        let migrated = try CaseStore.migrateToSchema2(fixture.forensicCase)
+        let recorded = try CaseStore.recording(job: job, in: migrated)
+        let reopened = try CaseStore.open(at: fixture.caseURL)
+        #expect(reopened.manifest == recorded.manifest)
+        #expect(reopened.manifest.provenance?.jobs == [job])
+        #expect(job.isPartial)
+        #expect(job.optionsJSON.contains("Asia/Bangkok"))
+        #expect(job.warnings == ["private diagnostic [selected-source-0]"])
+        #expect(!job.optionsJSON.contains(fixture.source.path))
+        #expect(job.sourceHashes.map(\.sha256) == [fixture.evidence.sha256])
+        #expect(job.component.executableSHA256 == String(repeating: "a", count: 64))
+        #expect(throws: ForensicsError.staleCase) { try CaseStore.recording(job: job, in: migrated) }
+        #expect(throws: CaseWorkError.alreadyExists) { try CaseStore.recording(job: job, in: recorded) }
+        #expect(throws: CaseProvenanceError.rollbackWouldDiscardChanges) { try CaseStore.rollbackSchema2Migration(recorded) }
+    }
+
+    @Test("Migration backup corruption, symlink substitution and added evidence refuse unsafe rollback", arguments: ["bytes", "link", "evidence"])
+    func migrationTamperAndRollback(_ mode: String) async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let migrated = try CaseStore.migrateToSchema2(fixture.forensicCase)
+        let receipt = try #require(migrated.manifest.provenance?.migration)
+        let backup = fixture.caseURL.appendingPathComponent("migrations").appendingPathComponent(receipt.backupFilename)
+        let manifestBytes = try Data(contentsOf: fixture.manifestURL)
+        if mode == "evidence" {
+            let extra = fixture.directory.appendingPathComponent("another.dd")
+            try Data("another controlled source".utf8).write(to: extra)
+            let inspected = try await ImageInspector.inspect(url: extra, progress: { _ in })
+            let updated = try CaseStore.adding(image: inspected, to: migrated)
+            #expect(updated.manifest.schemaVersion == 2)
+            #expect(updated.manifest.provenance == migrated.manifest.provenance)
+            #expect(throws: CaseProvenanceError.rollbackWouldDiscardChanges) { try CaseStore.rollbackSchema2Migration(updated) }
+            #expect(try CaseStore.open(at: fixture.caseURL).manifest == updated.manifest)
+        } else {
+            try FileManager.default.removeItem(at: backup)
+            if mode == "bytes" { try Data("corrupt original".utf8).write(to: backup) }
+            else { try FileManager.default.createSymbolicLink(at: backup, withDestinationURL: fixture.source) }
+            #expect(throws: (any Error).self) { try CaseStore.open(at: fixture.caseURL) }
+            #expect(try Data(contentsOf: fixture.manifestURL) == manifestBytes)
+        }
+    }
+
+    @Test("Staging or final-record swaps never report a successful immutable publication",
+          arguments: ["beforeRenameLink", "beforeRenameBytes", "afterRenameBytes", "afterRenameLink"])
+    func persistenceIdentitySwap(_ mode: String) async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let previous = try fixture.analysis()
+        try CaseWorkStore.saveAnalysis(previous, in: fixture.caseURL)
+        let previousBytes = try Data(contentsOf: fixture.recordURL(previous.id, .analysis))
+        let sourceBytes = try Data(contentsOf: fixture.source)
+        let manifestBytes = try Data(contentsOf: fixture.manifestURL)
+        let record = try fixture.analysis()
+        let before = mode.hasPrefix("before")
+        let outcome = Result {
+            try CaseWorkStore.saveAnalysisForTesting(record, in: fixture.caseURL) { boundary, _ in
+                guard boundary == (before ? .beforeRename : .afterRename) else { return }
+                let target: URL
+                if before {
+                    let name = try #require(try FileManager.default.contentsOfDirectory(atPath: fixture.directoryURL(.analysis).path)
+                        .first { $0.hasPrefix(".casework-") && $0.hasSuffix(".tmp") })
+                    target = fixture.directoryURL(.analysis).appendingPathComponent(name)
+                } else { target = fixture.recordURL(record.id, .analysis) }
+                try FileManager.default.removeItem(at: target)
+                if mode.hasSuffix("Link") { try FileManager.default.createSymbolicLink(at: target, withDestinationURL: fixture.source) }
+                else { try Data("replacement marker".utf8).write(to: target) }
+            }
+        }
+        if case .success = outcome { Issue.record("Unsafe swapped bytes were accepted as a committed record") }
+        if case .failure(let error) = outcome {
+            if before { #expect(error as? CaseWorkError == .changedDuringOperation) }
+            else { #expect(error as? CasePublicationError == .publishedButDurabilityUnconfirmed(recordID: record.id)) }
+        }
+        #expect(try Data(contentsOf: fixture.recordURL(previous.id, .analysis)) == previousBytes)
+        #expect(try Data(contentsOf: fixture.source) == sourceBytes)
+        #expect(try Data(contentsOf: fixture.manifestURL) == manifestBytes)
+        if before { #expect(try CaseWorkStore.loadAnalysis(id: record.id, in: fixture.caseURL) == nil) }
+    }
+
+    @Test("Migration backup faults never expose truncated final JSON or alter the original case",
+          arguments: CasePersistenceCheckpoint.allCases)
+    func migrationBackupFaults(_ checkpoint: CasePersistenceCheckpoint) async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        var object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.manifestURL)) as? [String: Any])
+        object["preservedLegacyExtension"] = String(repeating: "owned synthetic padding", count: 8_000)
+        let originalBytes = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted])
+        try originalBytes.write(to: fixture.manifestURL)
+        let original = try CaseStore.open(at: fixture.caseURL)
+        let sourceBytes = try Data(contentsOf: fixture.source)
+        let outcome = Result {
+            try CaseStore.migrateToSchema2ForTestingBackup(original) { boundary, _ in
+                if boundary == checkpoint { throw POSIXError(.ENOSPC) }
+            }
+        }
+        if case .success = outcome { Issue.record("The injected backup persistence failure was not observed") }
+        #expect(try CaseStore.open(at: fixture.caseURL).manifest == original.manifest)
+        #expect(try Data(contentsOf: fixture.manifestURL) == originalBytes)
+        #expect(try Data(contentsOf: fixture.source) == sourceBytes)
+        let directory = fixture.caseURL.appendingPathComponent("migrations")
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(names.allSatisfy { !$0.hasSuffix(".tmp") })
+        for name in names { #expect(try Data(contentsOf: directory.appendingPathComponent(name)) == originalBytes) }
+        let afterBackupCommit = [.afterRename, .beforeDirectoryFlush, .afterDirectoryFlush].contains(checkpoint)
+        #expect(names.count == (afterBackupCommit ? 1 : 0))
+    }
+
+    @Test("Case and work operations reject a user-created symbolic-link ancestor")
+    func linkedCaseAncestor() async throws {
+        let fixture = try await CaseWorkFixture.make()
+        defer { fixture.remove() }
+        let parent = fixture.directory.deletingLastPathComponent()
+        let alias = parent.appendingPathComponent("case-alias-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: alias) }
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: fixture.directory)
+        let aliasedCase = alias.appendingPathComponent(fixture.caseURL.lastPathComponent)
+        let manifest = try Data(contentsOf: fixture.manifestURL)
+        #expect(throws: (any Error).self) { try CaseStore.open(at: aliasedCase) }
+        #expect(throws: (any Error).self) { try CaseStore.create(name: "Unintended", in: alias) }
+        #expect(throws: CaseWorkError.invalidCase) { try CaseWorkStore.saveAnalysis(fixture.analysis(), in: aliasedCase) }
+        #expect(!FileManager.default.fileExists(atPath: fixture.directory.appendingPathComponent("Unintended.nativecase").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.directoryURL(.analysis).path))
+        #expect(try Data(contentsOf: fixture.manifestURL) == manifest)
+    }
+
 }
 
 private enum CaseWorkSaveOutcome: Equatable, Sendable { case saved, refused(CaseWorkError), otherFailure }

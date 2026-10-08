@@ -10,7 +10,7 @@ struct ComparisonSelectionTests {
     func selectionAndBudget() async {
         let store = ComparisonSelectionStore()
         let files = [file("a", "หลักฐาน.txt"), file("b", "other.txt"),
-                     file("folder", "folder.txt", directory: true), file("large", "large.txt", size: 1_048_577)]
+                     file("folder", "folder.txt", directory: true), file("large", "large.txt", size: DocumentLimits.maximumInputBytes + 1)]
         store.configure(result: result(files))
         await store.waitForSearch()
         #expect(store.rows == Array(files.prefix(2)))

@@ -27,7 +27,7 @@ struct TimelineWorkspaceView: View {
                     Button("Build Filesystem", action: store.loadFilesystem).disabled(!store.canLoad)
                     Button("Export Reports…", action: store.chooseExport).disabled(!store.canExport)
                 }
-                Text("Selected evidence only · recorded filesystem epochs + one explicitly imported Chromium History · parser observations remain separate from examiner notes")
+                Text("Selected evidence only · recorded filesystem timestamps, including unresolved civil values · optional verified Chromium History and bounded UTF-8 log imports · observations remain separate from examiner notes")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !store.browserCandidates.isEmpty {
                     HStack(spacing: 10) {
@@ -40,6 +40,29 @@ struct TimelineWorkspaceView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                DisclosureGroup("Verify and import a selected syslog file") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            Picker("Allocated log candidate", selection: $timeline.selectedSyslogID) {
+                                Text("Choose a recorded file").tag(String?.none)
+                                ForEach(store.syslogCandidates) { file in Text(file.path).tag(Optional(file.id)) }
+                            }.frame(maxWidth: 540)
+                            Button("Verify & Import Syslog", action: store.loadSelectedSyslog).disabled(!store.canLoadSyslog)
+                        }
+                        HStack(spacing: 10) {
+                            TextField("Explicit year", text: $timeline.syslogYear).frame(width: 108).textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("Explicit classic syslog year")
+                            TextField("IANA timezone, e.g. Asia/Bangkok", text: $timeline.syslogTimezone).frame(maxWidth: 270).textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("Explicit classic syslog IANA timezone")
+                            Picker("DST gap / overlap", selection: $timeline.syslogLocalTimePolicy) {
+                                Text("Preserve unresolved candidates").tag(SyslogLocalTimePolicy.preserveUnresolved)
+                                Text("Reject ambiguous or nonexistent times").tag(SyslogLocalTimePolicy.rejectAmbiguousOrNonexistent)
+                            }.frame(maxWidth: 320)
+                        }
+                        Text("Strict UTF-8 ≤1 MiB; each line ≤16 KiB; ≤20,000 events. Classic timestamps require the selected year and IANA zone; explicit RFC3339 offsets need neither. Picker shows \(store.syslogCandidates.count) / \(store.syslogCandidateCount) eligible recorded files, with conventional log names first. Imports replace the prior syslog selection.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(.vertical, 6)
+                }.font(.caption)
                 HStack(spacing: 10) {
                     TextField("Search path, event or observation", text: $timeline.query).textFieldStyle(.roundedBorder)
                         .accessibilityLabel("Search recorded timeline observations")
@@ -59,7 +82,7 @@ struct TimelineWorkspaceView: View {
                 } else { Text(store.phase).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let error = store.errorMessage { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 if let receipt = store.exportReceipt {
-                    HStack { Label("Reports saved · \(receipt.eventCount.formatted()) complete events", systemImage: "checkmark.seal").font(.caption)
+                    HStack { Label("Reports saved · \(receipt.eventCount.formatted()) recorded events", systemImage: "checkmark.seal").font(.caption)
                         Spacer(); Button("Show Reports") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: receipt.destinationPath)]) }
                     }
                 }
@@ -75,7 +98,7 @@ struct TimelineWorkspaceView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(event.evidencePath).lineLimit(1).truncationMode(.middle)
                         Text(event.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }.padding(.vertical, 3).help(event.detail)
+                    }.padding(.vertical, 3).help(event.detail + Self.sourcePointer(event))
                 }.width(min: 180, ideal: 340, max: 700)
                 TableColumn("Source state") { event in
                     VStack(alignment: .leading, spacing: 2) {
@@ -94,7 +117,7 @@ struct TimelineWorkspaceView: View {
             }
             .overlay {
                 if store.rows.isEmpty && !store.isLoading && !store.isFiltering {
-                    ContentUnavailableView("No Timeline Events", systemImage: "clock", description: Text(store.report == nil ? "Build the recorded filesystem timeline or explicitly import a Chromium History database." : "No events match this filter. Missing timestamps and uncovered artifacts do not establish that no activity occurred."))
+                    ContentUnavailableView("No Timeline Events", systemImage: "clock", description: Text(store.report == nil ? "Build the recorded filesystem timeline or explicitly import Chromium History or a bounded UTF-8 log." : "No events match this filter. Missing timestamps and uncovered artifacts do not establish that no activity occurred."))
                 }
             }
             Divider()
@@ -104,6 +127,10 @@ struct TimelineWorkspaceView: View {
                 Button("Previous") { page = currentPage - 1; timeline.selectedEventID = nil }.disabled(currentPage == 0)
                 Button("Next") { page = currentPage + 1; timeline.selectedEventID = nil }.disabled(currentPage == lastPage)
                 if let event = store.selectedEvent, let binding = store.binding {
+                    if let reference = event.sourceReference {
+                        Text("Source line \(reference.line); UTF-8 \(reference.utf8Offset)..<\(reference.utf8Offset + reference.utf8Length)")
+                            .font(.caption2).textSelection(.enabled).help(Self.sourcePointer(event))
+                    }
                     Button("Open Source") { openFile(binding, event.fileID) }
                 }
             }.padding(.horizontal, 16).padding(.vertical, 8).controlSize(.small)
@@ -117,7 +144,7 @@ struct TimelineWorkspaceView: View {
                         }
                         Text("Examiner notes are separate from deterministic observations. No AI interpretation is automatically added.").font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $timeline.examinerNotes).font(.body).frame(minHeight: 72, maxHeight: 96).accessibilityLabel("Examiner notes for timeline report")
-                        Text("Export includes the complete timeline, regardless of presentation filters, with JSON/Markdown/hash receipt in a new folder.").font(.caption).foregroundStyle(.secondary)
+                        Text("Export includes every event in the current bounded report, regardless of presentation filters, with JSON/Markdown/PDF and an independently verified hash receipt in a new folder.").font(.caption).foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }.frame(maxHeight: 180)
             }.font(.caption).padding(.horizontal, 16).padding(.vertical, 10)
@@ -137,7 +164,12 @@ struct TimelineWorkspaceView: View {
         case .browserVisit: "Browser visit"
         case .downloadStarted: "Download started"
         case .downloadEnded: "Download ended"
+        case .syslogRecord: "Syslog record"
         }
+    }
+    private static func sourcePointer(_ event: TimelineEvent) -> String {
+        guard let pointer = event.sourceReference else { return "" }
+        return "\nSource: \(pointer.unitKind), unit \(pointer.unit), line \(pointer.line), UTF-8 offset \(pointer.utf8Offset), length \(pointer.utf8Length).\nDerived-text SHA-256: \(pointer.derivedTextSHA256)"
     }
     private static func utc(_ stamp: TimelineTimestamp) -> String {
         guard let seconds = stamp.epochSeconds else { return "Unresolved · \(stamp.interpretation)" }

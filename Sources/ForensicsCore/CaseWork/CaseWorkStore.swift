@@ -24,16 +24,34 @@ public enum CaseWorkStore {
             in: caseURL, beforePublish: beforePublish)
     }
 
+    /// Fault injection crosses actual persistence boundaries, including partial
+    /// staging writes. It is internal and cannot be selected by a user payload.
+    static func saveAnalysisForTesting(_ record: AnalysisRecord, in caseURL: URL,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void) throws {
+        try record.validate()
+        try save(record, id: record.id, binding: record.binding, kind: .analysis,
+            in: caseURL, persistenceCheckpoint: persistenceCheckpoint)
+    }
+
     public static func saveExtraction(_ record: ExtractionRecord, in caseURL: URL) throws {
         try record.validate()
         try save(record, id: record.id, binding: record.binding, kind: .extraction, in: caseURL)
+    }
+
+    /// Per-call internal seam at actual immutable extraction commit boundaries.
+    /// This models a failed syscall; it does not simulate physical power loss.
+    static func saveExtractionForTesting(_ record: ExtractionRecord, in caseURL: URL,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void) throws {
+        try record.validate()
+        try save(record, id: record.id, binding: record.binding, kind: .extraction,
+            in: caseURL, persistenceCheckpoint: persistenceCheckpoint)
     }
 
     public static func saveFinding(_ record: FindingRecord, expectedLatestRevisionID: UUID?, in caseURL: URL) throws {
         try record.validate()
         let bytes = try encoded(record)
         guard expectedLatestRevisionID == record.previousRevisionID else { throw CaseWorkError.staleRevision }
-        try withCase(record.binding, in: caseURL, write: true) { root, validateCase in
+        try withCase(record.binding, in: caseURL, write: true, publishedRecordID: record.id) { root, validateCase in
             let directory = try subdirectory(.finding, root: root, create: true)
             defer { Darwin.close(directory) }
             let current = try latestFinding(in: directory, binding: record.binding)
@@ -130,12 +148,13 @@ public enum CaseWorkStore {
     }
 
     private static func save<T: Encodable>(_ record: T, id: UUID, binding: CaseWorkBinding,
-        kind: CaseWorkKind, in caseURL: URL, beforePublish: () throws -> Void = {}) throws {
+        kind: CaseWorkKind, in caseURL: URL, beforePublish: () throws -> Void = {},
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in }) throws {
         let bytes = try encoded(record)
-        try withCase(binding, in: caseURL, write: true) { root, validateCase in
+        try withCase(binding, in: caseURL, write: true, publishedRecordID: id) { root, validateCase in
             let directory = try subdirectory(kind, root: root, create: true)
             defer { Darwin.close(directory) }
-            try publish(bytes, id: id, directory: directory) {
+            try publish(bytes, id: id, directory: directory, persistenceCheckpoint: persistenceCheckpoint) {
                 try beforePublish()
                 try validateCase(); try validateSubdirectory(kind, descriptor: directory, root: root)
             }
@@ -287,8 +306,8 @@ public enum CaseWorkStore {
         guard header.schemaVersion == 1 else { throw CaseWorkError.unsupportedVersion }
     }
 
-    private static func read(_ name: String, directory: Int32) throws -> Data {
-        try Task.checkCancellation()
+    private static func read(_ name: String, directory: Int32, checkCancellation: Bool = true) throws -> Data {
+        if checkCancellation { try Task.checkCancellation() }
         let descriptor = Darwin.openat(directory, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard descriptor >= 0 else { throw CaseWorkError.unsafePath }
         defer { Darwin.close(descriptor) }
@@ -301,7 +320,7 @@ public enum CaseWorkStore {
         var bytes = Data(); bytes.reserveCapacity(Int(before.size))
         var buffer = [UInt8](repeating: 0, count: 65_536)
         while Int64(bytes.count) < before.size {
-            try Task.checkCancellation()
+            if checkCancellation { try Task.checkCancellation() }
             let amount = Int(min(Int64(buffer.count), before.size - Int64(bytes.count)))
             let count = try buffer.withUnsafeMutableBytes { try FileAccess.read(descriptor, into: $0, count: amount) }
             guard count > 0 else { throw CaseWorkError.changedDuringOperation }
@@ -354,7 +373,9 @@ public enum CaseWorkStore {
         }
     }
 
-    private static func publish(_ bytes: Data, id: UUID, directory: Int32, validate: () throws -> Void) throws {
+    private static func publish(_ bytes: Data, id: UUID, directory: Int32,
+        persistenceCheckpoint: (CasePersistenceCheckpoint, Int) throws -> Void = { _, _ in },
+        validate: () throws -> Void) throws {
         try Task.checkCancellation()
         let name = filename(id)
         let staging = ".casework-\(UUID().uuidString.lowercased()).tmp"
@@ -366,19 +387,28 @@ public enum CaseWorkStore {
             }
             Darwin.close(descriptor)
         }
+        try persistenceCheckpoint(.beforeWrite, 0)
         try bytes.withUnsafeBytes { buffer in
             var written = 0
             while written < buffer.count {
                 try Task.checkCancellation()
-                let count = Darwin.write(descriptor, buffer.baseAddress?.advanced(by: written), buffer.count - written)
+                let count = Darwin.write(descriptor, buffer.baseAddress?.advanced(by: written), min(65_536, buffer.count - written))
                 if count < 0 && errno == EINTR { continue }
                 guard count > 0 else { throw FileAccess.posixError("Cannot write case-work record") }
                 written += count
+                try persistenceCheckpoint(.afterWriteChunk, written)
             }
         }
-        guard Darwin.fsync(descriptor) == 0 else { throw FileAccess.posixError("Cannot flush case-work record") }
+        try persistenceCheckpoint(.beforeFileFlush, bytes.count)
+        try sync(descriptor, message: "Cannot flush case-work record")
+        try persistenceCheckpoint(.afterFileFlush, bytes.count)
         try Task.checkCancellation(); try validate()
         try Task.checkCancellation()
+        guard referenceMatches(staging, parent: directory, descriptor: descriptor, kind: S_IFREG) else {
+            throw CaseWorkError.changedDuringOperation
+        }
+        try persistenceCheckpoint(.beforeRename, bytes.count)
+        try validate()
         guard referenceMatches(staging, parent: directory, descriptor: descriptor, kind: S_IFREG) else {
             throw CaseWorkError.changedDuringOperation
         }
@@ -386,22 +416,43 @@ public enum CaseWorkStore {
             if errno == EEXIST { throw CaseWorkError.alreadyExists }
             throw FileAccess.posixError("Cannot publish case-work record")
         }
-        guard Darwin.fsync(directory) == 0 else { throw FileAccess.posixError("Cannot flush case-work directory") }
-        try validate()
+        do {
+            try persistenceCheckpoint(.afterRename, bytes.count)
+            try persistenceCheckpoint(.beforeDirectoryFlush, bytes.count)
+            try sync(directory, message: "Cannot flush case-work directory")
+            try persistenceCheckpoint(.afterDirectoryFlush, bytes.count)
+            guard referenceMatches(name, parent: directory, descriptor: descriptor, kind: S_IFREG),
+                  try read(name, directory: directory, checkCancellation: false) == bytes else {
+                throw CaseWorkError.changedDuringOperation
+            }
+            try validate()
+        } catch {
+            // The exclusive rename already committed. Do not remove the final
+            // record or tell the caller that retrying its UUID is a fresh save.
+            throw CasePublicationError.publishedButDurabilityUnconfirmed(recordID: id)
+        }
         // No cancellation check after publication: the caller must receive a
         // committed receipt even if cancellation arrived during the atomic rename.
     }
 
+    private static func sync(_ descriptor: Int32, message: String) throws {
+        while Darwin.fsync(descriptor) != 0 {
+            if errno == EINTR { continue }
+            throw FileAccess.posixError(message)
+        }
+    }
+
     private static func withCase<T>(_ binding: CaseWorkBinding?, in url: URL, write: Bool,
-        body: (Int32, () throws -> Void) throws -> T) throws -> T {
+        publishedRecordID: UUID? = nil, body: (Int32, () throws -> Void) throws -> T) throws -> T {
         guard url.isFileURL else { throw CaseWorkError.invalidCase }
         var supplied = stat()
         guard Darwin.lstat(url.standardizedFileURL.path, &supplied) == 0,
               supplied.st_mode & S_IFMT == S_IFDIR else { throw CaseWorkError.invalidCase }
         let bundle = try FileAccess.localURL(url)
         guard bundle.pathExtension == CaseStore.bundleExtension else { throw CaseWorkError.invalidCase }
-        let root = Darwin.open(bundle.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard root >= 0 else { throw CaseWorkError.invalidCase }
+        let root: Int32
+        do { root = try EvidenceViewFiles.openDirectory(url.standardizedFileURL) }
+        catch { throw CaseWorkError.invalidCase }
         defer { Darwin.close(root) }
         try validateRoot(bundle, descriptor: root)
         let lock = Darwin.openat(root, ".case.lock", O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
@@ -434,7 +485,12 @@ public enum CaseWorkStore {
         try validate()
         if let binding { try validateManifestBinding(binding, manifest: current.manifest) }
         let value = try body(root, validate)
-        try validate(); return value
+        do { try validate() }
+        catch {
+            if let id = publishedRecordID { throw CasePublicationError.publishedButDurabilityUnconfirmed(recordID: id) }
+            throw error
+        }
+        return value
     }
 
     private static func validateManifestBinding(_ binding: CaseWorkBinding, root: Int32) throws {
@@ -470,11 +526,8 @@ public enum CaseWorkStore {
               evidence.sha256 == binding.selectedContainerHash.sha256 else { throw CaseWorkError.scopeMismatch }
     }
     private static func validateRoot(_ url: URL, descriptor: Int32) throws {
-        var current = stat(); var opened = stat()
-        guard Darwin.lstat(url.path, &current) == 0, Darwin.fstat(descriptor, &opened) == 0,
-              current.st_mode & S_IFMT == S_IFDIR, current.st_dev == opened.st_dev, current.st_ino == opened.st_ino else {
-            throw CaseWorkError.changedDuringOperation
-        }
+        do { try EvidenceViewFiles.validateDirectory(url, descriptor: descriptor) }
+        catch { throw CaseWorkError.changedDuringOperation }
     }
     private static func referenceMatches(_ name: String, parent: Int32, descriptor: Int32, kind: mode_t) -> Bool {
         var current = stat(); var opened = stat()

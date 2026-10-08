@@ -1,5 +1,4 @@
 import Foundation
-import ForensicsCore
 import zlib
 
 /// ImageIO can repair truncated PNG data while reporting a complete first
@@ -8,10 +7,10 @@ import zlib
 /// image's compressed scanlines, not every ancillary chunk's semantics. Pixel
 /// reconstruction and the bounded preview still belong to ImageIO.
 /// Format reference: https://www.w3.org/TR/png/#5DataRep
-enum PNGStructureValidator {
-    enum Validation { case complete(unusedIDATBytes: Int), malformed, imagePixelLimit }
+public enum DocumentPNGStructureValidator {
+    public enum Validation { case complete(unusedIDATBytes: Int), malformed, imagePixelLimit }
 
-    static func validate(_ data: Data) -> Validation {
+    public static func validate(_ data: Data) -> Validation {
         data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> Validation in
             let signature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
             guard bytes.count >= 8, bytes.prefix(8).elementsEqual(signature) else { return .malformed }

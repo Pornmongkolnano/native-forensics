@@ -42,6 +42,7 @@ final class MultiEvidenceAnalysisStore {
     @ObservationIgnored private let verify: Verify
     @ObservationIgnored private let analyzeRequest: Analyze
     @ObservationIgnored private let save: Save
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     var hasActiveWork: Bool { jobTask != nil }
     var outboundPrompt: String { guard let context else { return "" }; return (try? MultiEvidencePrompt.make(context: context, question: question, parent: parentRecord)) ?? "" }
     var canAnalyze: Bool { isPresented && !isWorking && !isClosing && !outboundPrompt.isEmpty && CodexCLIAvailability.issue(for: cliPath) == nil }
@@ -49,7 +50,8 @@ final class MultiEvidenceAnalysisStore {
     var filePaths: [String] { selection?.files.map(\.path) ?? [] }
     var connectionStatus: String { CodexCLIAvailability.issue(for: cliPath) == nil ? "Codex CLI found · ChatGPT sign-in required" : "Set up Codex CLI in Settings" }
 
-    init(executableURL: URL? = nil, prepare: Prepare? = nil, verify: Verify? = nil, save: Save? = nil, analyze: Analyze? = nil) {
+    init(executableURL: URL? = nil, prepare: Prepare? = nil, verify: Verify? = nil, save: Save? = nil, analyze: Analyze? = nil, scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         cliPath = executableURL?.path ?? CodexCLIAvailability.configuredPath
         self.prepare = prepare ?? { caseID, evidence, result, files, helper in
             try await MultiEvidenceContextBuilder.prepare(caseID: caseID, evidence: evidence, result: result,
@@ -71,7 +73,8 @@ final class MultiEvidenceAnalysisStore {
 
     func configure(evidence: EvidenceRecord, result: EnumerationResult, files: [FilesystemEntry], helperURL: URL, forensicCase: ForensicCase? = nil) {
         guard !isWorking && !isClosing else { return }
-        guard files.count == 2, files[0].id != files[1].id, files.allSatisfy({ !$0.isDirectory && $0.size <= VerifiedContentService.maximumFileBytes }) else {
+        guard files.count == 2, files[0].id != files[1].id,
+              files.allSatisfy({ !$0.isDirectory && (0...DocumentLimits.maximumInputBytes).contains($0.size) }) else {
             errorMessage = MultiEvidenceError.invalidSelection.localizedDescription; return
         }
         selection = Selection(caseID: forensicCase?.manifest.id ?? UUID(), evidence: evidence, result: result,
@@ -82,27 +85,30 @@ final class MultiEvidenceAnalysisStore {
 
     func prepareContext() {
         guard isPresented, !isWorking, !isClosing, let selection else { return }
-        let id = start("Verifying and extracting both complete UTF-8 files locally…")
+        let id = start("Verifying complete files and decoding PDF text locally…")
         context = nil; invalidateAnswer()
         let operation = prepare
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
             do {
-                let files = try await operation(selection.caseID, selection.evidence, selection.result, selection.files, selection.helperURL)
-                try Task.checkCancellation(); guard generation == id, !isClosing else { return }
-                guard files.count == 2, files.map({ $0.binding.selectedEntry }) == selection.files,
-                      files.allSatisfy({ $0.binding.caseID == selection.caseID && $0.binding.evidenceID == selection.evidence.id }) else { throw MultiEvidenceError.invalidSelection }
-                verifiedFiles = files
-                settingDefaults = true
-                firstRanges = format(files[0].defaultSelection.ranges); secondRanges = format(files[1].defaultSelection.ranges)
-                firstRedactions = ""; secondRedactions = ""; settingDefaults = false
-                parentRecord = nil
-                try buildDisclosure()
-                phase = "Verified locally. Select ranges/redactions and review the exact aggregate payload before Send."
-                if let forensicCase = selection.forensicCase {
-                    let worker = Task.detached(priority: .utility) { try MultiEvidenceRecordStore.history(in: forensicCase.bundleURL) }
-                    let items = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                    if generation == id, !isClosing { updateHistory(items, older: false) }
+                try await withHeavyWork(.documentPreview) { permit in
+                    let files = try await permit.run {
+                        try await operation(selection.caseID, selection.evidence, selection.result, selection.files, selection.helperURL)
+                    }
+                    try Task.checkCancellation(); guard generation == id, !isClosing else { return }
+                    guard files.count == 2, files.map({ $0.binding.selectedEntry }) == selection.files,
+                          files.allSatisfy({ $0.binding.caseID == selection.caseID && $0.binding.evidenceID == selection.evidence.id }) else { throw MultiEvidenceError.invalidSelection }
+                    verifiedFiles = files
+                    settingDefaults = true
+                    firstRanges = format(files[0].defaultSelection); secondRanges = format(files[1].defaultSelection)
+                    firstRedactions = ""; secondRedactions = ""; settingDefaults = false
+                    parentRecord = nil
+                    try buildDisclosure()
+                    phase = "Verified locally. Select ranges/redactions and review the exact aggregate payload before Send."
+                    if let forensicCase = selection.forensicCase {
+                        let items = try await permit.run { try MultiEvidenceRecordStore.history(in: forensicCase.bundleURL) }
+                        if generation == id, !isClosing { updateHistory(items, older: false) }
+                    }
                 }
             } catch is CancellationError { phase = "Preparation cancelled. No request was sent." }
             catch { errorMessage = error.localizedDescription; phase = "Preparation failed. No request was sent." }
@@ -115,10 +121,9 @@ final class MultiEvidenceAnalysisStore {
         catch { context = nil; errorMessage = error.localizedDescription }
     }
     private func buildDisclosure() throws {
-        context = try MultiEvidenceContext.make(files: verifiedFiles, selections: [
-            .init(ranges: parse(firstRanges), redactions: parse(firstRedactions)),
-            .init(ranges: parse(secondRanges), redactions: parse(secondRedactions))])
-        _ = try MultiEvidencePrompt.make(context: context!, question: question, parent: parentRecord)
+        let built = try MultiEvidenceContext.make(files: verifiedFiles, selections: disclosureSelections())
+        _ = try MultiEvidencePrompt.make(context: built, question: question, parent: parentRecord)
+        context = built
     }
 
     func analyze(confirmedPrompt: String) {
@@ -126,13 +131,32 @@ final class MultiEvidenceAnalysisStore {
             errorMessage = MultiEvidenceError.requestMismatch.localizedDescription; return
         }
         let question = question, parent = parentRecord, operation = analyzeRequest, verify = verify
+        let prepare = prepare
+        let selections: [MultiEvidenceSelection]
+        do { selections = try disclosureSelections() }
+        catch { errorMessage = error.localizedDescription; return }
         let executable = URL(fileURLWithPath: cliPath).standardizedFileURL.resolvingSymlinksInPath()
         let id = start("Rechecking source hashes before sending the exact reviewed request…")
         invalidateAnswer()
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
             do {
-                try await verify(selection.evidence, selection.result)
+                if context.files.contains(where: { $0.pdf != nil }) {
+                    phase = "Reextracting and checking the reviewed PDF decoder/text provenance before Send…"
+                }
+                // Local source rechecks and PDF materialization own the shared
+                // slot. The already bounded reviewed request releases it before
+                // waiting for the external provider.
+                try await withHeavyWork(.documentPreview) { permit in
+                    try await permit.run {
+                        try await verify(selection.evidence, selection.result)
+                        if context.files.contains(where: { $0.pdf != nil }) {
+                            let fresh = try await prepare(selection.caseID, selection.evidence, selection.result, selection.files, selection.helperURL)
+                            let freshContext = try MultiEvidenceContext.make(files: fresh, selections: selections)
+                            guard context.hasSameDisclosure(as: freshContext) else { throw MultiEvidenceError.requestMismatch }
+                        }
+                    }
+                }
                 try Task.checkCancellation()
                 guard generation == id, !isClosing, outboundPrompt == confirmedPrompt else { throw MultiEvidenceError.requestMismatch }
                 phase = "Codex is comparing the reviewed disclosure…"
@@ -156,21 +180,28 @@ final class MultiEvidenceAnalysisStore {
         let id = start("Saving an immutable comparison receipt locally…"), save = save
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
+            var didSave = false
             do {
-                let worker = Task.detached(priority: .utility) {
-                    let record = try MultiEvidenceAnalysisRecord.make(context: completed.context, question: completed.question,
-                        prompt: completed.prompt, result: completed.result, retention: retention, parent: completed.parent)
-                    try await save(record, forensicCase.bundleURL)
-                    return record
+                try await withHeavyWork(.historyRead) { permit in
+                    let record = try await permit.runToCompletion {
+                        let record = try MultiEvidenceAnalysisRecord.make(context: completed.context, question: completed.question,
+                            prompt: completed.prompt, result: completed.result, retention: retention, parent: completed.parent)
+                        try await save(record, forensicCase.bundleURL)
+                        return record
+                    }
+                    didSave = true
+                    guard generation == id else { return }
+                    savedRecord = record; phase = "Comparison saved as historical AI interpretation."
+                    let items = try await permit.run { try MultiEvidenceRecordStore.history(in: forensicCase.bundleURL) }
+                    updateHistory(items, older: false)
                 }
-                let record = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                guard generation == id else { return }
-                savedRecord = record; phase = "Comparison saved as historical AI interpretation."
-                let loader = Task.detached(priority: .utility) { try MultiEvidenceRecordStore.history(in: forensicCase.bundleURL) }
-                let items = try await withTaskCancellationHandler { try await loader.value } onCancel: { loader.cancel() }
-                updateHistory(items, older: false)
-            } catch is CancellationError { phase = "Save cancelled; reload case history before retrying." }
-            catch { errorMessage = error.localizedDescription; phase = "Save failed; existing records remain unchanged." }
+            } catch is CancellationError {
+                phase = didSave ? "Comparison saved. History refresh cancelled; reload case history." : "Save cancelled; reload case history before retrying."
+            }
+            catch {
+                errorMessage = error.localizedDescription
+                phase = didSave ? "Comparison saved. History refresh failed; reload case history." : "Save failed; reload case history before retrying."
+            }
         }
     }
 
@@ -204,6 +235,7 @@ final class MultiEvidenceAnalysisStore {
                 let worker = Task.detached(priority: .utility) { try MultiEvidenceRecordStore.load(id: recordID, in: forensicCase.bundleURL) }
                 let record = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 try Task.checkCancellation(); guard generation == id, !isClosing, let record else { return }
+                parentRecord = nil; openedReferenceText = nil; openedReferenceLabel = nil
                 completed = nil; savedRecord = record; result = record.result; references = record.references
                 phase = "Historical comparison opened. Digest-only records do not retain disclosed text."
             } catch is CancellationError { phase = "Opening history cancelled." }
@@ -213,8 +245,7 @@ final class MultiEvidenceAnalysisStore {
 
     func beginFollowUp() {
         guard !isWorking, !isClosing, let savedRecord, let context,
-              savedRecord.context.files.map(\.binding) == context.files.map(\.binding),
-              savedRecord.context.files.map(\.contentSHA256) == context.files.map(\.contentSHA256) else {
+              savedRecord.context.hasSameDisclosure(as: context) else {
             errorMessage = MultiEvidenceError.parentMismatch.localizedDescription; return
         }
         parentRecord = savedRecord; invalidateAnswer()
@@ -225,16 +256,23 @@ final class MultiEvidenceAnalysisStore {
     func openReference(_ reference: MultiEvidenceReference) {
         guard !isWorking, !isClosing, references.contains(reference), reference.state == .disclosed, let selection,
               let context = completed?.context ?? savedRecord?.context ?? context else { return }
-        let id = start("Reextracting files before opening the cited bytes…"), operation = prepare
+        let id = start("Reextracting and verifying the cited source/derived span…"), operation = prepare
         openedReferenceText = nil; openedReferenceLabel = nil
         jobTask = Task { [weak self] in
             guard let self else { return }; defer { finish(id) }
             do {
-                let fresh = try await operation(selection.caseID, selection.evidence, selection.result, context.files.map { $0.binding.selectedEntry }, selection.helperURL)
-                let text = try MultiEvidenceReferences.open(reference, context: context, current: fresh)
+                let text = try await withHeavyWork(.documentPreview) { permit in
+                    try await permit.run {
+                        let fresh = try await operation(selection.caseID, selection.evidence, selection.result, context.files.map { $0.binding.selectedEntry }, selection.helperURL)
+                        return try MultiEvidenceReferences.open(reference, context: context, current: fresh)
+                    }
+                }
                 try Task.checkCancellation(); guard generation == id, !isClosing else { return }
-                openedReferenceText = text; openedReferenceLabel = reference.marker
-                phase = "Cited bytes freshly verified; interpretation remains unverified."
+                openedReferenceText = text
+                if let span = reference.pdfRange {
+                    openedReferenceLabel = "\(reference.marker) · PDF page \(span.pageNumber), raw derived UTF-16 \(span.range.start):\(span.range.end)"
+                } else { openedReferenceLabel = reference.marker }
+                phase = "Cited span freshly verified; interpretation remains unverified."
             } catch is CancellationError { phase = "Opening cited bytes cancelled." }
             catch { errorMessage = MultiEvidenceError.staleReference.localizedDescription; phase = "Citation unresolved against the current source." }
         }
@@ -249,13 +287,52 @@ final class MultiEvidenceAnalysisStore {
     func copyContextPrompt() { guard !outboundPrompt.isEmpty else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(outboundPrompt, forType: .string) }
     private func start(_ phase: String) -> UUID { let id = UUID(); generation = id; isWorking = true; errorMessage = nil; self.phase = phase; return id }
     private func finish(_ id: UUID) { guard generation == id else { return }; generation = nil; isWorking = false; jobTask = nil }
+    /// Keep admission through owned decoder/helper cleanup and subsequent case
+    /// publication. Await release before the UI owner marks its task finished.
+    private func withHeavyWork<Value: Sendable>(_ kind: ForensicWorkKind,
+        operation: @MainActor (ForensicWorkPermit) async throws -> Value) async throws -> Value {
+        let permit = try await scheduler.acquire(kind)
+        do {
+            let value = try await operation(permit)
+            await permit.release()
+            return value
+        } catch {
+            await permit.release()
+            throw error
+        }
+    }
     private func invalidateDisclosure() {
         guard !settingDefaults else { return }
         context = nil; parentRecord = nil; invalidateAnswer()
         phase = "Disclosure changed; follow-up parent cleared to avoid resending a prior answer that may quote newly redacted text."
     }
     private func invalidateAnswer() { result = nil; references = []; completed = nil; savedRecord = nil; openedReferenceText = nil; openedReferenceLabel = nil }
-    private func format(_ ranges: [MultiEvidenceRange]) -> String { ranges.map { "\($0.start):\($0.end)" }.joined(separator: ",") }
+    private func format(_ selection: MultiEvidenceSelection) -> String {
+        if !selection.pdfRanges.isEmpty {
+            return selection.pdfRanges.map { "\($0.pageNumber):\($0.range.start):\($0.range.end)" }.joined(separator: ",")
+        }
+        return selection.ranges.map { "\($0.start):\($0.end)" }.joined(separator: ",")
+    }
+    private func disclosureSelections() throws -> [MultiEvidenceSelection] {
+        guard verifiedFiles.count == 2 else { throw MultiEvidenceError.invalidSelection }
+        return try verifiedFiles.enumerated().map { index, file in
+            let ranges = index == 0 ? firstRanges : secondRanges
+            let redactions = index == 0 ? firstRedactions : secondRedactions
+            if file.isPDF { return try .init(pdfRanges: parsePDF(ranges), pdfRedactions: parsePDF(redactions)) }
+            return try .init(ranges: parse(ranges), redactions: parse(redactions))
+        }
+    }
+    private func parsePDF(_ text: String) throws -> [MultiEvidencePDFRange] {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
+        guard text.utf8.count <= 1_024 else { throw MultiEvidenceError.budgetExceeded }
+        return try text.split(separator: ",", omittingEmptySubsequences: false).map { component in
+            let parts = component.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 3, let page = Int(parts[0].trimmingCharacters(in: .whitespaces)),
+                  let start = Int(parts[1].trimmingCharacters(in: .whitespaces)),
+                  let end = Int(parts[2].trimmingCharacters(in: .whitespaces)) else { throw MultiEvidenceError.invalidRange }
+            return .init(pageNumber: page, start: start, end: end)
+        }
+    }
     private func parse(_ text: String) throws -> [MultiEvidenceRange] {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
         guard text.utf8.count <= 1_024 else { throw MultiEvidenceError.budgetExceeded }

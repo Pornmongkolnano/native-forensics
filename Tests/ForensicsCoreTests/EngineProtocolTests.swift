@@ -1,4 +1,5 @@
 import Darwin
+import Dispatch
 import Foundation
 import Testing
 @testable import ForensicsCore
@@ -136,14 +137,121 @@ struct EngineProtocolTests {
     func heartbeats() async throws {
         let fixture = try EngineTestFixture()
         defer { fixture.remove() }
-        let helper = try fixture.helper(body: """
-        for i in range(6):
-            emit('progress', stage='hashing', completed=i, total=6, unit='bytes')
-            time.sleep(0.08)
-        emit('completed', fileCount=0)
-        """)
-        let result = try await EngineClient(helperURL: helper, timeouts: EngineTimeouts(startup: 2, inactivity: 0.25)).enumerate(imageURL: fixture.source)
+        let plan = EngineHeartbeatFixturePlan()
+        let acknowledgements = try EngineHeartbeatAcknowledgements(in: fixture.url)
+        defer { acknowledgements.close() }
+        let terminal = fixture.url.appendingPathComponent("heartbeat-terminal")
+        let helper = try fixture.helper(body: plan.body(acknowledgements: acknowledgements.url, terminalMarker: terminal))
+        let recorded = EngineHeartbeatRecorder(pipe: acknowledgements, stage: plan.stage)
+        let result: EnumerationResult
+        do {
+            result = try await EngineClient(helperURL: helper, timeouts: plan.timeouts)
+                .enumerate(imageURL: fixture.source, progress: { recorded.observe($0) })
+        } catch {
+            Issue.record("Heartbeat fixture evidence: \(recorded.diagnostic)")
+            throw error // A timeout is never accepted as heartbeat success.
+        }
         #expect(result.status == .completed)
+        let observations = recorded.observations
+        #expect(observations.map(\.completed) == (0..<plan.count).map(Int64.init))
+        #expect(observations.allSatisfy { $0.total == Int64(plan.count) && $0.unit == "beats" })
+        #expect(recorded.acknowledgementFailures.isEmpty)
+        let first = try #require(observations.first), last = try #require(observations.last)
+        #expect(plan.minimumSpan > 2 * plan.inactivity)
+        #expect(last.at - first.at >= plan.minimumSpan * 0.95)
+        #expect(last.at - first.at > plan.inactivity)
+        #expect(recorded.gaps.allSatisfy { $0 >= plan.interval * 0.75 && $0 < plan.inactivity })
+        #expect(FileManager.default.fileExists(atPath: terminal.path))
+        #expect(try Data(contentsOf: fixture.source) == Data("abc".utf8))
+    }
+
+    @Test("Validated heartbeats cannot let silence, partial bytes or stderr mask stage expiry", arguments: EngineHeartbeatStall.allCases)
+    func silenceAfterHeartbeats(_ stall: EngineHeartbeatStall) async throws {
+        let fixture = try EngineTestFixture(); defer { fixture.remove() }
+        let plan = EngineHeartbeatFixturePlan(count: 3)
+        let acknowledgements = try EngineHeartbeatAcknowledgements(in: fixture.url)
+        defer { acknowledgements.close() }
+        let terminal = fixture.url.appendingPathComponent("silent-heartbeat-terminal")
+        let silent = fixture.url.appendingPathComponent("silent-heartbeat-started")
+        let helper = try fixture.helper(body: plan.body(acknowledgements: acknowledgements.url, terminalMarker: terminal,
+                                                       silentMarker: silent, stall: stall))
+        let recorded = EngineHeartbeatRecorder(pipe: acknowledgements, stage: plan.stage)
+        let expected = EngineError.timeout("The native engine stopped reporting activity before its stage deadline.")
+        let source = fixture.source
+        let completion = EngineHeartbeatOperationCompletion()
+        let operation = Task {
+            defer { completion.markFinished() }
+            return try await EngineClient(helperURL: helper, timeouts: plan.timeouts)
+                .enumerate(imageURL: source, progress: { recorded.observe($0) })
+        }
+        // This independent failure budget cannot make a broken watchdog pass:
+        // cancellation has a different error than the exact timeout below.
+        // Arm it from observed helper progress, so queued source preflight is
+        // excluded; also bound waiting for that first observation to 60s.
+        let failureBudget = Task { () -> Bool in
+            do {
+                let firstObservationDeadline = DispatchTime.now().uptimeNanoseconds + 60_000_000_000
+                while recorded.observations.isEmpty, DispatchTime.now().uptimeNanoseconds < firstObservationDeadline {
+                    if completion.isFinished { return false }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                if completion.isFinished { return false }
+                try await Task.sleep(for: .seconds(8 * plan.inactivity))
+                if completion.isFinished { return false }
+                operation.cancel()
+                return true
+            } catch { return false }
+        }
+        defer { failureBudget.cancel() }
+        await #expect(throws: expected) {
+            try await operation.value
+        }
+        failureBudget.cancel()
+        let cancelledByFailureBudget = await failureBudget.value
+        #expect(!cancelledByFailureBudget)
+        #expect(recorded.observations.map(\.completed) == [0, 1, 2])
+        #expect(recorded.acknowledgementFailures.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: silent.path))
+        #expect(!FileManager.default.fileExists(atPath: terminal.path))
+        #expect(try Data(contentsOf: fixture.source) == Data("abc".utf8))
+    }
+
+    @Test("Overdue validated activity drains buffered heartbeat and terminal frames before stage expiry")
+    func bufferedHeartbeatsAfterReaderPause() async throws {
+        let fixture = try EngineTestFixture(); defer { fixture.remove() }
+        let plan = EngineHeartbeatFixturePlan(count: 6)
+        let acknowledgements = try EngineHeartbeatAcknowledgements(in: fixture.url)
+        defer { acknowledgements.close() }
+        let terminal = fixture.url.appendingPathComponent("buffered-heartbeat-flushed")
+        let helper = try fixture.helper(body: """
+        with open(\(pythonString(acknowledgements.url.path)), 'rb', buffering=0) as acknowledgements:
+            emit('progress', stage='\(plan.stage)', completed=0, total=6, unit='beats')
+            if acknowledgements.read(1) != bytes([0]):
+                raise RuntimeError('initial heartbeat acknowledgement missing')
+            for ordinal in range(1, 6):
+                emit('progress', stage='\(plan.stage)', completed=ordinal, total=6, unit='beats')
+            emit('completed', fileCount=0)
+            with open(\(pythonString(terminal.path)), 'x') as marker:
+                marker.write('complete-terminal-flushed')
+        """)
+        let recorded = EngineHeartbeatRecorder(pipe: acknowledgements, stage: plan.stage)
+        let pause = EngineBufferedActivityPause(terminal: terminal, recorded: recorded,
+            acknowledgements: acknowledgements, seconds: 2 * plan.inactivity)
+        let client = EngineClient(helperURL: helper, timeouts: plan.timeouts,
+            afterValidatedActivityForTesting: { pause.checkpoint() })
+        let result: EnumerationResult
+        do { result = try await client.enumerate(imageURL: fixture.source,
+            progress: { recorded.observe($0, acknowledge: false) }) }
+        catch {
+            Issue.record("Buffered-frame checkpoint: paused=\(pause.didPause), elapsed=\(pause.elapsedSeconds)s, failure=\(pause.failureMessage ?? "none"); \(recorded.diagnostic)")
+            throw error
+        }
+        #expect(result.status == .completed)
+        #expect(pause.didPause); #expect(pause.elapsedSeconds > plan.inactivity)
+        #expect(pause.failureMessage == nil)
+        #expect(recorded.observations.map(\.completed) == [0, 1, 2, 3, 4, 5])
+        #expect(recorded.acknowledgementFailures.isEmpty)
+        #expect(try Data(contentsOf: fixture.source) == Data("abc".utf8))
     }
 
     @Test("Cancellation sends the protocol request before owned-PID fallback", arguments: [false, true])

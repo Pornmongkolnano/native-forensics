@@ -21,7 +21,7 @@ final class FilesystemDocumentPreviewStore {
         guard let selection else { return "Select a filesystem file first." }
         if selection.file.isDirectory { return "Select a regular file to preview its content." }
         if selection.file.size > DocumentLimits.maximumInputBytes { return "Document preview supports complete recovered files up to 128 MiB." }
-        if !hasInjectedLoad && !FileManager.default.isExecutableFile(atPath: documentHelperURL.path) {
+        if !hasInjectedLoad && !DocumentAnalysisClient(helperURL: documentHelperURL).isAvailable {
             return DocumentAnalysisError.unavailable.localizedDescription
         }
         return nil
@@ -30,6 +30,7 @@ final class FilesystemDocumentPreviewStore {
     @ObservationIgnored private let documentHelperURL: URL
     @ObservationIgnored private let hasInjectedLoad: Bool
     @ObservationIgnored private let loadRequest: Load
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
     @ObservationIgnored private var selection: Selection?
     @ObservationIgnored private var generation: UUID?
     // hasActiveWork is rendered by parent views. Observe owner insertion and
@@ -40,9 +41,10 @@ final class FilesystemDocumentPreviewStore {
 
     init(engineHelperURL: URL,
          documentHelperURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/NFDocumentDecoder"),
-         load: Load? = nil) {
+         load: Load? = nil, scheduler: ForensicWorkScheduler = .shared) {
         self.documentHelperURL = documentHelperURL
         self.hasInjectedLoad = load != nil
+        self.scheduler = scheduler
         loadRequest = load ?? { evidence, result, file in
             try await FilesystemDocumentPreviewService(engine: EngineClient(helperURL: engineHelperURL),
                 documents: DocumentAnalysisClient(helperURL: documentHelperURL))
@@ -65,7 +67,7 @@ final class FilesystemDocumentPreviewStore {
         generation = id
         preview = nil; errorMessage = nil; isLoading = true
         contentQuery = ""; searchOutcome = nil
-        phase = previous.isEmpty ? "Verifying sources and recovering selected document…" : "Waiting for previous preview cleanup…"
+        phase = previous.isEmpty ? "Waiting for the application work slot to verify the selected document…" : "Waiting for previous preview cleanup…"
         let task = Task { [weak self] in
             guard let self else { return }
             defer { self.finish(id) }
@@ -73,11 +75,9 @@ final class FilesystemDocumentPreviewStore {
             do {
                 try Task.checkCancellation()
                 guard self.generation == id, !self.isClosing else { return }
-                self.phase = "Verifying sources, recovered bytes and supported document content…"
-                let worker = Task.detached(priority: .userInitiated) {
+                let value = try await self.scheduler.run(.documentPreview) { _ in
                     try await operation(selection.evidence, selection.result, selection.file)
                 }
-                let value = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 try Task.checkCancellation()
                 guard self.generation == id, !self.isClosing else { return }
                 guard value.file == selection.file, value.receipt.evidenceID == selection.evidence.id,

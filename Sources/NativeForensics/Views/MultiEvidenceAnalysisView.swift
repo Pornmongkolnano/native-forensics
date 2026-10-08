@@ -18,7 +18,8 @@ struct MultiEvidenceAnalysisView: View {
                 Spacer()
                 Text(verbatim: store.connectionStatus).font(.caption).foregroundStyle(.secondary)
             }
-            Text("Two verified UTF-8 files · AI interpretation · 32 KiB per file / 64 KiB combined").font(.caption).foregroundStyle(.secondary)
+            Text("Two verified files · UTF-8 ≤32 KiB/file · PDF text ≤16 KiB/file / 32 KiB PDF total · 64 KiB combined")
+                .font(.caption).foregroundStyle(.secondary)
             TextField("Reviewed question", text: $store.question, axis: .vertical)
                 .textFieldStyle(.roundedBorder).lineLimit(2...3).disabled(store.isWorking)
             HStack {
@@ -74,7 +75,7 @@ struct MultiEvidenceAnalysisView: View {
     }
     private var rangePanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ranges use zero-based UTF-8 byte offsets: start:end, separated by commas. End is exclusive. Redactions are removed before transmission and citations map only to the remaining segments.")
+            Text("UTF-8 ranges: start:end in original file bytes. PDF ranges: page:start:end in raw derived UTF-16 text; page numbers start at 1. End is exclusive. Redactions are removed before transmission; PDF ranges never describe original PDF byte offsets.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 12) {
                 rangeEditor(index: 0, ranges: $store.firstRanges, redactions: $store.firstRedactions)
@@ -91,25 +92,65 @@ struct MultiEvidenceAnalysisView: View {
         }
     }
     private func rangeEditor(index: Int, ranges: Binding<String>, redactions: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        let file = store.verifiedFiles.count > index ? store.verifiedFiles[index] : nil
+        let isPDF = file?.isPDF == true
+        return VStack(alignment: .leading, spacing: 7) {
             Text(store.filePaths.count > index ? store.filePaths[index] : "Selected file \(index + 1)")
                 .font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-            TextField("Selected ranges (e.g. 0:120)", text: ranges).textFieldStyle(.roundedBorder)
-                .accessibilityLabel("File \(index + 1) selected UTF-8 byte ranges")
-            TextField("Redacted ranges (e.g. 12:24)", text: redactions).textFieldStyle(.roundedBorder)
-                .accessibilityLabel("File \(index + 1) redacted UTF-8 byte ranges")
-            if store.verifiedFiles.count > index {
-                Text("Local preview: \(store.verifiedFiles[index].previewByteCount.formatted()) / \(store.verifiedFiles[index].bytes.count.formatted()) bytes. Review selected ranges in Exact Payload; nothing is sent automatically.")
+            TextField(isPDF ? "Selected page:UTF16 ranges (e.g. 1:0:120)" : "Selected ranges (e.g. 0:120)", text: ranges).textFieldStyle(.roundedBorder)
+                .accessibilityLabel("File \(index + 1) selected \(isPDF ? "PDF page UTF-16" : "UTF-8 byte") ranges")
+            TextField(isPDF ? "Redacted page:UTF16 ranges (e.g. 1:12:24)" : "Redacted ranges (e.g. 12:24)", text: redactions).textFieldStyle(.roundedBorder)
+                .accessibilityLabel("File \(index + 1) redacted \(isPDF ? "PDF page UTF-16" : "UTF-8 byte") ranges")
+            if let file {
+                if let pdf = file.pdf {
+                    Text("PDF source: \(file.receipt.byteCount.formatted()) bytes · decoded \(pdf.pageReceipts.count) / \(pdf.analysis.pageCount ?? 0) pages · \(pdf.analysis.textIsComplete ? "reported text complete" : "incomplete text coverage; OCR/omitted pages unknown")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Decoder and raw text receipts") {
+                        Text(verbatim: pdfReceiptLabel(pdf.provenance))
+                            .font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+                    }
+                }
+                Text("Local preview: \(file.previewByteCount.formatted()) \(isPDF ? "derived UTF-8" : "source") bytes. Applied segments below and Exact Payload show the surviving disclosure; nothing is sent automatically.")
                     .font(.caption).foregroundStyle(.secondary)
                 ScrollView {
-                    Text(verbatim: store.verifiedFiles[index].previewText)
+                    Text(verbatim: file.previewText)
                         .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(8).background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                if let disclosure = store.context?.files[index] {
+                    Text("Applied disclosure: \(disclosure.disclosedByteCount.formatted()) / \(isPDF ? "16 KiB PDF" : "32 KiB UTF-8") cap · \(disclosure.omittedByteCount.formatted()) \(isPDF ? "raw derived text" : "source") bytes omitted")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(disclosure.segments) { segment in
+                                Text(verbatim: segmentLabel(segment)).font(.caption2).foregroundStyle(.secondary)
+                                Text(verbatim: segment.text ?? "Retained text unavailable")
+                                    .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(maxHeight: 100)
+                }
             } else { ContentUnavailableView("Preparing Locally", systemImage: "doc.text") }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).disabled(store.isWorking)
+    }
+    private func segmentLabel(_ segment: MultiEvidenceSegment) -> String {
+        if let span = segment.pdfRange {
+            return "\(segment.id) · PDF page \(span.pageNumber), raw derived UTF-16 \(span.range.start):\(span.range.end) · \(segment.byteCount) disclosed UTF-8 bytes"
+        }
+        guard let range = segment.sourceRange else { return segment.id }
+        return "\(segment.id) · source UTF-8 bytes \(range.start):\(range.end)"
+    }
+    private func pdfReceiptLabel(_ provenance: DocumentDecodeProvenance) -> String {
+        var lines = ["Decoder \(provenance.decoderVersion) · \(provenance.isolation.rawValue)",
+                     "Parser executable SHA-256: \(provenance.decoderExecutableSHA256)"]
+        if let hash = provenance.decoderCodeSigningCDHash { lines.append("Parser signing CDHash: \(hash)") }
+        if let hash = provenance.brokerExecutableSHA256 { lines.append("Broker executable SHA-256: \(hash)") }
+        if let hash = provenance.brokerCodeSigningCDHash { lines.append("Broker signing CDHash: \(hash)") }
+        lines.append("Options SHA-256: \(provenance.optionsSHA256)")
+        lines.append("Whole raw derived text SHA-256: \(provenance.derivedTextSHA256)")
+        return lines.joined(separator: "\n")
     }
     @ViewBuilder private var answerPanel: some View {
         if let result = store.result {
@@ -144,7 +185,7 @@ struct MultiEvidenceAnalysisView: View {
             Text(verbatim: reference.reason).font(.caption)
                 .foregroundStyle(reference.state == .disclosed ? Color.secondary : Color.orange)
             Spacer()
-            Button("Open Verified Bytes") { store.openReference(reference) }
+            Button(reference.pdfRange == nil ? "Open Verified Bytes" : "Open Verified PDF Span") { store.openReference(reference) }
                 .disabled(reference.state != .disclosed || store.isWorking)
         }
     }

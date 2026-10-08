@@ -2,32 +2,113 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// ImageIO/PDFKit run only in the bundled helper, never in the desktop process.
-/// Cancellation and timeout terminate and reap the request's own process group.
-/// The public client always requires the bounded read-only/no-network policy;
-/// missing platform support never falls back to an unrestricted decoder.
+/// ImageIO/PDFKit run in an isolated helper. Bundled applications always use
+/// the entitlement-sandboxed XPC broker and fresh parser worker, with no fallback on failure.
+/// Non-bundled tools may explicitly use the required Seatbelt development mode.
 public struct DocumentAnalysisClient: Sendable {
     public let helperURL: URL
     public let timeout: TimeInterval
     let sandboxPolicy: DocumentSandboxPolicy
+    private let backend: DocumentDecoderBackend
 
-    public init(helperURL: URL, timeout: TimeInterval = DocumentLimits.timeout) {
-        self.helperURL = helperURL; self.timeout = timeout; self.sandboxPolicy = .required
+    public init(timeout: TimeInterval = DocumentLimits.timeout) {
+        self.helperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/NFDocumentDecoder")
+        self.timeout = timeout; self.sandboxPolicy = .required; self.backend = .appSandboxXPC
     }
 
-    /// Only @testable fixture code may select an unrestricted fake helper. Real
-    /// application/CLI callers cannot disable the decoder's required policy.
+    /// Existing application callers are routed to XPC solely by the containing
+    /// app bundle. A missing/broken service never selects the development helper.
+    public init(helperURL: URL, timeout: TimeInterval = DocumentLimits.timeout) {
+        self.helperURL = helperURL; self.timeout = timeout; self.sandboxPolicy = .required
+        self.backend = Bundle.main.bundleURL.pathExtension == "app" ? .appSandboxXPC : .developmentSeatbelt
+    }
+
+    /// Explicit CLI/SwiftPM development mode. This still requires Seatbelt and
+    /// cannot be selected inside a bundled application.
+    public init(developmentHelperURL: URL, timeout: TimeInterval = DocumentLimits.timeout) {
+        self.helperURL = developmentHelperURL; self.timeout = timeout; self.sandboxPolicy = .required
+        self.backend = Bundle.main.bundleURL.pathExtension == "app" ? .appSandboxXPC : .developmentSeatbelt
+    }
+
+    /// Only @testable fixture code can run fake helpers without the policy.
     init(helperURL: URL, timeout: TimeInterval = DocumentLimits.timeout, sandboxPolicy: DocumentSandboxPolicy) {
         self.helperURL = helperURL; self.timeout = timeout; self.sandboxPolicy = sandboxPolicy
+        self.backend = .developmentSeatbelt
+    }
+
+    public var isAvailable: Bool {
+        backend == .appSandboxXPC ? DocumentXPCServiceConfiguration.isPresent
+            : FileManager.default.isExecutableFile(atPath: helperURL.path)
+    }
+
+    /// Fingerprints the executable that this backend actually uses. A bundled
+    /// app never reports the development CLI hash as its XPC decoder identity.
+    public func decoderBinarySHA256() async throws -> String {
+        try await currentDecoderIdentity().decoderExecutableSHA256
+    }
+
+    /// Inspects actual current parser/broker bytes, signed identities and fixed
+    /// policy without launching a parser or connecting to an XPC service.
+    public func currentDecoderIdentity() async throws -> DocumentDecoderIdentity {
+        try Task.checkCancellation()
+        guard timeout.isFinite, timeout > 0, timeout <= 120 else { throw DocumentAnalysisError.invalidInput }
+        let cancellation = DocumentCancellation()
+        let result = try await withTaskCancellationHandler {
+            try await BlockingWork.run {
+                switch backend {
+                case .appSandboxXPC:
+                    let configuration = try DocumentXPCServiceConfiguration.load(cancellation: cancellation)
+                    let identity = try DocumentDecoderIdentity(executableSHA256: configuration.worker.executableReceipt.sha256,
+                        codeSigningCDHash: CaseWorkCoding.hex(configuration.worker.codeSigningCDHash),
+                        isolation: .appSandboxXPC, timeout: timeout,
+                        brokerExecutableSHA256: configuration.executableReceipt.sha256,
+                        brokerCodeSigningCDHash: CaseWorkCoding.hex(configuration.codeSigningCDHash),
+                        ipcProtocolVersion: DocumentXPCWire.protocolVersion)
+                    // Re-read signed metadata as well as bytes. A signature
+                    // change between the first Security inspection and its
+                    // file hash must not produce a mixed identity snapshot.
+                    let refreshed = try DocumentXPCServiceConfiguration.load(cancellation: cancellation)
+                    let refreshedIdentity = try DocumentDecoderIdentity(executableSHA256: refreshed.worker.executableReceipt.sha256,
+                        codeSigningCDHash: CaseWorkCoding.hex(refreshed.worker.codeSigningCDHash),
+                        isolation: .appSandboxXPC, timeout: timeout,
+                        brokerExecutableSHA256: refreshed.executableReceipt.sha256,
+                        brokerCodeSigningCDHash: CaseWorkCoding.hex(refreshed.codeSigningCDHash),
+                        ipcProtocolVersion: DocumentXPCWire.protocolVersion)
+                    try configuration.worker.executableReceipt.verify(cancellation: cancellation)
+                    try configuration.executableReceipt.verify(cancellation: cancellation)
+                    guard identity == refreshedIdentity else { throw DocumentAnalysisError.sourceChanged }
+                    return identity
+                case .developmentSeatbelt:
+                    guard FileManager.default.isExecutableFile(atPath: helperURL.path) else { throw DocumentAnalysisError.unavailable }
+                    let receipt = try DocumentDecoderExecutableReceipt.inspect(helperURL.standardizedFileURL, cancellation: cancellation)
+                    let identity = try DocumentDecoderIdentity(executableSHA256: receipt.sha256,
+                        isolation: sandboxPolicy == .required ? .requiredDevelopmentSeatbelt : .testFixture, timeout: timeout)
+                    try receipt.verify(cancellation: cancellation)
+                    return identity
+                }
+            }
+        } onCancel: { cancellation.cancel() }
+        try Task.checkCancellation()
+        return result
     }
 
     public func analyze(_ input: DocumentInput) async throws -> DocumentAnalysis {
-        try await analyze(input, started: nil)
+        try await analyze(input, started: nil, lifecycle: nil)
     }
 
-    /// Internal ownership notification lets safety tests synchronize with an
-    /// actually spawned request, rather than guessing from executor timing.
+    /// Local diagnostics expose only owned-process lifecycle, without evidence
+    /// paths or content. Exited means work stopped; launchd owns XPC reaping.
+    public func analyze(_ input: DocumentInput,
+                        lifecycle: @escaping @Sendable (DocumentDecoderLifecycleEvent) -> Void) async throws -> DocumentAnalysis {
+        try await analyze(input, started: nil, lifecycle: lifecycle)
+    }
+
     func analyze(_ input: DocumentInput, started: (@Sendable (Int32) -> Void)?) async throws -> DocumentAnalysis {
+        try await analyze(input, started: started, lifecycle: nil)
+    }
+
+    private func analyze(_ input: DocumentInput, started: (@Sendable (Int32) -> Void)?,
+                         lifecycle: (@Sendable (DocumentDecoderLifecycleEvent) -> Void)?) async throws -> DocumentAnalysis {
         try Task.checkCancellation()
         guard timeout.isFinite, timeout > 0, timeout <= 120 else { throw DocumentAnalysisError.invalidInput }
         let cancellation = DocumentCancellation()
@@ -36,24 +117,30 @@ public struct DocumentAnalysisClient: Sendable {
         do {
             let result = try await withTaskCancellationHandler {
                 try await BlockingWork.run {
-                    try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
-                        cancellation: cancellation, started: started, sandboxPolicy: sandboxPolicy).run(normalized)
+                    switch backend {
+                    case .appSandboxXPC:
+                        return try DocumentXPCTransport(timeout: timeout, cancellation: cancellation,
+                            started: started, lifecycle: lifecycle).run(normalized)
+                    case .developmentSeatbelt:
+                        return try DocumentProcessRunner(helperURL: helperURL, timeout: timeout,
+                            cancellation: cancellation, started: started, sandboxPolicy: sandboxPolicy).run(normalized)
+                    }
                 }
-            } onCancel: {
-                cancellation.cancel()
-            }
+            } onCancel: { cancellation.cancel() }
             try Task.checkCancellation()
             return result
         } catch {
-            // Owned process cleanup has finished. A cancelled caller remains
-            // cancelled when a timeout or bad response races its resumption.
+            // Cleanup is complete (or explicitly failed closed) before any
+            // cancellation/result is delivered back to the application.
             try Task.checkCancellation()
             throw error
         }
     }
 
     static func validate(_ analysis: DocumentAnalysis, for input: DocumentInput) throws {
-        guard analysis.schemaVersion == 1, analysis.sourceSHA256 == input.expectedSHA256.lowercased(),
+        guard ((analysis.schemaVersion == 1 && analysis.provenance == nil)
+               || (analysis.schemaVersion == 2 && analysis.provenance != nil)),
+              analysis.sourceSHA256 == input.expectedSHA256.lowercased(),
               analysis.sourceByteCount == input.expectedByteCount,
               analysis.mimeType.utf8.count <= 128, !analysis.mimeType.isEmpty,
               (analysis.title?.utf8.count ?? 0) <= DocumentLimits.maximumMetadataValueBytes,
@@ -83,7 +170,11 @@ public struct DocumentAnalysisClient: Sendable {
             guard (1...1_024).contains(integer(16)), (1...1_024).contains(integer(20)) else {
                 throw DocumentAnalysisError.invalidResponse
             }
+            guard case .complete = DocumentPNGStructureValidator.validate(png) else {
+                throw DocumentAnalysisError.invalidResponse
+            }
         }
+        if let provenance = analysis.provenance { try provenance.validate(pages: analysis.textPages) }
         switch analysis.status {
         case .decoded:
             guard analysis.failureCode == nil, [.image, .pdf, .text, .office, .archive].contains(analysis.contentKind) else {
@@ -146,6 +237,34 @@ struct DocumentSourceHandle {
             try source.verify(input, cancellation: cancellation)
             return source
         } catch { Darwin.close(fd); throw error }
+    }
+
+    func snapshot(_ input: DocumentInput, cancellation: DocumentCancellation) throws -> Data {
+        guard (try? FileAccess.identity(of: descriptor)) == identity,
+              (try? FileAccess.identity(at: url)) == identity else { throw DocumentAnalysisError.sourceChanged }
+        var data = Data()
+        data.reserveCapacity(Int(input.expectedByteCount))
+        var hasher = SHA256()
+        var buffer = [UInt8](repeating: 0, count: 128 * 1_024)
+        var offset: Int64 = 0
+        while true {
+            if cancellation.isCancelled { throw CancellationError() }
+            let count = buffer.withUnsafeMutableBytes { Darwin.pread(descriptor, $0.baseAddress, $0.count, off_t(offset)) }
+            if count < 0, errno == EINTR { continue }
+            guard count >= 0 else { throw DocumentAnalysisError.sourceChanged }
+            if count == 0 { break }
+            offset += Int64(count)
+            guard offset <= input.expectedByteCount, offset <= DocumentLimits.maximumInputBytes else {
+                throw DocumentAnalysisError.sourceChanged
+            }
+            let chunk = Data(buffer.prefix(count))
+            data.append(chunk); hasher.update(data: chunk)
+        }
+        guard offset == input.expectedByteCount,
+              hasher.finalize().map({ String(format: "%02x", $0) }).joined() == input.expectedSHA256,
+              (try? FileAccess.identity(of: descriptor)) == identity,
+              (try? FileAccess.identity(at: url)) == identity else { throw DocumentAnalysisError.sourceChanged }
+        return data
     }
 
     func verify(_ input: DocumentInput, cancellation: DocumentCancellation) throws {

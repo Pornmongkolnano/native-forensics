@@ -60,9 +60,12 @@ final class RecoveryWorkspaceStore {
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private(set) var activeTask: Task<Void, Never>?
 
+    @ObservationIgnored private let scheduler: ForensicWorkScheduler
+
     init(photoRecURL: URL? = nil, documentHelperURL: URL? = nil,
          load: Load? = nil, recover: Recover? = nil, analyze: Analyze? = nil, export: Export? = nil,
-         examination: RecoveryExaminationStore? = nil) {
+         examination: RecoveryExaminationStore? = nil, scheduler: ForensicWorkScheduler = .shared) {
+        self.scheduler = scheduler
         self.examination = examination ?? RecoveryExaminationStore()
         self.photoRecURL = photoRecURL ?? Self.detectPhotoRec()
         self.documentHelperURL = documentHelperURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/NFDocumentDecoder")
@@ -106,7 +109,7 @@ final class RecoveryWorkspaceStore {
         return nil
     }
     var documentUnavailableReason: String? {
-        guard FileManager.default.isExecutableFile(atPath: documentHelperURL.path) else { return DocumentAnalysisError.unavailable.localizedDescription }
+        guard DocumentAnalysisClient(helperURL: documentHelperURL).isAvailable else { return DocumentAnalysisError.unavailable.localizedDescription }
         if let artifact = selectedArtifact, artifact.byteCount > DocumentLimits.maximumInputBytes {
             return DocumentAnalysisError.invalidInput.localizedDescription
         }
@@ -151,7 +154,7 @@ final class RecoveryWorkspaceStore {
             for previous in pending { await previous.value }
             do {
                 try Task.checkCancellation()
-                let value = try await Self.runDetached { try await operation(selection.evidence, selection.forensicCase) }
+                let value = try await self.scheduler.run(.historyRead) { _ in try await operation(selection.evidence, selection.forensicCase) }
                 try Task.checkCancellation()
                 guard self.matches(id, selection: selection) else { return }
                 if let value { try Self.verifyBinding(value, selection: selection) }
@@ -188,7 +191,7 @@ final class RecoveryWorkspaceStore {
             for previous in pending { await previous.value }
             do {
                 try Task.checkCancellation()
-                let value = try await Self.runDetached { [weak self] in
+                let value = try await self.scheduler.run(.recovery) { [weak self] _ in
                     // The worker owns only its operation and frozen source;
                     // progress does not extend the workspace lifetime.
                     try await operation(selection.evidence, selection.forensicCase, selectedOptions) { [weak self] update in
@@ -237,7 +240,7 @@ final class RecoveryWorkspaceStore {
                 if self.previewID == id { self.previewID = nil; self.isPreviewing = false; self.activeTask = nil }
             }
             do {
-                let value = try await Self.runDetached { try await operation(artifact, result, selection.forensicCase, helper) }
+                let value = try await self.scheduler.run(.documentPreview) { _ in try await operation(artifact, result, selection.forensicCase, helper) }
                 try Task.checkCancellation()
                 guard self.previewID == id, self.selection == selection,
                       self.selectedArtifactID == artifact.id, self.result?.jobID == result.jobID, !self.isClosing else { return }
@@ -296,7 +299,7 @@ final class RecoveryWorkspaceStore {
         guard let selection, let artifact = selectedArtifact, let result else { return }
         let operation = exportRequest
         do {
-            let receipt = try await Self.runDetached { try await operation(artifact, result, selection.forensicCase, destination) }
+            let receipt = try await self.scheduler.run(.extraction) { _ in try await operation(artifact, result, selection.forensicCase, destination) }
             guard matches(id, selection: selection), selectedArtifactID == artifact.id, self.result?.jobID == result.jobID else { return }
             lastExport = receipt
             statusMessage = "Recovered file exported to a new destination after its size/hash check."

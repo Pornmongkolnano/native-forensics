@@ -43,10 +43,12 @@ struct FilesystemTableView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Find file path", text: $workspace.filesystemSearchText)
-                    .textFieldStyle(.roundedBorder)
+                FilesystemSearchField(value: workspace.filesystemSearchText, timing: workspace.filesystemUITiming,
+                                      changed: { workspace.setFilesystemSearchTextFromEditor($0) },
+                                      exited: { workspace.filesystemSearchText = "" })
+                    .frame(maxWidth: .infinity)
                     .accessibilityLabel("Find file path")
-                    .onExitCommand { workspace.filesystemSearchText = "" }
+                    .accessibilityIdentifier("filesystem-path-search")
                 if !workspace.filesystemSearchText.isEmpty {
                     Button { workspace.filesystemSearchText = "" } label: {
                         Image(systemName: "xmark.circle.fill")

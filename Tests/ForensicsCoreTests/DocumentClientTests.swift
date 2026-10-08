@@ -24,6 +24,11 @@ struct DocumentClientTests {
         defer { fixture.remove() }
         let analysis = try await fixture.client.analyze(fixture.input)
         #expect(analysis.status == .decoded)
+        #expect(analysis.schemaVersion == 2)
+        let provenance = try #require(analysis.provenance)
+        #expect(provenance.isolation == .testFixture)
+        #expect(provenance.decoderExecutableSHA256 == SHA256.hash(data: try Data(contentsOf: fixture.helper)).map { String(format: "%02x", $0) }.joined())
+        #expect(provenance.derivedTextSHA256 == (try CaseWorkCoding.digest(analysis.textPages)))
         #expect(analysis.sourceSHA256 == fixture.input.expectedSHA256)
         #expect(analysis.textPages.first?.text == "trusted fixture")
         #expect(try Data(contentsOf: fixture.source) == Data("trusted fixture".utf8))

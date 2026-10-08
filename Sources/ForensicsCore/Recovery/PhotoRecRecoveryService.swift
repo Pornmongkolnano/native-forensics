@@ -11,8 +11,11 @@ public struct PhotoRecRecoveryService: Sendable {
     public func recover(evidence: EvidenceRecord, in forensicCase: ForensicCase,
                         options: RecoveryOptions = RecoveryOptions(),
                         progress: @escaping @Sendable (RecoveryProgress) -> Void = { _ in }) async throws -> CarvingResult {
-        let worker = Task.detached(priority: .userInitiated) {
-            try recoverSynchronously(evidence: evidence, in: forensicCase, options: options, progress: progress)
+        let requestedPriority = ForensicWorkExecutionContext.requestedPriority
+        let worker = Task.detached(priority: (requestedPriority ?? .userInitiated).taskPriority) {
+            try ForensicWorkExecutionContext.$requestedPriority.withValue(requestedPriority) {
+                try recoverSynchronously(evidence: evidence, in: forensicCase, options: options, progress: progress)
+            }
         }
         return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
     }
@@ -34,6 +37,31 @@ public struct PhotoRecRecoveryService: Sendable {
         defer { Darwin.close(source) }
         let sourceIdentity = try FileAccess.identity(of: source)
         guard sourceIdentity.size == evidence.byteCount else { throw RecoveryError.sourceChanged }
+        // Older manifests could label sparse/encoded UDIF as RAW from its
+        // filesystem-looking prefix. Reclassify bounded framing from this held
+        // source before executable access, scratch creation or scanner launch;
+        // later complete SHA/copy/publication fences remain mandatory.
+        func readFraming(offset: Int64, count: Int) throws -> Data {
+            var bytes = Data(count: count)
+            try bytes.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
+                var consumed = 0
+                while consumed < count {
+                    try Task.checkCancellation()
+                    let part = UnsafeMutableRawBufferPointer(rebasing: buffer[consumed..<count])
+                    let amount = try RecoveryIO.readAt(source, offset: offset + Int64(consumed), into: part, count: count - consumed)
+                    guard amount > 0, amount <= count - consumed else { throw RecoveryError.sourceChanged }
+                    consumed += amount
+                }
+            }
+            return bytes
+        }
+        let header = try readFraming(offset: 0, count: Int(min(sourceIdentity.size, 4_096)))
+        let footer = try readFraming(offset: max(0, sourceIdentity.size - 512), count: Int(min(sourceIdentity.size, 512)))
+        guard try FileAccess.identity(of: source) == sourceIdentity,
+              (try? FileAccess.identity(at: sourceURL)) == sourceIdentity else { throw RecoveryError.sourceChanged }
+        guard ImageInspector.classify(header: header, footer: footer, byteCount: sourceIdentity.size, url: sourceURL).container == .raw else {
+            throw RecoveryError.unsupportedSource
+        }
 
         let executable = try FileAccess.localURL(executableURL)
         guard Darwin.access(executable.path, X_OK) == 0 else { throw RecoveryError.unavailable }
